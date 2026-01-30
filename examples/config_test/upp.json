@@ -1,0 +1,8 @@
+{
+  "extends": "../..",
+  "lang": {
+    "c": {
+      "pre-upp": "echo \"/* Sub Pre-upp */\" && cat ${INPUT}"
+    }
+  }
+}

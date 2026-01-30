@@ -17,9 +17,9 @@ class Registry {
         this.helpers = new UppHelpers(this);
     }
 
-    registerFile(filePath) {
+    registerSource(sourceCode, filePath) {
         this.filePath = filePath;
-        this.sourceCode = fs.readFileSync(filePath, 'utf8');
+        this.sourceCode = sourceCode;
         const regex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
         let match;
         while ((match = regex.exec(this.sourceCode)) !== null) {
@@ -37,6 +37,10 @@ class Registry {
                 console.log(`Registered macro: @${name} (Language: ${langTag || 'js'})`);
             }
         }
+    }
+    setSourceCode(code) {
+        this.sourceCode = code;
+        // The main tree will be parsed at the start of process()
     }
 
     extractBody(source, startOffset) {
@@ -96,13 +100,11 @@ class Registry {
     }
 
     process() {
+        let modified = false;
         let iterations = 0;
-        const maxIterations = 5;
-        let modified = true;
+        const maxIterations = 100;
 
-        while (modified && iterations < maxIterations) {
-            modified = false;
-
+        while (iterations < maxIterations) {
             this.mainTree = this.parser.parse(this.sourceCode);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
@@ -120,10 +122,14 @@ class Registry {
             }
 
             this.helpers.replacements = [];
+            // evaluateMacros now uses its own tree and doesnt overwrite mainTree
             this.evaluateMacros(this.invocations, this.sourceCode, this.helpers);
-            this.applyTransforms(this.mainTree, this.helpers);
+
+            // Run transforms on the clean tree if it was created
+            this.applyTransforms(this.cleanTree || this.mainTree, this.helpers);
 
             this.applyChanges(this.invocations);
+            this.cleanTree = null; // Release the clean tree
             modified = true;
             iterations++;
         }
@@ -132,10 +138,27 @@ class Registry {
     }
 
     evaluateMacros(invocations, source, helpers) {
+        // 1. Re-scan for strippable definitions in the CURRENT sourceCode
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
+        const definitionsToStrip = [];
+        let dMatch;
+        while ((dMatch = defineRegex.exec(source)) !== null) {
+            const body = this.extractBody(source, dMatch.index + dMatch[0].length);
+            if (body !== null) {
+                definitionsToStrip.push({
+                    start: dMatch.index,
+                    end: dMatch.index + dMatch[0].length + body.length + 1
+                });
+            }
+        }
+
+        // 2. Clear source of macros and definitions to find clean target nodes
         let cleanSource = source;
-        const allStrippable = Array.from(this.macros.values()).map(m => ({ start: m.startIndex, end: m.endIndex }))
-            .concat(invocations.map(i => ({ start: i.startIndex, end: i.endIndex })))
-            .sort((a, b) => b.start - a.start);
+        const allStrippable = [
+            ...definitionsToStrip,
+            ...invocations.map(i => ({ start: i.startIndex, end: i.endIndex }))
+        ];
+        allStrippable.sort((a, b) => b.start - a.start);
 
         for (const range of allStrippable) {
             if (range.start >= 0 && range.end <= cleanSource.length) {
@@ -145,8 +168,8 @@ class Registry {
             }
         }
 
-        this.mainTree = this.parser.parse(cleanSource);
-        helpers.root = this.mainTree.rootNode;
+        this.cleanTree = this.parser.parse(cleanSource);
+        helpers.root = this.cleanTree.rootNode;
 
         for (const invocation of invocations) {
             const macro = this.macros.get(invocation.name);
@@ -156,7 +179,7 @@ class Registry {
             try {
                 let searchIndex = invocation.endIndex;
                 while (searchIndex < cleanSource.length && /\s/.test(cleanSource[searchIndex])) searchIndex++;
-                let targetNode = this.mainTree.rootNode.namedDescendantForIndex(searchIndex);
+                let targetNode = this.cleanTree.rootNode.namedDescendantForIndex(searchIndex);
                 if (targetNode) {
                     while (targetNode.parent && targetNode.parent.startIndex === targetNode.startIndex) targetNode = targetNode.parent;
                 }
@@ -201,10 +224,22 @@ class Registry {
 
     finishProcessing() {
         let output = this.sourceCode;
-        const definitions = Array.from(this.macros.values()).map(m => ({ start: m.startIndex, end: m.endIndex, content: '' }))
-            .sort((a, b) => b.start - a.start);
-        for (const change of definitions) {
-            output = output.slice(0, change.start) + change.content + output.slice(change.end);
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
+        const definitionsToStrip = [];
+        let dMatch;
+        while ((dMatch = defineRegex.exec(output)) !== null) {
+            const body = this.extractBody(output, dMatch.index + dMatch[0].length);
+            if (body !== null) {
+                definitionsToStrip.push({
+                    start: dMatch.index,
+                    end: dMatch.index + dMatch[0].length + body.length + 1
+                });
+            }
+        }
+
+        definitionsToStrip.sort((a, b) => b.start - a.start);
+        for (const change of definitionsToStrip) {
+            output = output.slice(0, change.start) + output.slice(change.end);
         }
         return output;
     }
@@ -244,6 +279,7 @@ class Registry {
     }
 
     applyTransforms(tree, helpers) {
+        helpers.root = tree.rootNode || tree;
         for (const transform of this.transforms) {
             transform(tree, helpers);
         }

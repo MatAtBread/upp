@@ -119,23 +119,28 @@ class UppHelpers {
     }
 
     query(pattern, node) {
-        const root = node ? (node.rootNode || node) : this.root;
+        let root = node ? (node.rootNode || node) : this.root;
+        // If it's a Tree object from the parser, we need its rootNode
+        if (root && typeof root.rootNode !== 'undefined') root = root.rootNode;
+
         if (!root) throw new Error("upp.query: No node or root provided.");
 
-        const q = this.registry.createQuery(pattern);
-        const matches = q.matches(root);
-
-        // Map matches to a simpler format for macros
-        return matches.map(match => {
-            const captures = {};
-            for (const cap of match.captures) {
-                captures[cap.name] = cap.node;
-            }
-            return {
-                node: match.captures[0].node, // First capture is the primary node
-                captures: captures
-            };
-        });
+        try {
+            const q = this.registry.createQuery(pattern);
+            return q.matches(root).map(match => {
+                const captures = {};
+                for (const cap of match.captures) {
+                    captures[cap.name] = cap.node;
+                }
+                return {
+                    node: match.captures[0].node, // First capture is the primary node
+                    captures: captures
+                };
+            });
+        } catch (err) {
+            console.error(`[ERROR] query.matches failed: ${err.message}`);
+            throw err;
+        }
     }
 
     error(node, message) {
