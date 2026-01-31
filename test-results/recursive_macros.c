@@ -7,6 +7,7 @@ extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 
 
+
 int some_condition = 1;
 struct String {
     char *data;

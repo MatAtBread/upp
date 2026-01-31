@@ -1,6 +1,7 @@
 /* upp examples/method_test.c */
 
 
+
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
 extern void *malloc(unsigned long n);

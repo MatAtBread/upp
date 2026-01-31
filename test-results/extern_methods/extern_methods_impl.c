@@ -6,6 +6,7 @@ extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 
+
 struct Foo {
     int x;
 };

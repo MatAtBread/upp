@@ -1,6 +1,7 @@
 /* upp examples/extern_methods/extern_methods_main.c */
 
 
+
 struct Foo {
     int x;
 };

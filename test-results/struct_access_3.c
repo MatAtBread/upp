@@ -1,6 +1,7 @@
 /* upp examples/struct_access_3.c */
 
 
+
 struct Point {
     int x;
     int y;
