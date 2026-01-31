@@ -12,6 +12,10 @@ void hello() {
     printf("World\n");
 }
 
+void os_start(void (*task)()) {
+    task();
+}
+
 int main() {
     @task hello();
     return 0;

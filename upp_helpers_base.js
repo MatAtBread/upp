@@ -1,3 +1,6 @@
+import Parser from 'tree-sitter';
+const { Query } = Parser;
+
 /**
  * Base helper class providing general-purpose macro utilities.
  * @class
@@ -57,7 +60,7 @@ class UppHelpersBase {
         return {
             text: result,
             tree: () => {
-                const parser = new (require('tree-sitter'))();
+                const parser = new Parser();
                 parser.setLanguage(this.registry.language);
                 return parser.parse(result);
             }
@@ -173,7 +176,6 @@ class UppHelpersBase {
      * @returns {Array<{pattern: number, captures: Object<string, import('tree-sitter').SyntaxNode>}>} Query matches with named captures.
      */
     query(pattern, node) {
-        const { Query } = require('tree-sitter');
         const query = new Query(this.registry.language, pattern);
         let targetNode = node || this.root;
         if (targetNode && targetNode.rootNode) {
@@ -308,4 +310,4 @@ class UppHelpersBase {
     }
 }
 
-module.exports = { UppHelpersBase };
+export { UppHelpersBase };

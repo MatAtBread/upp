@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
 
 /**
  * Deep merges two objects. B overrides A.
@@ -100,4 +100,4 @@ function resolveConfig(sourcePath) {
     return { lang: {} }; // Return empty default if none found
 }
 
-module.exports = { resolveConfig, loadConfig, deepMerge };
+export { resolveConfig, loadConfig, deepMerge };

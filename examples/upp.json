@@ -1,3 +1,9 @@
 {
-    "comments": true
+    "comments": true,
+    "lang": {
+        "c": {
+            "compile": "cc -o ${FILENAME}.exe ${OUTPUT}",
+            "run": "./${FILENAME}.exe"
+        }
+    }
 }

@@ -1,4 +1,4 @@
-const { UppHelpersBase } = require('./upp_helpers_base');
+import { UppHelpersBase } from './upp_helpers_base.js';
 
 /**
  * C-specific helper class extending basic macro functionality.
@@ -202,6 +202,100 @@ class UppHelpersC extends UppHelpersBase {
         });
         return found;
     }
+    /**
+     * Hoists code to the top of the file, respecting include directives.
+     * @param {string} content - The code to hoist.
+     */
+    hoist(content) {
+        let hoistIndex = 0;
+        const root = this.root;
+
+        for (let i = 0; i < root.childCount; i++) {
+            const child = root.child(i);
+            if (child.type === 'comment' || child.type.startsWith('preproc_')) {
+                 if (child.endIndex > hoistIndex) {
+                     hoistIndex = child.endIndex;
+                 }
+            } else if (child.type.trim() === '' || child.type === 'ERROR') {
+                 // skip
+            } else {
+                 if (child.startIndex > hoistIndex) break;
+            }
+        }
+
+        // Ensure we prepend a newline if needed
+        this.replace({start: hoistIndex, end: hoistIndex}, "\n" + content);
+    }
+
+    /**
+     * extracts the C type string from a definition node.
+     * @param {import('tree-sitter').SyntaxNode} defNode - The definition identifier node.
+     * @returns {string} The C type string (e.g. "char *").
+     */
+    getType(defNode) {
+        let decl = defNode.parent;
+        let suffix = "";
+
+        while (decl) {
+             if (decl.type === 'pointer_declarator') {
+                 suffix = "*" + suffix;
+             }
+             if (decl.type === 'array_declarator') {
+                 suffix = "[]" + suffix;
+             }
+
+             if (decl.type === 'declaration' || decl.type === 'parameter_declaration' || decl.type === 'field_declaration') {
+                 break;
+             }
+             decl = decl.parent;
+        }
+
+        if (!decl) return "void *"; // fallback
+
+        let prefix = "";
+        for (let i = 0; i < decl.childCount; i++) {
+             const c = decl.child(i);
+             if (c.type === 'type_qualifier' || c.type === 'storage_class_specifier') {
+                  prefix += c.text + " ";
+             }
+        }
+
+        const typeNode = decl.childForFieldName('type');
+        let typeText = typeNode ? typeNode.text : "void";
+
+        return (prefix + typeText + " " + suffix).trim();
+    }
+
+    /**
+     * Extracts function signature details.
+     * @param {import('tree-sitter').SyntaxNode} fnNode - The function_definition node.
+     * @returns {{returnType: string, name: string, params: string}} Signature details.
+     */
+    getFunctionSignature(fnNode) {
+        const declarator = fnNode.childForFieldName('declarator');
+        // Handle pointer declarators if needed (e.g. char *fn())
+        // Simplification: assume direct function_declarator or pointer_declarator -> function_declarator
+
+        let funcDecl = declarator;
+        while (funcDecl.type === 'pointer_declarator') { // unwind pointers? No, name is inside.
+            funcDecl = funcDecl.childForFieldName('declarator');
+        }
+
+        const nameNode = funcDecl.childForFieldName('declarator'); // identifier
+        const name = nameNode ? nameNode.text : "unknown";
+
+        const paramList = funcDecl.childForFieldName('parameters');
+        let params = "";
+        if (paramList) {
+             params = paramList.text; // "(int a, char b)"
+        }
+
+        const typeNode = fnNode.childForFieldName('type');
+        const returnType = typeNode ? typeNode.text : "void";
+
+        return { returnType, name, params };
+    }
+
 }
 
-module.exports = { UppHelpersC };
+export { UppHelpersC };

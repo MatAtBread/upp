@@ -6,41 +6,6 @@
     const fnName = nameNode.text;
     const bodyNode = fnNode.childForFieldName('body');
 
-    // Helper to extract type string from a definition identifier
-    function getType(defNode) {
-        let decl = defNode.parent;
-        let suffix = "";
-
-        while (decl) {
-             if (decl.type === 'pointer_declarator') {
-                 suffix = "*" + suffix;
-             }
-             if (decl.type === 'array_declarator') {
-                 suffix = "[]" + suffix;
-             }
-
-             if (decl.type === 'declaration' || decl.type === 'parameter_declaration') {
-                 break;
-             }
-             decl = decl.parent;
-        }
-
-        if (!decl) return "void *"; // fallback
-
-        let prefix = "";
-        for (let i = 0; i < decl.childCount; i++) {
-             const c = decl.child(i);
-             if (c.type === 'type_qualifier' || c.type === 'storage_class_specifier') {
-                  prefix += c.text + " ";
-             }
-        }
-
-        const typeNode = decl.childForFieldName('type');
-        let typeText = typeNode ? typeNode.text : "void";
-
-        return (prefix + typeText + " " + suffix).trim();
-    }
-
     // 1. Identify captures
     const captureMap = new Map(); // name -> defNode
 
@@ -58,7 +23,7 @@
 
     let structFields = "";
     for (const [name, def] of captureMap) {
-        let typeStr = getType(def);
+        let typeStr = upp.getType(def);
         structFields += `    ${typeStr} *${name};\n`;
     }
 
@@ -93,40 +58,21 @@
     }
 
     // Reconstruct function signature to include original parameters
-    const declarator = fnNode.childForFieldName('declarator');
-    // declarator is a function_declarator. Its 'parameters' child is parameter_list.
-    // If complex (pointer declarator etc), we might need to dig, but simple case:
-    const paramList = declarator.childForFieldName('parameters');
+    const { returnType, params } = upp.getFunctionSignature(fnNode);
     let paramsText = "";
-    if (paramList) {
-         // paramList.text is "(int a, float b)"
-         const content = paramList.text.slice(1, -1).trim();
+    if (params && params.trim().length > 2) { // check if not empty parens ()
+         const content = params.trim().slice(1, -1).trim(); // remove ()
          if (content.length > 0) {
              paramsText = ", " + content;
          }
     }
 
-    const retType = fnNode.childForFieldName('type').text;
-    const implCode = `\n${retType} ${implName}(struct ${ctxName} *ctx${paramsText}) ${bodyText}\n`;
+    // Note: getFunctionSignature params returns "(int a)" including parens.
+    // Logic above handles stripping parens and appending.
 
-    // Hoist after includes/defines to ensure visibility
-    let hoistIndex = 0;
-    const root = fnNode.tree.rootNode;
+    const implCode = `\n${returnType} ${implName}(struct ${ctxName} *ctx${paramsText}) ${bodyText}\n`;
 
-    for (let i = 0; i < root.childCount; i++) {
-        const child = root.child(i);
-        if (child.type === 'comment' || child.type.startsWith('preproc_')) {
-             if (child.endIndex > hoistIndex) {
-                 hoistIndex = child.endIndex;
-             }
-        } else if (child.type.trim() === '' || child.type === 'ERROR') {
-             // skip
-        } else {
-             if (child.startIndex > hoistIndex) break;
-        }
-    }
-
-    upp.replace({start: hoistIndex, end: hoistIndex}, "\n" + structDef + implCode);
+    upp.hoist("\n" + structDef + implCode);
 
     // 4. Replace Usage & Recursively Handle Aliases
     const contextArg = `(&ctx)`;

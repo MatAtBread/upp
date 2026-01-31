@@ -58,6 +58,7 @@ struct Point {
     int x;
     int y;
 };
+typedef struct Point Point;
 
 // No parentheses! Scavenging style.
 @method Point int distance(Point *p) {

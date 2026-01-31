@@ -1,9 +1,9 @@
-const Parser = require('tree-sitter');
+import Parser from 'tree-sitter';
 const { Query } = Parser;
-const C = require('tree-sitter-c');
-const fs = require('fs');
-const { reportError } = require('./errors');
-const { UppHelpersC } = require('./upp_helpers_c');
+import C from 'tree-sitter-c';
+import fs from 'fs';
+import { reportError } from './errors.js';
+import { UppHelpersC } from './upp_helpers_c.js';
 
 /**
  * Main registry class for managing macros, parsing, and transformations.
@@ -535,4 +535,4 @@ class Registry {
     }
 }
 
-module.exports = { Registry };
+export { Registry };

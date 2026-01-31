@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
-const { Registry } = require('./registry');
-const { resolveConfig } = require('./config_loader');
-const path = require('path');
-const fs = require('fs');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { Registry } from './registry.js';
+import { resolveConfig } from './config_loader.js';
 
 const args = process.argv.slice(2);
 

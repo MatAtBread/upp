@@ -45,6 +45,7 @@ struct Point {
     int x;
     int y;
 };
+typedef struct Point Point;
 
 @method(Point) int distance(Point *p) {
     return p->x * p->x + p->y * p->y;
