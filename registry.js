@@ -3,24 +3,58 @@ const { Query } = Parser;
 const C = require('tree-sitter-c');
 const fs = require('fs');
 const { reportError } = require('./errors');
-const { UppHelpers } = require('./upp_helpers');
+const { UppHelpersC } = require('./upp_helpers_c');
 
+/**
+ * Main registry class for managing macros, parsing, and transformations.
+ * @class
+ */
 class Registry {
-    constructor() {
-        this.parser = new Parser();
-        this.parser.setLanguage(C);
+    /**
+     * @param {Object} [config={}] - Configuration object.
+     */
+    constructor(config = {}) {
+        /** @type {Object} */
+        this.config = config;
+        /** @type {Map<string, Object>} */
         this.macros = new Map();
+        /** @type {Array<Object>} */
         this.invocations = [];
+        /** @type {string} */
         this.sourceCode = '';
+        /** @type {string} */
         this.filePath = '';
+        /** @type {Array<function>} */
         this.transforms = [];
-        this.helpers = new UppHelpers(this);
+        /** @type {Object} */
+        this.language = C; // For now default to C
+        /** @type {UppHelpersC} */
+        this.helpers = new UppHelpersC(this);
+        /** @type {number} */
+        this.idCounter = 0;
     }
 
+    /**
+     * internal helper - parses source code string to tree
+     * @private
+     * @param {string} source - Source code to parse.
+     * @returns {import('tree-sitter').Tree} Tree-sitter tree.
+     */
+    _parse(source) {
+        const p = new Parser();
+        p.setLanguage(this.language);
+        return p.parse(source);
+    }
+
+    /**
+     * Registers usage source code and finds initial macro definitions.
+     * @param {string} sourceCode - The source code.
+     * @param {string} filePath - The file path.
+     */
     registerSource(sourceCode, filePath) {
         this.filePath = filePath;
         this.sourceCode = sourceCode;
-        const regex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
+        const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let match;
         while ((match = regex.exec(this.sourceCode)) !== null) {
             const [fullMatch, langTag, name, params] = match;
@@ -29,43 +63,81 @@ class Registry {
             if (body !== null) {
                 this.macros.set(name, {
                     language: langTag || 'js',
-                    params: params.split(',').map(s => s.trim()),
+                    params: params.split(',').map(s => s.trim()).filter(s => s.length > 0),
                     body: body.trim(),
                     startIndex: match.index,
                     endIndex: bodyStart + body.length + 1
                 });
-                console.log(`Registered macro: @${name} (Language: ${langTag || 'js'})`);
+                // console.log(`Registered macro: @${name} (Language: ${langTag || 'js'})`);
             }
         }
     }
+
+    /**
+     * Updates the source code.
+     * @param {string} code - New source code.
+     */
     setSourceCode(code) {
         this.sourceCode = code;
         // The main tree will be parsed at the start of process()
     }
 
+    /**
+     * Extracts a balanced code block body.
+     * @private
+     * @param {string} source - The source code.
+     * @param {number} startOffset - Offset where the body starts.
+     * @returns {string|null} The extracted body text or null.
+     */
     extractBody(source, startOffset) {
         let depth = 1;
         let i = startOffset;
+        let inString = null; // ' or " or `
+        let inComment = false; // // or /*
+        let blockComment = false;
+
         while (depth > 0 && i < source.length) {
-            if (source[i] === '{') depth++;
-            if (source[i] === '}') depth--;
+            const char = source[i];
+            const nextChar = source[i + 1];
+
+            if (inString) {
+                if (char === '\\') i++; // skip escaped
+                else if (char === inString) inString = null;
+            } else if (blockComment) {
+                if (char === '*' && nextChar === '/') { blockComment = false; i++; }
+            } else if (inComment) {
+                if (char === '\n') inComment = false;
+            } else {
+                if (char === '/' && nextChar === '/') inComment = true;
+                else if (char === '/' && nextChar === '*') { blockComment = true; i++; }
+                else if (char === "'" || char === '"' || char === '`') inString = char;
+                else if (char === '{') depth++;
+                else if (char === '}') depth--;
+            }
             i++;
         }
         return depth === 0 ? source.substring(startOffset, i - 1) : null;
     }
 
+    /**
+     * Finds all macro invocations in the AST.
+     * @param {import('tree-sitter').Tree} tree - The AST to search.
+     * @param {string} source - The corresponding source code.
+     * @returns {Array<Object>} List of invocation objects.
+     */
     findInvocations(tree, source) {
-        tree = tree || this.mainTree || this.parser.parse(this.sourceCode);
+        tree = tree || this.mainTree || this._parse(source || this.sourceCode);
         source = source || this.sourceCode;
 
         const invocations = [];
         const seenIndices = new Set();
 
         const walk = (node) => {
+            if (node.type === 'comment') return;
             if (node.type === 'ERROR') {
                 const nodeText = node.text.trim();
                 if (nodeText === '@' || nodeText.startsWith('@')) {
-                    if (!seenIndices.has(node.startIndex)) {
+                    if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex)) {
                         const invocation = this.absorbInvocation(source, node.startIndex);
                         if (invocation && this.macros.has(invocation.name)) {
                             invocations.push({
@@ -83,6 +155,31 @@ class Registry {
         return invocations;
     }
 
+    /**
+     * Checks if an index is inside a macro definition.
+     * @param {number} index - The index to check.
+     * @returns {boolean} True if inside a definition.
+     */
+    isInsideDefinition(index) {
+        const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
+        let match;
+        while ((match = regex.exec(this.sourceCode)) !== null) {
+            const body = this.extractBody(this.sourceCode, match.index + match[0].length);
+            if (body !== null) {
+                const start = match.index;
+                const end = match.index + match[0].length + body.length + 1;
+                if (index >= start && index < end) return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Parses a macro invocation string from source.
+     * @param {string} source - The source code.
+     * @param {number} startIndex - The start index of the possible invocation.
+     * @returns {Object|null} Invocation details or null.
+     */
     absorbInvocation(source, startIndex) {
         const remainingSource = source.substring(startIndex);
         const match = remainingSource.match(/^@(\w+)\s*(\(([^)]*)\))?/);
@@ -99,22 +196,23 @@ class Registry {
         return null;
     }
 
+    /**
+     * Main processing loop.
+     * @returns {string} The transformed source code.
+     */
     process() {
-        let modified = false;
         let iterations = 0;
         const maxIterations = 100;
 
         while (iterations < maxIterations) {
-            this.mainTree = this.parser.parse(this.sourceCode);
+            this.mainTree = this._parse(this.sourceCode);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
             if (this.invocations.length === 0) {
-                // Apply transformations one last time even if no macros remain
                 this.helpers.replacements = [];
                 this.applyTransforms(this.mainTree, this.helpers);
                 if (this.helpers.replacements.length > 0) {
-                    this.applyChanges([]); // Only transforms
-                    modified = true;
+                    this.applyChanges([]);
                     iterations++;
                     continue;
                 }
@@ -122,24 +220,29 @@ class Registry {
             }
 
             this.helpers.replacements = [];
-            // evaluateMacros now uses its own tree and doesnt overwrite mainTree
-            this.evaluateMacros(this.invocations, this.sourceCode, this.helpers);
+            this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true);
 
-            // Run transforms on the clean tree if it was created
-            this.applyTransforms(this.cleanTree || this.mainTree, this.helpers);
+            // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
+            this.applyTransforms(this.mainTree, this.helpers);
 
             this.applyChanges(this.invocations);
-            this.cleanTree = null; // Release the clean tree
-            modified = true;
+            this.cleanTree = null;
             iterations++;
         }
 
         return this.finishProcessing();
     }
 
-    evaluateMacros(invocations, source, helpers) {
+    /**
+     * Evaluates found macros and schedules replacements.
+     * @param {Array<Object>} invocations - Macros to evaluate.
+     * @param {string} source - Source code.
+     * @param {Object} helpers - Helper instance to use.
+     * @param {boolean} [isGlobalPass=false] - Whether this is the main global pass.
+     */
+    evaluateMacros(invocations, source, helpers, isGlobalPass = false) {
         // 1. Re-scan for strippable definitions in the CURRENT sourceCode
-        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         const definitionsToStrip = [];
         let dMatch;
         while ((dMatch = defineRegex.exec(source)) !== null) {
@@ -168,53 +271,150 @@ class Registry {
             }
         }
 
-        this.cleanTree = this.parser.parse(cleanSource);
-        helpers.root = this.cleanTree.rootNode;
+        const cleanTree = this._parse(cleanSource);
+
+        if (isGlobalPass) this.mainTree = cleanTree; // Anchor as global for this iteration
+        helpers.root = cleanTree.rootNode;
+        this.cleanTree = cleanTree; // For contextNode extraction in evaluateMacros
 
         for (const invocation of invocations) {
             const macro = this.macros.get(invocation.name);
             if (!macro) continue;
-            const macroFn = new Function(macro.params.join(','), 'upp', macro.body);
+
+            const hasNodeParam = macro.params[0] === 'node';
+            const expectedArgs = hasNodeParam ? macro.params.length - 1 : macro.params.length;
+
+            const params = [...macro.params]; // Respect the user's signature 1:1
+            const macroFn = new Function(...params, 'upp', macro.body);
 
             try {
+                if (invocation.args.length !== expectedArgs) {
+                    const macroName = `@${invocation.name}`;
+                    throw {
+                        isUppError: true,
+                        node: invocation.invocationNode,
+                        message: `${macroName} expected ${expectedArgs} arguments, but found ${invocation.args.length}`
+                    };
+                }
                 let searchIndex = invocation.endIndex;
                 while (searchIndex < cleanSource.length && /\s/.test(cleanSource[searchIndex])) searchIndex++;
                 let targetNode = this.cleanTree.rootNode.namedDescendantForIndex(searchIndex);
                 if (targetNode) {
-                    while (targetNode.parent && targetNode.parent.startIndex === targetNode.startIndex) targetNode = targetNode.parent;
+                    while (targetNode.parent &&
+                           targetNode.parent.type !== 'translation_unit' &&
+                           targetNode.parent.startIndex === targetNode.startIndex) {
+                        targetNode = targetNode.parent;
+                    }
+                    if (targetNode.type === 'translation_unit') targetNode = null;
                 }
+
                 helpers.contextNode = targetNode;
                 helpers.invocation = invocation;
-                const result = macroFn(targetNode, ...invocation.args, helpers);
+                helpers.invocation.hasNodeParam = hasNodeParam; // Signal style to helpers
+                helpers.lastConsumedNode = null; // Reset for each macro
+
+                // Fill parameters based on the actual signature
+                let finalArgs;
+                if (hasNodeParam) {
+                    // Transformer style: [node, arg1, arg2...]
+                    finalArgs = [targetNode, ...invocation.args];
+                } else {
+                    // Command style: [arg1, arg2...]
+                    finalArgs = [...invocation.args];
+                }
+
+                const result = macroFn(...finalArgs, helpers);
                 helpers.contextNode = null;
-                if (result !== undefined) helpers.replace(targetNode, result);
+
+                if (result !== undefined) {
+                    const content = typeof result === 'object' ? result.text : String(result);
+                    if (hasNodeParam && targetNode) {
+                        helpers.replace(targetNode, content);
+                    } else {
+                        // Replaces the invocation itself
+                        invocation.replacementContent = content;
+                    }
+                }
             } catch (err) {
                 if (err.isUppError) {
                     this.reportError(err.node, err.message);
                 } else {
                     console.error(`Evaluation error in @${invocation.name}: ${err.message}`);
+                    console.error(err.stack);
                 }
                 process.exit(1);
             }
         }
     }
 
+    /**
+     * Reports an error to the specific file context.
+     * @param {import('tree-sitter').SyntaxNode} node - Node causing the error.
+     * @param {string} message - Error message.
+     */
     reportError(node, message) {
         reportError(node, this.sourceCode, message, this.filePath);
     }
 
+    /**
+     * Applies queued replacements and macro stripping.
+     * @param {Array<Object>} currentInvocations - Invocations processed in this pass.
+     */
     applyChanges(currentInvocations) {
         let output = this.sourceCode;
-        const macroStripping = currentInvocations.map(i => ({ start: i.startIndex, end: i.endIndex, content: '' }));
-        const allChanges = [...this.helpers.replacements, ...macroStripping]
-            .filter(c => !c.isLocal) // Only main tree replacements
-            .sort((a, b) => b.start - a.start || b.end - a.end);
+        const macroStripping = currentInvocations.map(i => ({
+            start: i.startIndex,
+            end: i.endIndex,
+            content: i.replacementContent !== undefined ? i.replacementContent : '',
+            original: this.sourceCode.substring(i.startIndex, i.endIndex)
+        }));
 
-        // Deduplicate or resolve overlaps (simple version: prefer earlier in sort)
+        const allChanges = [...this.helpers.replacements, ...macroStripping]
+            .map(c => {
+                if (c.original === undefined) {
+                    c.original = this.sourceCode.substring(c.start, c.end);
+                }
+                return c;
+            })
+            .filter(c => !c.isLocal) // Only main tree replacements
+            .sort((a, b) => a.start - b.start || a.end - b.end);
+
+        // Group adjacent changes for cleaner comments
+        const mergedChanges = [];
+        if (allChanges.length > 0) {
+            let current = allChanges[0];
+            for (let i = 1; i < allChanges.length; i++) {
+                const next = allChanges[i];
+                const midText = this.sourceCode.substring(current.end, next.start);
+                // Merge if they are adjacent or only separated by whitespace
+                if (next.start >= current.end && midText.trim() === '') {
+                    current = {
+                        start: current.start,
+                        end: next.end,
+                        content: current.content + midText + next.content,
+                        original: current.original + midText + next.original,
+                        isLocal: false
+                    };
+                } else {
+                    mergedChanges.push(current);
+                    current = next;
+                }
+            }
+            mergedChanges.push(current);
+        }
+
+        // Apply changes in reverse order to maintain indices
+        mergedChanges.sort((a, b) => b.start - a.start);
         let lastStart = Infinity;
-        for (const change of allChanges) {
+        for (const change of mergedChanges) {
             if (change.end <= lastStart) {
-                output = output.slice(0, change.start) + change.content + output.slice(change.end);
+                let finalContent = change.content;
+                if (this.config.comments && change.original.trim().length > 0) {
+                    const commentText = change.original.replace(/\*\//g, '* /');
+                    const comment = `/* ${commentText} */ `;
+                    finalContent = comment + finalContent;
+                }
+                output = output.slice(0, change.start) + finalContent + output.slice(change.end);
                 lastStart = change.start;
             }
         }
@@ -222,9 +422,13 @@ class Registry {
         this.helpers.replacements = [];
     }
 
+    /**
+     * Final clean-up pass to remove macro definitions.
+     * @returns {string} Final source code.
+     */
     finishProcessing() {
         let output = this.sourceCode;
-        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\((node[^)]*)\)\s*\{/g;
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         const definitionsToStrip = [];
         let dMatch;
         while ((dMatch = defineRegex.exec(output)) !== null) {
@@ -244,21 +448,46 @@ class Registry {
         return output;
     }
 
+    /**
+     * Expands macros within a code snippet.
+     * @param {string} text - The bit of code to expand.
+     * @param {import('tree-sitter').SyntaxNode} contextNode - The AST node where this expansion is contextualized.
+     * @returns {string} Expanded code.
+     */
     expand(text, contextNode) {
-        const fragmentHelpers = new UppHelpers(this);
+        const fragmentHelpers = new UppHelpersC(this); // Assume C for now, or use dynamic helpers
         fragmentHelpers.contextNode = contextNode;
         fragmentHelpers.root = this.helpers.root;
 
         const snippetParser = new Parser();
         snippetParser.setLanguage(C);
-        const tree = snippetParser.parse(text);
+        let tree = snippetParser.parse(text);
+
+        // Nested macro evaluation within the fragment
+        let iterations = 0;
+        let snippetSource = text;
+        while (iterations < 5) { // Depth limit for safety
+            const invocations = this.findInvocations(tree, snippetSource);
+            if (invocations.length === 0) break;
+
+            const tempHelpers = new UppHelpersC(this);
+            tempHelpers.contextNode = contextNode;
+            this.evaluateMacros(invocations, snippetSource, tempHelpers, false);
+
+            // Apply changes to the snippet source
+            let output = snippetSource;
+            const changes = tempHelpers.replacements.sort((a, b) => b.start - a.start);
+            for (const c of changes) {
+                output = output.slice(0, c.start) + c.content + output.slice(c.end);
+            }
+            snippetSource = output;
+            tree = snippetParser.parse(snippetSource);
+            iterations++;
+        }
 
         this.applyTransforms(tree, fragmentHelpers);
 
-        // IMPORTANT: In multi-pass mode, expand does NOT evaluate macros.
-        // It only prepares the snippet for the next pass.
-
-        let output = text;
+        let output = snippetSource;
         const allLocal = fragmentHelpers.replacements.filter(c => c.isLocal).sort((a, b) => b.start - a.start);
         for (const change of allLocal) {
             output = output.slice(0, change.start) + change.content + output.slice(change.end);
@@ -266,18 +495,38 @@ class Registry {
         return output;
     }
 
+    /**
+     * Checks if a range overlaps with any invocation.
+     * @param {number} start - Start index.
+     * @param {number} end - End index.
+     * @returns {boolean} True if overlapping.
+     */
     isInsideInvocation(start, end) {
         return this.invocations.some(inv => (start < inv.endIndex && end > inv.startIndex));
     }
 
+    /**
+     * Registers a global transformation.
+     * @param {function} transformFn - The transform function.
+     */
     registerTransform(transformFn) {
         this.transforms.push(transformFn);
     }
 
+    /**
+     * Helper to create a Query object.
+     * @param {string} pattern - Query pattern.
+     * @returns {import('tree-sitter').Query} Query object.
+     */
     createQuery(pattern) {
         return new Query(C, pattern);
     }
 
+    /**
+     * run registered transforms on the tree
+     * @param {import('tree-sitter').Tree} tree - The AST.
+     * @param {Object} helpers - The helpers instance.
+     */
     applyTransforms(tree, helpers) {
         helpers.root = tree.rootNode || tree;
         for (const transform of this.transforms) {

@@ -1,14 +1,19 @@
 @define method(structName) {
-    const funcDef = upp.contextNode;
+    // 1. Eat the node (it's marked for deletion)
+    const funcDef = upp.consume();
+
+    // 2. Extract parts from the consumed node
     const funcDeclarator = funcDef.childForFieldName('declarator');
     const funcIdentifier = funcDeclarator.childForFieldName('declarator');
+    const returnType = funcDef.childForFieldName('type');
+    const params = funcDeclarator.childForFieldName('parameters');
+    const body = funcDef.childForFieldName('body');
+
+    // 3. Construct new name
     const originalName = funcIdentifier.text;
     const newName = `_${structName}_method_${originalName}`;
 
-    // 1. Surgical rename of the function definition
-    upp.replace(funcIdentifier, newName);
-
-    // 2. Register a global transformation for this method
+    // 4. Register transformation (same as before)
     upp.registerTransform((root, helpers) => {
         const queryText = `
             (call_expression
@@ -31,13 +36,12 @@
         }
     });
 
-    // 3. If this is a 'Defer' method, automatically add @defer to all variables of this type
+    // 5. Handle Defer (same as before)
     if (originalName === 'Defer') {
         const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`, upp.root);
         for (const m of matches) {
             if (m.captures.type.text === structName) {
                 const declNode = m.captures.decl;
-                // Look for direct identifiers in the multi-declarator node
                 for (let i = 0; i < declNode.childCount; i++) {
                     const child = declNode.child(i);
                     if (child.type === 'identifier') {
@@ -48,6 +52,10 @@
             }
         }
     }
+
+    // 6. Return the reconstructed replacement
+    // We consumed the function, so we must return the new version to take its place.
+    return upp.code`${returnType.text} ${newName}${params.text} ${body.text}`;
 }
 
 @define defer() {
@@ -57,7 +65,6 @@
 
     const absStart = (node.tree && node.tree === upp.root.tree) ? node.startIndex : upp.invocation.startIndex;
 
-    // 1. Safety Check: find break/continue/goto in the scope after this defer
     const safetyMatches = upp.query(`
         (break_statement) @break
         (continue_statement) @continue
@@ -69,7 +76,6 @@
         }
     }
 
-    // 2. Inject into return statements
     const returnMatches = upp.query(`(return_statement) @ret`, scope);
     for (const m of returnMatches) {
         if (m.captures.ret.startIndex > absStart) {
@@ -77,7 +83,6 @@
         }
     }
 
-    // 3. Inject at end of block if not ending in return
     const lastStmt = scope.lastNamedChild;
     if (lastStmt && lastStmt.type !== 'return_statement' && lastStmt.startIndex > absStart) {
         const endBrace = scope.endIndex - 1;

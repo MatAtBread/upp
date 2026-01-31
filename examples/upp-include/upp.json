@@ -2,7 +2,7 @@
   "extends": "../..",
   "lang": {
     "c": {
-      "pre-upp": "cc -E ${INPUT}"
+      "pre-upp": "cc -E -P ${INPUT}"
     }
   }
 }

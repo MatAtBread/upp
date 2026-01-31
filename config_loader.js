@@ -3,6 +3,9 @@ const path = require('path');
 
 /**
  * Deep merges two objects. B overrides A.
+ * @param {Object} a - The base object.
+ * @param {Object} b - The overriding object.
+ * @returns {Object} The merged object.
  */
 function deepMerge(a, b) {
     if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
@@ -23,6 +26,8 @@ function deepMerge(a, b) {
 
 /**
  * Loads a config file and recursively handles "extends".
+ * @param {string} configPath - Path to the JSON config file.
+ * @returns {Object} The loaded and merged configuration object.
  */
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) return {};
@@ -56,6 +61,9 @@ function loadConfig(configPath) {
 
 /**
  * Resolves the configuration for a given source file path.
+ * Searches up the directory tree for upp.json until .git or root is reached.
+ * @param {string} sourcePath - Absolute path to the source file.
+ * @returns {Object} The resolved configuration.
  */
 function resolveConfig(sourcePath) {
     let currentDir = path.dirname(path.resolve(sourcePath));

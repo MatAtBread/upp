@@ -1,4 +1,5 @@
-@define defer(node) {
+@define defer() {
+    const node = upp.consume('compound_statement');
     const scope = upp.findEnclosing(node, 'compound_statement');
     if (!scope) return;
 
@@ -32,11 +33,14 @@ int main() {
     @defer { free(str1); str1 = NULL; }
     char *str2;
 
-    if (some_condition) {
-        // should defer here, str1
-        return 1;
+    {
+        char *nested = malloc(100);
+        @defer { free(nested); nested = NULL; }
+        if (some_condition) {
+            // should defer here, str1
+            return 1;
+        }
     }
-
     str2 = malloc(100);
     @defer { free(str2); str2 = NULL; }
 

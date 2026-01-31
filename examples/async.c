@@ -1,17 +1,9 @@
-@define task(node) {
-    let call = (node.type === 'expression_statement') ? node.child(0) : node;
-    if (call.type !== 'call_expression') {
-        upp.error(node, "@task must be applied to a function call");
-    }
-    const name = call.childForFieldName('function').text;
-    return upp.code`os_start(${name});`;
-}
-
-@define async(node) {
+@define async() {
+    const node = upp.contextNode;
     let def = (node.type === 'expression_statement' || node.type === 'declaration') ? node.child(0) : node;
     // Note: function_definition is usually top-level, but check anyway
     if (node.type !== 'function_definition') {
-        upp.error(node, "@async must be applied to a function definition");
+        upp.error(node, `@async must be applied to a function definition, not ${node.type}`);
     }
     let name = "";
     // Save the range of the definition to avoid self-transforming the declarator
@@ -47,22 +39,11 @@
     return undefined; // Do not modify the target node (the definition)
 }
 
-void hello() {
-    printf("World\n");
-}
-
 @async void afn() {
     printf("World\n");
 }
 
-// Should error
-@async long x;
-
 int main() {
-    @task hello();
     afn();
-
-    // Should error
-    @task hello;
     return 0;
 }

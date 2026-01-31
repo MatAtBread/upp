@@ -1,4 +1,4 @@
-#!/home/matt/.nvm/versions/node/v20.20.0/bin/node
+#!/usr/bin/env node
 
 const { Registry } = require('./registry');
 const { resolveConfig } = require('./config_loader');
@@ -7,79 +7,79 @@ const fs = require('fs');
 const { execSync } = require('child_process');
 
 const args = process.argv.slice(2);
-const filePath = args[0];
 
-if (!filePath) {
+if (!args.length) {
     console.error("Usage: node index.js <file.c>");
     process.exit(1);
 }
 
-const absolutePath = path.resolve(filePath);
-const dirName = path.dirname(absolutePath);
-const baseName = path.basename(absolutePath);
-const ext = path.extname(baseName).slice(1);
-const fileNameWithoutExt = path.parse(baseName).name;
+for (const filePath of args)
+{
+    const absolutePath = path.resolve(filePath);
+    const dirName = path.dirname(absolutePath);
+    const baseName = path.basename(absolutePath);
+    const ext = path.extname(baseName).slice(1);
+    const fileNameWithoutExt = path.parse(baseName).name;
 
-// 1. Resolve Configuration
-const config = resolveConfig(absolutePath);
-const langConfig = (config.lang && config.lang[ext]) || {};
+    // 1. Resolve Configuration
+    const config = resolveConfig(absolutePath);
+    const langConfig = (config.lang && config.lang[ext]) || {};
 
-function runCommand(cmd, vars) {
-    let finalCmd = cmd;
-    for (const [key, value] of Object.entries(vars)) {
-        finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+    /**
+     * Executes a shell command with variable interpolation.
+     * @param {string} cmd - The command string with ${VAR} placeholders.
+     * @param {Object<string, string>} vars - Map of variable names to values.
+     * @returns {string} The standard output of the command.
+     */
+    function runCommand(cmd, vars) {
+        let finalCmd = cmd;
+        for (const [key, value] of Object.entries(vars)) {
+            finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+        }
+        try {
+            return execSync(finalCmd, { cwd: dirName, encoding: 'utf8' });
+        } catch (err) {
+            console.error(`Command failed: ${finalCmd}`);
+            console.error(err.message);
+            process.exit(1);
+        }
     }
-    console.log(`Executing: ${finalCmd}`);
-    try {
-        return execSync(finalCmd, { cwd: dirName, encoding: 'utf8' });
-    } catch (err) {
-        console.error(`Command failed: ${finalCmd}`);
-        console.error(err.message);
-        process.exit(1);
-    }
-}
 
-const vars = {
-    'INPUT': absolutePath,
-    'BASENAME': fileNameWithoutExt,
-    'FILENAME': baseName
-};
-
-// 2. Resolve Initial Source
-let initialSource;
-if (langConfig['pre-upp']) {
-    initialSource = runCommand(langConfig['pre-upp'], vars);
-} else {
-    initialSource = fs.readFileSync(absolutePath, 'utf8');
-}
-
-// 3. Initialize Registry & Macros
-const registry = new Registry();
-console.log(`Parsing ${filePath}...`);
-registry.registerSource(initialSource, absolutePath);
-
-// 4. Transformation Stage
-console.log("\nRegistered Macros:");
-for (const [name, macro] of registry.macros) {
-    console.log(`- ${name}: (${macro.params.join(', ')})`);
-}
-
-console.log("\nDetecting and Evaluating Macros...");
-const processedSource = registry.process();
-
-// 5. Post-upp Stage
-if (langConfig['post-upp']) {
-    const outputPath = path.join(dirName, `upp.${baseName}`);
-    fs.writeFileSync(outputPath, processedSource);
-
-    const postVars = {
-        ...vars,
-        'OUTPUT': outputPath,
-        'OUTPUT_BASENAME': fileNameWithoutExt
+    const vars = {
+        'INPUT': absolutePath,
+        'BASENAME': fileNameWithoutExt,
+        'FILENAME': baseName
     };
 
-    runCommand(langConfig['post-upp'], postVars);
-} else {
-    console.log('\n--- Processed Source Code ---');
-    console.log(processedSource);
+    // 2. Resolve Initial Source
+    let initialSource;
+    if (langConfig['pre-upp']) {
+        initialSource = runCommand(langConfig['pre-upp'], vars);
+    } else {
+        initialSource = fs.readFileSync(absolutePath, 'utf8');
+    }
+
+    // 3. Initialize Registry & Macros
+    const registry = new Registry(config);
+    registry.registerSource(initialSource, absolutePath);
+
+    // 4. Transformation Stage
+    const processedSource = registry.process();
+
+    // 5. Post-upp Stage
+    if (langConfig['post-upp']) {
+        const outputPath = path.join(dirName, `upp.${baseName}`);
+        fs.writeFileSync(outputPath, processedSource);
+
+        const postVars = {
+            ...vars,
+            'OUTPUT': outputPath,
+            'OUTPUT_BASENAME': fileNameWithoutExt
+        };
+
+        runCommand(langConfig['post-upp'], postVars);
+    } else {
+        console.log(`\n/* ${path.relative(process.cwd(), absolutePath)} */\n`);
+        console.log(processedSource);
+    }
 }
