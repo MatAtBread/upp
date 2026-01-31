@@ -14,6 +14,17 @@
         }
     } catch (e) {}
 
+
+    let isExternDecl = false;
+    // node is typically the consumed node. If it's a type (void), we might be in a declaration.
+    if (node.type === 'primitive_type' || node.type === 'type_identifier' || node.type === 'struct_specifier' || node.type === 'enum_specifier') {
+        const parent = upp.parent(node);
+        if (parent && parent.type === 'declaration') {
+             isExternDecl = true;
+             funcDef = parent;
+        }
+    }
+
     const funcDeclarator = upp.childForFieldName(funcDef, 'declarator');
 
     // Handle potential pointer declarators
@@ -29,7 +40,7 @@
 
     // Check for infinite loop / recursion
     if (originalName.startsWith('_') && originalName.includes('_method_')) {
-        return; // Break recursion
+         return isExternDecl ? node.text : node.text;
     }
 
     // 1. Sanitize targetType to handle "struct Point" vs "Point"
@@ -41,11 +52,27 @@
     // 2. Generate new name: _Point_method_distance
     const newName = `_${cleanTarget}_method_${originalName}`;
 
-    // 3. Rename function definition via manual string splice
-    let functionText = node.text;
-    const idStart = (funcIdentifier.tree === node.tree) ? (funcIdentifier.startIndex - node.startIndex) : funcIdentifier.startIndex;
-    const idEnd = (funcIdentifier.tree === node.tree) ? (funcIdentifier.endIndex - node.startIndex) : funcIdentifier.endIndex;
-    functionText = functionText.slice(0, idStart) + newName + functionText.slice(idEnd);
+    let outputText = "";
+
+    // 3. Rename
+    if (isExternDecl) {
+        // Transform the DECLARATOR only (disjoint from macro).
+        // Return the consumed type node text (to restore the hole we made).
+        let declaratorText = funcDeclarator.text;
+        const startOffset = funcIdentifier.startIndex - funcDeclarator.startIndex;
+        const endOffset = funcIdentifier.endIndex - funcDeclarator.startIndex;
+        const newDeclaratorText = declaratorText.slice(0, startOffset) + newName + declaratorText.slice(endOffset);
+
+        upp.replace(funcDeclarator, newDeclaratorText);
+        outputText = node.text;
+    } else {
+        // Standard Definition Renaming
+        let functionText = node.text;
+        const idStart = (funcIdentifier.tree === node.tree) ? (funcIdentifier.startIndex - node.startIndex) : funcIdentifier.startIndex;
+        const idEnd = (funcIdentifier.tree === node.tree) ? (funcIdentifier.endIndex - node.startIndex) : funcIdentifier.endIndex;
+        functionText = functionText.slice(0, idStart) + newName + functionText.slice(idEnd);
+        outputText = functionText;
+    }
 
     // 4. Register global transformer for method calls
     upp.registerTransform((root, helpers) => {
@@ -146,42 +173,45 @@
     });
 
     // 6. Special Handling for Defer
-    if (originalName === 'Defer') {
-        const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`);
-        for (const m of matches) {
-            if (m.captures.type.text === cleanTarget) {
-                const declNode = m.captures.decl;
-                // Find variable name in declaration
-                // Handle: Type var; and Type var = val;
-                let varName = null;
+    if (!isExternDecl) {
+        if (originalName === 'Defer') {
+            const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`);
+            for (const m of matches) {
+                if (m.captures.type.text === cleanTarget) {
+                    const declNode = m.captures.decl;
+                    // Find variable name in declaration
+                    // Handle: Type var; and Type var = val;
+                    let varName = null;
 
-                // Simple case: Type var;
-                for (let i = 0; i < declNode.childCount; i++) {
-                     const child = declNode.child(i);
-                     if (child.type === 'identifier') {
-                         varName = child.text;
-                         break;
-                     }
-                }
-
-                // Complex case: Type var = val; (init_declarator)
-                if (!varName) {
-                    const init = upp.childForFieldName(declNode, 'declarator'); // field: declarator?
-                    // Actually declaration children are not always fields.
-                    const initDecl = upp.query(`(init_declarator declarator: (identifier) @id)`, declNode);
-                    if (initDecl.length > 0) {
-                        varName = initDecl[0].captures.id.text;
+                    // Simple case: Type var;
+                    for (let i = 0; i < declNode.childCount; i++) {
+                         const child = declNode.child(i);
+                         if (child.type === 'identifier') {
+                             varName = child.text;
+                             break;
+                         }
                     }
-                }
 
-                if (varName) {
-                    upp.replace({ start: declNode.endIndex, end: declNode.endIndex }, upp.code` @defer ${varName}.Defer();`);
+                    // Complex case: Type var = val; (init_declarator)
+                    if (!varName) {
+                        const init = upp.childForFieldName(declNode, 'declarator'); // field: declarator?
+                        // Actually declaration children are not always fields.
+                        const initDecl = upp.query(`(init_declarator declarator: (identifier) @id)`, declNode);
+                        if (initDecl.length > 0) {
+                            varName = initDecl[0].captures.id.text;
+                        }
+                    }
+
+                    if (varName) {
+                        upp.replace({ start: declNode.endIndex, end: declNode.endIndex }, upp.code` @defer ${varName}.Defer();`);
+                    }
                 }
             }
         }
-    }
+    } // End of !isExternDecl
 
-    return functionText;
+    return outputText;
+
 }
 
 #endif

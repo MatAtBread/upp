@@ -3,7 +3,7 @@
 */
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
-extern void *malloc(int n);
+extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 #define NULL ((void*)0)

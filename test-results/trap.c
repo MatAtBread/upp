@@ -5,7 +5,7 @@ int  x_trap_0(int  value) { return value * 2; }
 int  z_trap_1(int  value) { return value + 1; }
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
-extern void *malloc(int n);
+extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 int my_logger(int v) {
