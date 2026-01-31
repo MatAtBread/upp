@@ -185,11 +185,6 @@ class UppHelpersBase {
             console.error("UppHelpersBase.query: targetNode is null/undefined");
             return [];
         }
-        if (!targetNode.tree) {
-             // Try to handle Tree object passed as SyntaxNode? No, caught above.
-             // If SyntaxNode is detached?
-             console.error(`UppHelpersBase.query: targetNode.tree is undefined. Type: ${targetNode.type}, Constructor: ${targetNode.constructor.name}`);
-        }
         const matches = query.matches(targetNode);
 
         return matches.map(m => {
@@ -300,9 +295,81 @@ class UppHelpersBase {
         let current = node;
         while (current) {
             if (current === parent || current.id === parent.id) return true;
-            current = current.parent;
+            current = this.parent(current);
         }
         return false;
+    }
+
+    /**
+     * Gets the parent node.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The parent node.
+     */
+    parent(node) {
+        try { return node ? node.parent : null; } catch (e) { return null; }
+    }
+
+    /**
+     * Gets the next named sibling.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The sibling node.
+     */
+    nextNamedSibling(node) {
+        try { return node ? node.nextNamedSibling : null; } catch (e) { return null; }
+    }
+
+    /**
+     * Gets a child node by index.
+     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
+     * @param {number} index - The child index.
+     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
+     */
+    child(node, index) {
+        try { return node ? node.child(index) : null; } catch (e) { return null; }
+    }
+
+    /**
+     * Gets the number of children.
+     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
+     * @returns {number} The child count.
+     */
+    childCount(node) {
+        try { return node ? node.childCount : 0; } catch (e) { return 0; }
+    }
+
+    /**
+     * Gets a child node by field name.
+     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
+     * @param {string} name - The field name.
+     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
+     */
+    childForFieldName(node, name) {
+        try { return (node && node.childForFieldName) ? node.childForFieldName(name) : null; } catch (e) { return null; }
+    }
+
+    /**
+     * Gets the last named child.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The last named child.
+     */
+    lastNamedChild(node) {
+        try { return node ? node.lastNamedChild : null; } catch (e) { return null; }
+    }
+
+    /**
+     * Parses a code fragment into a fresh AST.
+     * @param {string} text - The source code fragment.
+     * @returns {import('tree-sitter').SyntaxNode} The root node of the fresh tree.
+     */
+    parseFragment(text) {
+        try {
+             // Use registry._parse which returns a Tree
+             const tree = this.registry._parse(text);
+             return tree.rootNode;
+        } catch (e) {
+             console.error(`Fragment parse failed: ${e.message}`);
+             return null;
+        }
     }
 
     /**

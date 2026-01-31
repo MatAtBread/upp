@@ -1,3 +1,5 @@
+int expanded_inner;
+
 @define inner() {
     return "expanded_inner";
 }

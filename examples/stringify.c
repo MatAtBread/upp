@@ -1,9 +1,9 @@
-@define stringify(str) {
-    return `"${str}"`;
+@define stringify(...parts) {
+    return `"${parts.join(' ')}"`;
 }
 
 int main() {
-    const char *s = @stringify(hello);
+    const char *s = @stringify(Hello, World, from, UPP);
     return 0;
 }
 

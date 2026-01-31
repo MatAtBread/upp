@@ -1,19 +1,21 @@
-@define method(structName) {
-    // 1. Eat the node (it's marked for deletion)
-    const funcDef = upp.consume();
-
-    // 2. Extract parts from the consumed node
+@define method(targetType) {
+    const node = upp.consume();
+    const funcDef = node;
     const funcDeclarator = funcDef.childForFieldName('declarator');
     const funcIdentifier = funcDeclarator.childForFieldName('declarator');
     const returnType = funcDef.childForFieldName('type');
     const params = funcDeclarator.childForFieldName('parameters');
     const body = funcDef.childForFieldName('body');
 
-    // 3. Construct new name
     const originalName = funcIdentifier.text;
-    const newName = `_${structName}_method_${originalName}`;
 
-    // 4. Register transformation (same as before)
+    // Sanitize targetType to handle "struct Point" vs "Point"
+    let cleanTarget = targetType.trim();
+    if (cleanTarget.startsWith('struct ')) {
+        cleanTarget = cleanTarget.slice(7).trim();
+    }
+    const newName = `_${cleanTarget}_method_${originalName}`;
+
     upp.registerTransform((root, helpers) => {
         const queryText = `
             (call_expression
@@ -36,11 +38,10 @@
         }
     });
 
-    // 5. Handle Defer (same as before)
     if (originalName === 'Defer') {
         const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`, upp.root);
         for (const m of matches) {
-            if (m.captures.type.text === structName) {
+            if (m.captures.type.text === cleanTarget) {
                 const declNode = m.captures.decl;
                 for (let i = 0; i < declNode.childCount; i++) {
                     const child = declNode.child(i);
@@ -53,8 +54,6 @@
         }
     }
 
-    // 6. Return the reconstructed replacement
-    // We consumed the function, so we must return the new version to take its place.
     return upp.code`${returnType.text} ${newName}${params.text} ${body.text}`;
 }
 
@@ -92,6 +91,7 @@
     return "";
 }
 
+typedef struct String String;
 struct String {
     char *data;
 };
@@ -106,6 +106,7 @@ int main() {
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
 
+    int some_condition = 0;
     if (some_condition) {
         return 1;
     }

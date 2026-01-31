@@ -5,10 +5,14 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node test_runner.js"
+    "test": "node test_runner.js",
+    "clean": "rm -rf test-results/*"
   },
   "author": "matatbread@mailed.me.uk",
   "license": "MIT",
+  "bin": {
+    "upp": "index.js"
+  },
   "dependencies": {
     "tree-sitter": "^0.21.0",
     "tree-sitter-c": "^0.21.0"

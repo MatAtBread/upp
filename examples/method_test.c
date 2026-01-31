@@ -1,6 +1,6 @@
 #include "../std/method.h"
 
-#include <stdio.h>
+#include "io-lite.h"
 
 struct Base {
     int x;

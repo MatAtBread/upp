@@ -79,7 +79,7 @@ for (const filePath of args)
 
         runCommand(langConfig['post-upp'], postVars);
     } else {
-        console.log(`\n/* ${path.relative(process.cwd(), absolutePath)} */\n`);
+        console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
         console.log(processedSource);
     }
 }

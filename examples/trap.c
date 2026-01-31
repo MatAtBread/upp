@@ -1,6 +1,6 @@
 #include "../std/trap.h"
 
-#include <stdio.h>
+#include "io-lite.h"
 
 int my_logger(int v) {
     printf("Logging value: %d\n", v);

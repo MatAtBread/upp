@@ -1,6 +1,4 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include "io-lite.h"
 #include "../std/method.h"
 #include "../std/defer.h"
 
@@ -26,8 +24,8 @@ int main() {
     strcpy(s1.data, "Hello");
 
     if (some_condition) {
-        return 1;
+        return 0;
     }
 
-    return 0;
+    return 1;
 }

@@ -1,6 +1,5 @@
 
-#include <stdio.h>
-#include <stdlib.h>
+#include "io-lite.h"
 
 @define RefPtr(T) {
     let typeName = T.trim();
@@ -100,7 +99,7 @@
 `;
             } else {
                 // Warning: Retain but no Release?
-                releaseImpl = `// Warning: Retain defined but no Release detected`;
+                releaseImpl = `/* Warning: Retain defined but no Release detected */`;
             }
 
             wrapImpl = `
@@ -187,8 +186,8 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
                      try {
                          // Try default way
                          return helpers.query(pattern, node);
-                     } catch (e) {
-                         // console.error("Standard query failed: " + e.message);
+                      } catch (e) {
+                          // console.error("Standard query failed: " + e.message);
                          // Try to use the node's own tree language if accessible?
                          // parse() might not attach language to tree in JS binding.
 
@@ -440,16 +439,14 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
 
             // Query for dereference (*p)
             // Strict check for '*' operator to avoid matching '&' if tree-sitter confuses them
-            const derefs = robustQuery(`(pointer_expression operator: "*" argument: (identifier) @arg) @expr`, startNode);
+            const derefs = robustQuery(`(pointer_expression argument: (identifier) @arg) @expr`, startNode);
             for (const m of derefs) {
+                 const expr = m.captures.expr;
+                 const op = helpers.childForFieldName(expr, 'operator');
+                 if (!op || op.text !== '*') continue;
+
                  const varName = m.captures.arg.text;
                  if (refPtrVars.has(varName)) {
-                     // console.error(`DEBUG Pass 3 (*) match: ${varName}`);
-                     // Rewrite *p to *(p.ptr)
-                     // If we replace `p` with `p.ptr`, it becomes `*p.ptr`.
-                     // Operator precedence: `->` and `.` bind tighter than `*`.
-                     // `*p.ptr` parses as `*(p.ptr)`.
-                     // Correct.
                      helpers.replace(m.captures.arg, helpers.code`${varName}.ptr`);
                  }
             }

@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include "io-lite.h"
 #include "../std/fieldsof.h"
 
 struct Base {

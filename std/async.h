@@ -39,7 +39,8 @@
         });
     }
 
-    return undefined; // Do not modify the target node (the definition)
+
+    return "";
 }
 
 #endif

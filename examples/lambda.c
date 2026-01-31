@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include "io-lite.h"
 #include "../std/lambda.h"
 
 int main() {
@@ -15,7 +15,7 @@ int main() {
     direction = 0;
     hello(3 );
 
-    const (void (*z)(int)) = hello;
+    typeof(hello) z = hello;
     z(4);
 
     return 0;

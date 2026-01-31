@@ -8,11 +8,11 @@
     let ctx = upp.contextNode;
     // Walk up to find field_declaration_list
     while (ctx && ctx.type !== 'field_declaration_list' && ctx.type !== 'translation_unit') {
-        ctx = ctx.parent;
+        ctx = upp.parent(ctx);
     }
 
     if (!ctx || ctx.type !== 'field_declaration_list') {
-        upp.error(upp.helpers.invocation.invocationNode, "@fieldsof must be used inside a struct definition");
+        upp.error(upp.invocation.invocationNode, "@fieldsof must be used inside a struct definition");
     }
 
     // 1b. Consume Trailing Semicolon
@@ -45,46 +45,47 @@
     upp.walk(root, (node) => {
         if (structDef) return;
 
+        const isTypedef = node.type === 'type_definition' || (node.type === 'declaration' && node.text.includes('typedef'));
+
         // Option A: struct Tag { ... }
         if (node.type === 'struct_specifier') {
-             const nameNode = node.childForFieldName('name');
-             // If we are looking for "struct Base", we match name "Base"
-             // If we are looking for typedef "GeoCoord", this likely won't match unless it is "struct GeoCoord"
+             const nameNode = upp.childForFieldName(node, 'name');
              if (isStructTag && nameNode && nameNode.text === targetName) {
-                 structDef = node;
+                 if (upp.childForFieldName(node, 'body')) structDef = node;
              }
-             // Handle case where typedef matches struct tag? "typedef struct A A;"
              else if (!isStructTag && nameNode && nameNode.text === targetName) {
-                 structDef = node;
+                 if (upp.childForFieldName(node, 'body')) structDef = node;
              }
         }
 
-        // Option B: typedef struct { ... } Name;
-        if (!isStructTag && node.type === 'type_definition') {
-             const declarator = node.childForFieldName('declarator');
-             // type_definition -> type(struct_specifier), declarator(type_identifier)
-             if (declarator && declarator.text === targetName) {
-                 const typeNode = node.childForFieldName('type');
-                 if (typeNode && typeNode.type === 'struct_specifier') {
-                     structDef = typeNode;
+        // Option B/C: typedef struct { ... } Name;
+        if (!isStructTag && isTypedef) {
+             const typeNode = upp.childForFieldName(node, 'type');
+             if (typeNode && typeNode.type === 'struct_specifier') {
+                 const idMatches = upp.query('(type_identifier) @id', node);
+                 for (const match of idMatches) {
+                     if (match.captures.id.text === targetName) {
+                         structDef = typeNode;
+                         break;
+                     }
                  }
              }
         }
     });
 
     if (!structDef) {
-        upp.error(upp.helpers.invocation.invocationNode, `Could not find definition for struct/type ${targetName}`);
+        upp.error(upp.invocation.invocationNode, `Could not find definition for struct/type ${targetName}`);
         return;
     }
 
-    const fieldList = structDef.childForFieldName('body');
+    const fieldList = upp.childForFieldName(structDef, 'body');
     if (!fieldList) {
         return "";
     }
 
     let fields = "";
-    for (let i = 0; i < fieldList.childCount; i++) {
-        const child = fieldList.child(i);
+    for (let i = 0; i < upp.childCount(fieldList); i++) {
+        const child = upp.child(fieldList, i);
         if (child.type === 'field_declaration') {
             fields += child.text + "\n    ";
         }

@@ -1,222 +1,28 @@
 import { UppHelpersBase } from './upp_helpers_base.js';
 
 /**
- * C-specific helper class extending basic macro functionality.
+ * C-specific helper class.
  * @class
  * @extends UppHelpersBase
  */
 class UppHelpersC extends UppHelpersBase {
-    /**
-     * Resolves the definition of a given identifier node.
-     * @param {import('tree-sitter').SyntaxNode} node - The identifier node (identifier, type_identifier, or field_identifier).
-     * @returns {import('tree-sitter').SyntaxNode|null} The definition node (e.g., declaration, function_definition) or null.
+     /**
+     * @param {import('./registry.js').Registry} registry - The registry instance.
      */
-    getDefinition(node) {
-        if (!node) return null;
-        const name = node.text;
-        const validTypes = ['identifier', 'type_identifier', 'field_identifier'];
-        if (!validTypes.includes(node.type)) return null;
-
-        let current = node.parent;
-        while (current) {
-            if (this._isScopeProvider(current)) {
-                const def = this._findDeclarationInScope(current, name, node.type);
-                if (def) {
-                    return def;
-                }
-            }
-            current = current.parent;
-        }
-        return null;
+    constructor(registry) {
+        super(registry);
     }
 
     /**
-     * Finds all references to a given symbol node.
-     * @param {import('tree-sitter').SyntaxNode} node - The symbol node to search references for.
-     * @returns {Array<import('tree-sitter').SyntaxNode>} An array of referencing nodes.
+     * Hoists content to the top of the file, skipping comments.
+     * @param {string} content - The content to hoist.
+     * @param {number} [hoistIndex=0] - The index to hoist to.
      */
-    findReferences(node) {
-        if (!node) return [];
-
-        let targetId = node;
-        const validTypes = ['identifier', 'type_identifier', 'field_identifier'];
-        if (!validTypes.includes(node.type)) {
-            // Find the first valid identifier type in the declaration
-            this.walk(node, (n) => {
-                if (targetId === node && validTypes.includes(n.type) && this._isDeclaration(n)) {
-                    targetId = n;
-                }
-            });
-        }
-
-        const def = (targetId === node || this._isDeclaration(targetId)) ? targetId : this.getDefinition(targetId);
-        if (!def) return [];
-
-        const scope = this._getDefinitionScope(def);
-        if (!scope) return [];
-
-        const name = def.text;
-        const refs = [];
-        this.walk(scope, (n) => {
-            if (validTypes.includes(n.type) && n.text === name) {
-                if (n.startIndex === def.startIndex && n.endIndex === def.endIndex) {
-                    refs.push(n);
-                } else {
-                    const nDef = this.getDefinition(n);
-                    if (nDef) {
-                        if (nDef.startIndex === def.startIndex && nDef.endIndex === def.endIndex) {
-                            refs.push(n);
-                        }
-                    }
-                }
-            }
-        });
-
-        // console.log(`DEBUG: findReferences found ${refs.length} refs`);
-        return refs;
-    }
-
-    /**
-     * Checks if a node provides a scope boundary.
-     * @private
-     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
-     * @returns {boolean} True if the node is a scope provider.
-     */
-    _isScopeProvider(node) {
-        return ['compound_statement', 'function_definition', 'translation_unit', 'parameter_list'].includes(node.type);
-    }
-
-    /**
-     * Determines the scope where a definition is visible.
-     * @private
-     * @param {import('tree-sitter').SyntaxNode} defNode - The definition definition node.
-     * @returns {import('tree-sitter').SyntaxNode} The scope node.
-     */
-    _getDefinitionScope(defNode) {
-        // If it's a parameter, the scope is the function body
-        if (defNode.parent && defNode.parent.type === 'parameter_declaration') {
-            const func = this.findEnclosing(defNode, 'function_definition');
-            return func ? func.childForFieldName('body') : this.root;
-        }
-
-        let current = defNode.parent;
-        while (current) {
-            if (this._isScopeProvider(current)) {
-                // Special case: if we found a function_definition, but the identifier
-                // is the function name itself, then the scope of this identifier is
-                // actually the parent of the function_definition.
-                if (current.type === 'function_definition') {
-                    const declarator = current.childForFieldName('declarator');
-                    if (this.isDescendant(declarator, defNode)) {
-                        current = current.parent;
-                        continue;
-                    }
-                }
-                return current;
-            }
-            current = current.parent;
-        }
-        return this.root;
-    }
-
-
-    /**
-     * Checks if a node represents a declaration.
-     * @private
-     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
-     * @returns {boolean} True if the node is a declaration.
-     */
-    _isDeclaration(node) {
-        if (!node) return false;
-        const type = node.type;
-        const validTypes = ['identifier', 'type_identifier', 'field_identifier'];
-        if (!validTypes.includes(type)) return false;
-
-        let p = node.parent;
-        while (p && !this._isScopeProvider(p)) {
-            if (type === 'identifier') {
-                if (p.type === 'function_declarator') {
-                    const decl = p.childForFieldName('declarator');
-                    if (decl && decl.startIndex === node.startIndex && decl.endIndex === node.endIndex) return true;
-                }
-                if (p.type === 'init_declarator' && p.childForFieldName('declarator') === node) return true;
-                if (p.type === 'parameter_declaration' && p.childForFieldName('declarator') === node) return true;
-                if (p.type === 'pointer_declarator' && p.childForFieldName('declarator') === node) {
-                    return true;
-                }
-            }
-            if (type === 'type_identifier') {
-                if (p.type === 'type_definition' && p.childForFieldName('declarator') === node) return true;
-                if (p.type === 'struct_specifier' && p.childForFieldName('name') === node && p.childForFieldName('body')) return true;
-            }
-            if (type === 'field_identifier') {
-                if (p.type === 'field_declaration' && p.childForFieldName('declarator') === node) return true;
-            }
-            p = p.parent;
-        }
-        return false;
-    }
-
-    /**
-     * Searches for a declaration in a specific scope.
-     * @private
-     * @param {import('tree-sitter').SyntaxNode} scope - The scope node.
-     * @param {string} name - The name to search for.
-     * @param {string} typeGuess - The expected identifier type.
-     * @returns {import('tree-sitter').SyntaxNode|null} The declaration node or null.
-     */
-    _findDeclarationInScope(scope, name, typeGuess) {
-        let found = null;
-        this.walk(scope, (n) => {
-            if (found) return;
-            const validTypes = ['identifier', 'type_identifier', 'field_identifier'];
-            if (validTypes.includes(n.type) && n.text === name && this._isDeclaration(n)) {
-                // If it's in a sub-scope, ignore it unless it's the target scope itself
-                let s = n.parent;
-                while (s && s !== scope) {
-                    if (this._isScopeProvider(s)) {
-                        // Special case: if n is a function name, the function_definition
-                        // that contains it is its scope provider, but n actually
-                        // belongs to the parent of that function_definition.
-                        if (s.type === 'function_definition') {
-                            const decl = s.childForFieldName('declarator');
-                            if (this.isDescendant(decl, n)) {
-                                s = s.parent;
-                                continue;
-                            }
-                        }
-                        return; // Shadows or in a sub-scope
-                    }
-                    s = s.parent;
-                }
-
-                // Namespace check: pointers/ordinary vs tags
-                // In our macro system, field_identifiers and identifiers share the same namespace
-                // for method-style calls to resolve to global functions.
-                if (typeGuess === 'type_identifier') {
-                    if (n.type === 'type_identifier') found = n;
-                } else {
-                    if (n.type === 'identifier' || n.type === 'field_identifier') found = n;
-                }
-            }
-        });
-        return found;
-    }
-    /**
-     * Hoists code to the top of the file, respecting include directives.
-     * @param {string} content - The code to hoist.
-     */
-    hoist(content) {
-        let hoistIndex = 0;
-        const root = this.root;
-
+    hoist(content, hoistIndex = 0) {
+        const root = this.registry.mainTree.rootNode;
         for (let i = 0; i < root.childCount; i++) {
             const child = root.child(i);
-            if (child.type === 'comment' || child.type.startsWith('preproc_')) {
-                 if (child.endIndex > hoistIndex) {
-                     hoistIndex = child.endIndex;
-                 }
-            } else if (child.type.trim() === '' || child.type === 'ERROR') {
+            if (child.type === 'comment') {
                  // skip
             } else {
                  if (child.startIndex > hoistIndex) break;
@@ -233,37 +39,44 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {string} The C type string (e.g. "char *").
      */
     getType(defNode) {
-        let decl = defNode.parent;
+        if (!defNode) return "void *";
+
+        // Walk up to find declaration
+        let declNode = defNode;
+        while (declNode &&
+               declNode.type !== 'declaration' &&
+               declNode.type !== 'parameter_declaration' &&
+               declNode.type !== 'field_declaration' &&
+               declNode.type !== 'type_definition') {
+            declNode = this.parent(declNode);
+        }
+
+        if (!declNode) {
+            // Heuristic: Check previous sibling?
+            const prev = this.registry.helpers.nextNamedSibling ? null : null; // Access generic?
+            // upp_helpers_base has previousNamedSibling? No.
+            // But we can check if defNode has a type sibling?
+            // Usually in C: 'Type name;' -> 'name' is declarator. 'Type' is specifier.
+            // In tree-sitter C, structure varies.
+            return "void *"; // fallback
+        }
+
         let suffix = "";
-
-        while (decl) {
-             if (decl.type === 'pointer_declarator') {
-                 suffix = "*" + suffix;
-             }
-             if (decl.type === 'array_declarator') {
-                 suffix = "[]" + suffix;
-             }
-
-             if (decl.type === 'declaration' || decl.type === 'parameter_declaration' || decl.type === 'field_declaration') {
-                 break;
-             }
-             decl = decl.parent;
+        // Check for pointer declarators in children
+        // Safe linear scan of children or query scoped to declNode
+        const ptrs = this.query('(pointer_declarator) @ptr', declNode);
+        for (const p of ptrs) {
+            // Validate it wraps our identifier?
+            // Simplified heuristic: count pointers in the declaration
+            if (this.isDescendant(declNode, p.captures.ptr)) {
+                 suffix += "*";
+            }
         }
 
-        if (!decl) return "void *"; // fallback
+        const typeNode = this.childForFieldName(declNode, 'type'); // type is usually a direct field, let's hope it's safe
+        const baseType = typeNode ? typeNode.text : "void";
 
-        let prefix = "";
-        for (let i = 0; i < decl.childCount; i++) {
-             const c = decl.child(i);
-             if (c.type === 'type_qualifier' || c.type === 'storage_class_specifier') {
-                  prefix += c.text + " ";
-             }
-        }
-
-        const typeNode = decl.childForFieldName('type');
-        let typeText = typeNode ? typeNode.text : "void";
-
-        return (prefix + typeText + " " + suffix).trim();
+        return baseType + " " + suffix;
     }
 
     /**
@@ -272,30 +85,44 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {{returnType: string, name: string, params: string}} Signature details.
      */
     getFunctionSignature(fnNode) {
-        const declarator = fnNode.childForFieldName('declarator');
-        // Handle pointer declarators if needed (e.g. char *fn())
-        // Simplification: assume direct function_declarator or pointer_declarator -> function_declarator
-
+        const declarator = this.childForFieldName(fnNode, 'declarator');
         let funcDecl = declarator;
-        while (funcDecl.type === 'pointer_declarator') { // unwind pointers? No, name is inside.
-            funcDecl = funcDecl.childForFieldName('declarator');
+        while (funcDecl && funcDecl.type === 'pointer_declarator') {
+            funcDecl = this.childForFieldName(funcDecl, 'declarator');
         }
 
-        const nameNode = funcDecl.childForFieldName('declarator'); // identifier
+        const nameNode = funcDecl ? this.childForFieldName(funcDecl, 'declarator') : null;
         const name = nameNode ? nameNode.text : "unknown";
 
-        const paramList = funcDecl.childForFieldName('parameters');
+        const paramList = funcDecl ? this.childForFieldName(funcDecl, 'parameters') : null;
         let params = "";
         if (paramList) {
-             params = paramList.text; // "(int a, char b)"
+             params = paramList.text;
         }
 
-        const typeNode = fnNode.childForFieldName('type');
+        const typeNode = this.childForFieldName(fnNode, 'type');
         const returnType = typeNode ? typeNode.text : "void";
 
         return { returnType, name, params };
     }
 
+    /**
+     * Finds the definition for a node.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The definition.
+     */
+    getDefinition(node) {
+        return this.registry.getDefinition(node);
+    }
+
+    /**
+     * Finds references to a definition.
+     * @param {import('tree-sitter').SyntaxNode} node - The definition node.
+     * @returns {Array<import('tree-sitter').SyntaxNode>} The references.
+     */
+    findReferences(node) {
+        return this.registry.findReferences(node);
+    }
 }
 
 export { UppHelpersC };

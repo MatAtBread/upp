@@ -2,7 +2,7 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
-    const node = upp.consume('compound_statement');
+    const node = upp.consume();
     const scope = upp.findEnclosing(node, 'compound_statement');
     if (!scope) return;
 

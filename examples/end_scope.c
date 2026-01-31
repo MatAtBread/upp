@@ -1,5 +1,8 @@
+#include "io-lite.h"
+
 #include "../std/defer.h"
 
+int some_condition;
 int main() {
     char *str1 = malloc(100);
     @defer { free(str1); str1 = NULL; }

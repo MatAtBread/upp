@@ -1,0 +1,3 @@
+[1m/mnt/c/Users/matthew/git/upp/examples/nested_macros.c:8:5: error: @outer expected 1 arguments, but found 0[0m
+    @outer;
+    [1;31m^[0m

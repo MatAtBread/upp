@@ -27,9 +27,16 @@ class Registry {
         /** @type {Array<function>} */
         this.transforms = [];
         /** @type {Object} */
-        this.language = C; // For now default to C
+        this.language = C;
+        // Handle ESM/CJS interop for language modules
+        if (this.language && this.language.default) {
+            this.language = this.language.default;
+        }
+
         /** @type {UppHelpersC} */
         this.helpers = new UppHelpersC(this);
+        /** @type {Array<import('tree-sitter').Tree>} */
+        this.allTrees = [];
         /** @type {number} */
         this.idCounter = 0;
     }
@@ -41,6 +48,11 @@ class Registry {
      * @returns {import('tree-sitter').Tree} Tree-sitter tree.
      */
     _parse(source) {
+        if (typeof source !== 'string') {
+            const p2 = new Parser();
+            p2.setLanguage(this.language);
+            return p2.parse("");
+        }
         const p = new Parser();
         p.setLanguage(this.language);
         return p.parse(source);
@@ -201,11 +213,21 @@ class Registry {
      * @returns {string} The transformed source code.
      */
     process() {
+        this.allTrees = [];
         let iterations = 0;
         const maxIterations = 100;
 
+        if (typeof this.sourceCode !== 'string') {
+             console.error("CRITICAL: process() called without valid sourceCode. Type:", typeof this.sourceCode);
+             this.sourceCode = "";
+        }
+
         while (iterations < maxIterations) {
             const cleanSource = this.maskDefinitions(this.sourceCode);
+            if (typeof cleanSource !== 'string') {
+                 console.error("CRITICAL: maskDefinitions returned non-string. Type:", typeof cleanSource);
+                 break;
+            }
             this.mainTree = this._parse(cleanSource);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
@@ -319,6 +341,7 @@ class Registry {
         }
 
         const cleanTree = this._parse(cleanSource);
+        this.allTrees.push(cleanTree);
 
         if (isGlobalPass) this.mainTree = cleanTree; // Anchor as global for this iteration
         helpers.root = cleanTree.rootNode;
@@ -328,19 +351,29 @@ class Registry {
             const macro = this.macros.get(invocation.name);
             if (!macro) continue;
 
-            const hasNodeParam = macro.params[0] === 'node';
-            const expectedArgs = hasNodeParam ? macro.params.length - 1 : macro.params.length;
+            const lastParam = macro.params[macro.params.length - 1];
+            const hasRestParam = lastParam && lastParam.startsWith('...');
+            const expectedArgs = macro.params.length;
 
-            const params = [...macro.params]; // Respect the user's signature 1:1
-            const macroFn = new Function(...params, 'upp', 'console', macro.body);
+            const macroFn = new Function('upp', 'console', ...macro.params, macro.body);
 
             try {
-                if (invocation.args.length !== expectedArgs) {
+                const actualCount = invocation.args.length;
+                if (hasRestParam) {
+                    if (actualCount < expectedArgs - 1) {
+                        const macroName = `@${invocation.name}`;
+                        throw {
+                            isUppError: true,
+                            node: invocation.invocationNode,
+                            message: `${macroName} expected at least ${expectedArgs - 1} arguments, but found ${actualCount}`
+                        };
+                    }
+                } else if (actualCount !== expectedArgs) {
                     const macroName = `@${invocation.name}`;
                     throw {
                         isUppError: true,
                         node: invocation.invocationNode,
-                        message: `${macroName} expected ${expectedArgs} arguments, but found ${invocation.args.length}`
+                        message: `${macroName} expected ${expectedArgs} arguments, but found ${actualCount}`
                     };
                 }
                 let searchIndex = invocation.endIndex;
@@ -357,30 +390,16 @@ class Registry {
 
                 helpers.contextNode = targetNode;
                 helpers.invocation = invocation;
-                helpers.invocation.hasNodeParam = hasNodeParam; // Signal style to helpers
+                helpers.invocation.hasNodeParam = false;
                 helpers.lastConsumedNode = null; // Reset for each macro
 
-                // Fill parameters based on the actual signature
-                let finalArgs;
-                if (hasNodeParam) {
-                    // Transformer style: [node, arg1, arg2...]
-                    finalArgs = [targetNode, ...invocation.args];
-                } else {
-                    // Command style: [arg1, arg2...]
-                    finalArgs = [...invocation.args];
-                }
-
-                const result = macroFn(...finalArgs, helpers, console);
+                const result = macroFn(helpers, console, ...invocation.args);
                 helpers.contextNode = null;
 
                 if (result !== undefined) {
                     const content = typeof result === 'object' ? result.text : String(result);
-                    if (hasNodeParam && targetNode) {
-                        helpers.replace(targetNode, content);
-                    } else {
-                        // Replaces the invocation itself
-                        invocation.replacementContent = content;
-                    }
+                    // Replaces the invocation itself
+                    invocation.replacementContent = content;
                 }
             } catch (err) {
                 if (err.isUppError) {
@@ -566,7 +585,7 @@ class Registry {
      * @returns {import('tree-sitter').Query} Query object.
      */
     createQuery(pattern) {
-        return new Query(C, pattern);
+        return new Query(this.language, pattern);
     }
 
     /**
@@ -579,6 +598,98 @@ class Registry {
         for (const transform of this.transforms) {
             transform(tree, helpers);
         }
+    }
+
+    /**
+     * Finds the definition node for an identifier.
+     * @param {import('tree-sitter').SyntaxNode} node - The identifier node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The definition node.
+     */
+    getDefinition(node) {
+        if (!node || node.type !== 'identifier') return null;
+        if (!this.mainTree) {
+            console.error("DEBUG: getDefinition called but mainTree is null");
+            return null;
+        }
+        const name = node.text;
+        let def = null;
+
+        // Search for declarations/parameters with this name
+        try {
+            const matches = this.createQuery(`
+                (declaration (identifier) @id)
+                (declaration (init_declarator (identifier) @id))
+                (declaration (init_declarator (pointer_declarator (identifier) @id)))
+                (declaration (pointer_declarator (identifier) @id))
+                (parameter_declaration (identifier) @id)
+                (parameter_declaration (pointer_declarator (identifier) @id))
+            `).matches(this.mainTree.rootNode);
+
+            for (const m of matches) {
+                const idNode = m.captures[0].node;
+                if (idNode.text === name && idNode.startIndex <= node.startIndex) {
+                    // Return the parent declaration/parameter
+                    let p = this.helpers.parent(idNode);
+                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration') {
+                        p = this.helpers.parent(p);
+                    }
+                    def = p || idNode;
+                }
+            }
+        } catch (e) {
+            console.error(`DEBUG: getDefinition query failed for node ${node.type} (${node.text}): ${e.message}`);
+            throw e;
+        }
+        return def;
+    }
+
+    /**
+     * Finds all references to a definition.
+     * @param {import('tree-sitter').SyntaxNode} defNode - The definition node.
+     * @returns {Array<import('tree-sitter').SyntaxNode>} List of identifier nodes.
+     */
+    findReferences(defNode) {
+        if (!defNode) return [];
+        if (!this.mainTree) {
+            console.error("DEBUG: findReferences called but mainTree is null");
+            return [];
+        }
+
+        let name = "";
+        try {
+            if (defNode.type === 'identifier') {
+                name = defNode.text;
+            } else {
+                // Find the identifier inside the declaration
+                const q = this.createQuery('(identifier) @id');
+                const matches = q.matches(defNode);
+                if (matches.length > 0) name = matches[0].captures[0].node.text;
+            }
+        } catch (e) {
+            console.error(`DEBUG: findReferences init query failed on node type ${defNode.type}: ${e.message}`);
+            console.error(`DEBUG: node tree exists: ${!!defNode.tree}`);
+            throw e;
+        }
+
+        if (!name) return [];
+
+        const refs = [];
+        try {
+            const q = this.createQuery('[(identifier) (field_identifier)] @id');
+            const matches = q.matches(this.mainTree.rootNode);
+            for (const m of matches) {
+                const idNode = m.captures[0].node;
+                if (idNode.text === name) {
+                    refs.push(idNode);
+                }
+            }
+        } catch (e) {
+            console.error(`DEBUG: findReferences main query failed for name ${name}: ${e.message}`);
+            console.error(`DEBUG: mainTree exists: ${!!this.mainTree}`);
+            console.error(`DEBUG: mainTree.rootNode exists: ${!!(this.mainTree && this.mainTree.rootNode)}`);
+            throw e;
+        }
+        return refs;
     }
 }
 

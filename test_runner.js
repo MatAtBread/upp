@@ -44,131 +44,138 @@ async function runTest(file) {
     const ext = path.extname(baseName).slice(1);
     const fileNameWithoutExt = path.parse(baseName).name;
 
-    console.log(`Testing ${baseName}...`);
-
-    let output;
+    const filesToDelete = [];
     let success = false;
     try {
-        const run = spawnSync('node', ['index.js', filePath], { encoding: 'utf8' });
-        output = run.stdout + run.stderr;
-        if (run.stderr?.length) {
-            resultPath = resultPath.replace(/\.c$/, '.err');
-        } else {
-            success = true;
-        }
-    } catch (err) {
-        console.error(`Error running ${baseName}:`, err.message);
-        return false;
-    }
-
-    // Standard Snapshot Check
-    if (!fs.existsSync(resultPath)) {
-        console.log(`[NEW] Creating snapshot for ${baseName}`);
-        fs.writeFileSync(resultPath, output);
-        // If it was a new snapshot, we treat it as passing for now (user can update later)
-        // But we should continue to compile/run if successful?
-        // Let's assume yes if successful.
-    } else {
-        const existingOutput = fs.readFileSync(resultPath, 'utf8');
-        if (output !== existingOutput) {
-            console.log(`[FAIL] ${baseName} differs from snapshot!`);
-            console.log(getDiff(resultPath, output));
-
-            let shouldUpdate = UPDATE_FLAG;
-            if (!shouldUpdate) {
-                const answer = await ask(`Update snapshot for ${baseName}? (y/n): `);
-                if (answer === 'y') shouldUpdate = true;
-            }
-
-            if (shouldUpdate) {
-                fs.writeFileSync(resultPath, output);
-                console.log(`[UPDATE] Updated snapshot for ${baseName}`);
+        let output;
+        try {
+            const run = spawnSync('node', ['index.js', filePath], { encoding: 'utf8' });
+            output = run.stdout + run.stderr;
+            if (run.stderr?.length && !run.stdout?.length) { // True error if stdout is empty
+                resultPath = resultPath.replace(/\.c$/, '.err');
             } else {
-                console.log(`[FAIL] ${baseName} failed.`);
-                return false;
+                success = true;
             }
-        } else {
-            console.log(`[PASS] ${baseName}`);
+        } catch (err) {
+            console.error(`Error running ${baseName}:`, err.message);
+            return false;
         }
-    }
 
-    // Compilation and Execution Stage
-    if (success) {
-        const config = resolveConfig(filePath);
-        const langConfig = (config.lang && config.lang[ext]) || {};
+        // Standard Snapshot Check
+        if (!fs.existsSync(resultPath)) {
+            console.log(`[NEW] Creating snapshot for ${baseName}`);
+            fs.writeFileSync(resultPath, output);
+        } else {
+            const existingOutput = fs.readFileSync(resultPath, 'utf8');
+            if (output !== existingOutput) {
+                console.log(`[FAIL] ${baseName} differs from snapshot!`);
+                console.log(getDiff(resultPath, output));
 
-        console.log(`Debug Config for ${baseName}: Ext=${ext}, Compile=${langConfig.compile}, Run=${langConfig.run}`);
-
-        if (langConfig.compile && langConfig.run) {
-            const outputPath = path.join(path.dirname(filePath), `upp.${baseName}`);
-
-            // Always overwrite the output file with the latest output from stdout
-            // This ensures we don't compile stale files
-            fs.writeFileSync(outputPath, output);
-
-            const vars = {
-                'INPUT': filePath,
-                'BASENAME': fileNameWithoutExt,
-                'FILENAME': baseName,
-                'OUTPUT': outputPath,
-                'OUTPUT_BASENAME': fileNameWithoutExt
-            };
-
-            function runCmd(cmd) {
-                let finalCmd = cmd;
-                for (const [key, value] of Object.entries(vars)) {
-                    finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+                let shouldUpdate = UPDATE_FLAG;
+                if (!shouldUpdate && process.stdin.isTTY) {
+                    const answer = await ask(`Update snapshot for ${baseName}? (y/n): `);
+                    if (answer === 'y') shouldUpdate = true;
                 }
-                return finalCmd;
-            }
 
-            // Compile
-            const compileCmd = runCmd(langConfig.compile);
-            try {
-                execSync(compileCmd, { cwd: EXAMPLES_DIR, stdio: 'pipe' });
-            } catch (err) {
-                console.error(`[FAIL] Compilation failed for ${baseName}`);
-                console.error(err.message);
-                console.error(err.stderr.toString());
-                return false;
-            }
-
-            // Run
-            const runCmdStr = runCmd(langConfig.run);
-            let runOutput;
-            try {
-                runOutput = execSync(runCmdStr, { cwd: EXAMPLES_DIR, encoding: 'utf8' });
-            } catch (err) {
-                console.error(`[FAIL] Execution failed for ${baseName}`);
-                console.error(err.message);
-                return false;
-            }
-
-            // Verify Run Output
-            const runResultPath = resultPath + '.run';
-            if (!fs.existsSync(runResultPath)) {
-                console.log(`[NEW] Creating runtime snapshot for ${baseName}`);
-                fs.writeFileSync(runResultPath, runOutput);
-            } else {
-                const existingRunOutput = fs.readFileSync(runResultPath, 'utf8');
-                if (runOutput !== existingRunOutput) {
-                    console.log(`[FAIL] ${baseName} runtime output differs!`);
-                    console.log(getDiff(runResultPath, runOutput));
-
-                     let shouldUpdate = UPDATE_FLAG;
-                    if (!shouldUpdate) {
-                        const answer = await ask(`Update runtime snapshot for ${baseName}? (y/n): `);
-                        if (answer === 'y') shouldUpdate = true;
-                    }
-
-                    if (shouldUpdate) {
-                        fs.writeFileSync(runResultPath, runOutput);
-                        console.log(`[UPDATE] Updated runtime snapshot for ${baseName}`);
-                    } else {
-                        return false;
-                    }
+                if (shouldUpdate) {
+                    fs.writeFileSync(resultPath, output);
+                    console.log(`[UPDATE] Updated snapshot for ${baseName}`);
                 } else {
-                    console.log(`[PASS] ${baseName} (runtime)`);
+                    console.log(`[FAIL] ${baseName} failed.`);
+                    return false;
+                }
+            } else {
+                console.log(`[PASS] ${baseName}`);
+            }
+        }
+
+        // Compilation and Execution Stage
+        if (success) {
+            const config = resolveConfig(filePath);
+            const langConfig = (config.lang && config.lang[ext]) || {};
+
+            if (langConfig.compile && langConfig.run) {
+                const outputPath = path.join(path.dirname(filePath), `upp.${baseName}`);
+                filesToDelete.push(outputPath);
+
+                fs.writeFileSync(outputPath, output);
+
+                const exePath = path.join(path.dirname(filePath), `${baseName}.exe`);
+                filesToDelete.push(exePath);
+
+                const vars = {
+                    'INPUT': filePath,
+                    'BASENAME': fileNameWithoutExt,
+                    'FILENAME': baseName,
+                    'OUTPUT': outputPath,
+                    'OUTPUT_BASENAME': fileNameWithoutExt
+                };
+
+                function runCmd(cmd) {
+                    let finalCmd = cmd;
+                    for (const [key, value] of Object.entries(vars)) {
+                        finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+                    }
+                    return finalCmd;
+                }
+
+                // Compile
+                const compileCmd = runCmd(langConfig.compile);
+                try {
+                    execSync(compileCmd, { cwd: EXAMPLES_DIR, stdio: 'pipe' });
+                } catch (err) {
+                    console.error(`[FAIL] Compilation failed for ${baseName}`);
+                    console.error(err.message);
+                    return false;
+                }
+
+                // Run
+                const runCmdStr = runCmd(langConfig.run);
+                let runOutput;
+                try {
+                    runOutput = execSync(runCmdStr, { cwd: EXAMPLES_DIR, encoding: 'utf8' });
+                } catch (err) {
+                    console.error(`[FAIL] Execution failed for ${baseName}`);
+                    console.error(err.message);
+                    return false;
+                }
+
+                // Verify Run Output
+                const runResultPath = resultPath + '.run';
+                if (!fs.existsSync(runResultPath)) {
+                    console.log(`[NEW] Creating runtime snapshot for ${baseName}`);
+                    fs.writeFileSync(runResultPath, runOutput);
+                } else {
+                    const existingRunOutput = fs.readFileSync(runResultPath, 'utf8');
+                    if (runOutput !== existingRunOutput) {
+                        console.log(`[FAIL] ${baseName} runtime output differs!`);
+                        console.log(getDiff(runResultPath, runOutput));
+
+                        let shouldUpdate = UPDATE_FLAG;
+                        if (!shouldUpdate && process.stdin.isTTY) {
+                            const answer = await ask(`Update runtime snapshot for ${baseName}? (y/n): `);
+                            if (answer === 'y') shouldUpdate = true;
+                        }
+
+                        if (shouldUpdate) {
+                            fs.writeFileSync(runResultPath, runOutput);
+                            console.log(`[UPDATE] Updated runtime snapshot for ${baseName}`);
+                        } else {
+                            return false;
+                        }
+                    } else {
+                        console.log(`[PASS] ${baseName} (runtime)`);
+                    }
+                }
+            }
+        }
+    } finally {
+        for (const f of filesToDelete) {
+            if (fs.existsSync(f)) {
+                try {
+                    fs.unlinkSync(f);
+                } catch (e) {
+                    // Ignore cleanup errors
                 }
             }
         }
