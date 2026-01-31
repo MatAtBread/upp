@@ -181,6 +181,15 @@ class UppHelpersBase {
         if (targetNode && targetNode.rootNode) {
             targetNode = targetNode.rootNode;
         }
+        if (!targetNode) {
+            console.error("UppHelpersBase.query: targetNode is null/undefined");
+            return [];
+        }
+        if (!targetNode.tree) {
+             // Try to handle Tree object passed as SyntaxNode? No, caught above.
+             // If SyntaxNode is detached?
+             console.error(`UppHelpersBase.query: targetNode.tree is undefined. Type: ${targetNode.type}, Constructor: ${targetNode.constructor.name}`);
+        }
         const matches = query.matches(targetNode);
 
         return matches.map(m => {

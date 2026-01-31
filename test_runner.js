@@ -97,23 +97,14 @@ async function runTest(file) {
         const config = resolveConfig(filePath);
         const langConfig = (config.lang && config.lang[ext]) || {};
 
+        console.log(`Debug Config for ${baseName}: Ext=${ext}, Compile=${langConfig.compile}, Run=${langConfig.run}`);
+
         if (langConfig.compile && langConfig.run) {
             const outputPath = path.join(path.dirname(filePath), `upp.${baseName}`);
 
-            // Check if output file exists (it should if success)
-            if (!fs.existsSync(outputPath)) {
-                 // Maybe it was just stdout? The runner might need to save it for compilation
-                 // index.js saves to defaults if configured?
-                 // Actually index.js does not save to file by default unless post-upp is set.
-                 // We might need to manually save processedSource if we want to compile it.
-                 // Wait, index.js prints to stdout if no post-upp.
-                 // So we need to save 'output' to a temp file for compilation if appropriate.
-
-                 // HACK: index.js doesn't expose the output path easily if it's stdout.
-                 // But upp.json defines compile command using ${OUTPUT}.
-                 // If index.js wrote to stdout, we need to create a file.
-                 fs.writeFileSync(outputPath, output);
-            }
+            // Always overwrite the output file with the latest output from stdout
+            // This ensures we don't compile stale files
+            fs.writeFileSync(outputPath, output);
 
             const vars = {
                 'INPUT': filePath,
@@ -187,7 +178,13 @@ async function runTest(file) {
 }
 
 async function main() {
-    const files = fs.readdirSync(EXAMPLES_DIR).filter(f => f.endsWith('.c') && !f.startsWith('upp.'));
+    const args = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+    let files;
+    if (args.length > 0) {
+        files = args.map(f => path.basename(f));
+    } else {
+        files = fs.readdirSync(EXAMPLES_DIR).filter(f => f.endsWith('.c') && !f.startsWith('upp.'));
+    }
     let allPassed = true;
 
     for (const file of files) {

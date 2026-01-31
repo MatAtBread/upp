@@ -205,11 +205,21 @@ class Registry {
         const maxIterations = 100;
 
         while (iterations < maxIterations) {
-            this.mainTree = this._parse(this.sourceCode);
+            const cleanSource = this.maskDefinitions(this.sourceCode);
+            this.mainTree = this._parse(cleanSource);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
             if (this.invocations.length === 0) {
                 this.helpers.replacements = [];
+
+                // Ensure mainTree is valid and fresh
+                if (!this.mainTree) {
+                    const cleanSource = this.maskDefinitions(this.sourceCode);
+                    this.mainTree = this._parse(cleanSource);
+                }
+
+                // console.error("DEBUG SOURCE PASS 2:\n" + this.sourceCode);
+
                 this.applyTransforms(this.mainTree, this.helpers);
                 if (this.helpers.replacements.length > 0) {
                     this.applyChanges([]);
@@ -223,7 +233,9 @@ class Registry {
             this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true);
 
             // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
-            this.applyTransforms(this.mainTree, this.helpers);
+            // this.mainTree is the clean tree (stripped macros).
+
+            this.applyTransforms(this.cleanTree, this.helpers);
 
             this.applyChanges(this.invocations);
             this.cleanTree = null;
@@ -231,6 +243,41 @@ class Registry {
         }
 
         return this.finishProcessing();
+    }
+
+    /**
+     * Masks macro definitions with spaces to allow valid C parsing.
+     * @param {string} source - The source code.
+     * @returns {string} Source code with macros replaced by spaces.
+     */
+    maskDefinitions(source) {
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
+        const definitionsToStrip = [];
+        let dMatch;
+        while ((dMatch = defineRegex.exec(source)) !== null) {
+            const body = this.extractBody(source, dMatch.index + dMatch[0].length);
+            if (body !== null) {
+                definitionsToStrip.push({
+                    start: dMatch.index,
+                    end: dMatch.index + dMatch[0].length + body.length + 1
+                });
+            }
+        }
+
+        let cleanSource = source;
+        // Sort reverse to replace safely? Or use slice.
+        // definitionsToStrip is in order found.
+        // Use loop logic similar to evaluateMacros.
+        definitionsToStrip.sort((a, b) => b.start - a.start);
+
+        for (const range of definitionsToStrip) {
+            if (range.start >= 0 && range.end <= cleanSource.length) {
+                const text = cleanSource.slice(range.start, range.end);
+                const replacement = text.replace(/[^\r\n]/g, ' ');
+                cleanSource = cleanSource.slice(0, range.start) + replacement + cleanSource.slice(range.end);
+            }
+        }
+        return cleanSource;
     }
 
     /**
@@ -285,7 +332,7 @@ class Registry {
             const expectedArgs = hasNodeParam ? macro.params.length - 1 : macro.params.length;
 
             const params = [...macro.params]; // Respect the user's signature 1:1
-            const macroFn = new Function(...params, 'upp', macro.body);
+            const macroFn = new Function(...params, 'upp', 'console', macro.body);
 
             try {
                 if (invocation.args.length !== expectedArgs) {
@@ -323,7 +370,7 @@ class Registry {
                     finalArgs = [...invocation.args];
                 }
 
-                const result = macroFn(...finalArgs, helpers);
+                const result = macroFn(...finalArgs, helpers, console);
                 helpers.contextNode = null;
 
                 if (result !== undefined) {

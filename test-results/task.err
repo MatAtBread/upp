@@ -1,3 +1,0 @@
-[1m/mnt/c/Users/matthew/git/upp/examples/task.c:16:11: error: @task expected compound_statement, but found expression_statement[0m
-    @task hello();
-          [1;31m^[0m

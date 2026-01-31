@@ -1,7 +1,4 @@
 
-/* examples/upp.recursive_macros_2.c */
-
-
 /* examples/recursive_macros_2.c */
 
 
@@ -31,5 +28,4 @@ int main() {
 
     /* s1.Defer() */ _String_method_Defer(&(s1)); /* s1.Defer(); */ return 0;
 }
-
 
