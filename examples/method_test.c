@@ -1,48 +1,4 @@
-@define method(targetType) {
-    const node = upp.contextNode;
-    const funcDef = node;
-    const funcDeclarator = funcDef.childForFieldName('declarator');
-    const funcIdentifier = funcDeclarator.childForFieldName('declarator');
-    const originalName = funcIdentifier.text;
-
-    // Sanitize targetType to handle "struct Point" vs "Point"
-    let cleanName = targetType.trim();
-    if (cleanName.startsWith('struct ')) {
-        cleanName = cleanName.slice(7).trim();
-    }
-
-    // Generate new name: _Point_method_distance
-    const newName = `_${cleanName}_method_${originalName}`;
-
-    // Rename function
-    upp.replace(funcIdentifier, newName);
-
-    // Find references: p.distance()
-    upp.walk(upp.root, (n) => {
-        if (n.type === 'call_expression') {
-            const fnNode = n.childForFieldName('function');
-            if (fnNode && fnNode.type === 'field_expression') {
-                const fieldName = fnNode.childForFieldName('field').text;
-                if (fieldName === originalName) {
-                    const objectNode = fnNode.childForFieldName('argument');
-                    const argsNode = n.childForFieldName('arguments');
-
-                    // Simple type check inference?
-                    // Ideally we should check if objectNode's type matches 'targetType',
-                    // but for this example we'll blindly match method name.
-                    // (Real implementation would use upp.getType(objectNode) logic)
-
-                    const operator = fnNode.child(1).text;
-                    const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
-                    const argsList = argsNode.text.slice(1, -1);
-                    const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
-
-                    upp.replace(n, upp.code`${newName}(${finalArgs})`);
-                }
-            }
-        }
-    });
-}
+#include "../std/method.h"
 
 #include <stdio.h>
 
