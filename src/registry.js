@@ -346,8 +346,10 @@ class Registry {
         if (isGlobalPass) this.mainTree = cleanTree; // Anchor as global for this iteration
         helpers.root = cleanTree.rootNode;
         this.cleanTree = cleanTree; // For contextNode extraction in evaluateMacros
+        helpers.currentInvocations = invocations;
 
         for (const invocation of invocations) {
+            if (invocation.skipped) continue;
             const macro = this.macros.get(invocation.name);
             if (!macro) continue;
 

@@ -241,12 +241,82 @@ class UppHelpersBase {
             }
         }
 
+        // Check for pending macro invocations in the gap
+        if (this.currentInvocations) {
+            let searchStart = this.invocation ? this.invocation.endIndex : 0;
+            if (this.lastConsumedNode) {
+                if (this.lastConsumedNode.endIndex !== undefined) {
+                    searchStart = this.lastConsumedNode.endIndex;
+                }
+            } else if (this.invocation && !this.invocation.hasNodeParam && this.contextNode) {
+                 // Start searching after the current invocation
+                 searchStart = this.invocation.endIndex;
+            }
+
+            const candidates = this.currentInvocations.filter(i => i.startIndex >= searchStart && i !== this.invocation);
+            candidates.sort((a,b) => a.startIndex - b.startIndex);
+            const nextInv = candidates[0];
+
+            if (nextInv) {
+                // Check gap first. If gap is clean, we consume the macro,
+                // regardless of what contextNode/node thinks (it might be a surrounding node).
+                const gap = this.registry.sourceCode.slice(searchStart, nextInv.startIndex);
+                const isGapClean = !gap.trim() || (this.registry.config.comments && gap.trim().startsWith('/*'));
+
+                if (isGapClean) {
+                     this.replace({start: nextInv.startIndex, end: nextInv.endIndex}, "");
+                     nextInv.skipped = true;
+
+                     const text = this.registry.sourceCode.slice(nextInv.startIndex, nextInv.endIndex);
+                     const fakeNode = {
+                         type: 'macro_invocation',
+                         text: text,
+                         startIndex: nextInv.startIndex,
+                         endIndex: nextInv.endIndex,
+                         childCount: 0,
+                         namedChildCount: 0,
+                         toString: () => text
+                     };
+                     this.lastConsumedNode = fakeNode;
+                     return fakeNode;
+                }
+            }
+        }
+
+        // Fallback to normal AST consumption
         if (!node) {
             let anchor = this.lastConsumedNode || this.contextNode;
             if (anchor) {
-                node = anchor.nextNamedSibling;
-                while (node && node.type.includes('comment')) {
-                    node = node.nextNamedSibling;
+                if (anchor.type === 'macro_invocation') {
+                     // Find valid AST node after the fake node
+                     let searchIdx = anchor.endIndex;
+                     while (searchIdx < this.registry.sourceCode.length && /\s/.test(this.registry.sourceCode[searchIdx])) searchIdx++;
+
+                     // Look in cleanTree
+                     let next = this.registry.cleanTree.rootNode.namedDescendantForIndex(searchIdx);
+
+                     // Ensure we didn't land "inside" something covering the anchor or previous stuff
+                     if (next && next.startIndex < anchor.endIndex) {
+                          while (next && next.startIndex < anchor.endIndex) {
+                              next = next.nextNamedSibling || next.parent;
+                          }
+                     }
+                     if (next) {
+                        // Resync context level: if next is a child of translation_unit, great.
+                        // Or if next is same level as contextNode?
+                        // Just ensure we get a block-level item if possible.
+                        while (next.parent &&
+                               next.parent.type !== 'translation_unit' &&
+                               next.parent.startIndex === next.startIndex) {
+                             next = next.parent;
+                        }
+                        node = next;
+                     }
+                } else {
+                    node = anchor.nextNamedSibling;
+                    while (node && node.type.includes('comment')) {
+                        node = node.nextNamedSibling;
+                    }
                 }
             }
         }
@@ -256,6 +326,7 @@ class UppHelpersBase {
             return null;
         }
 
+        // Structural drilling if type mismatch
         if (node && expectedTypes && !expectedTypes.includes(node.type)) {
             let current = node;
             while (current && current.namedChildCount > 0 && !expectedTypes.includes(current.type)) {
