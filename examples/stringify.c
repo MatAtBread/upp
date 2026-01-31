@@ -1,4 +1,4 @@
-@define stringify(node, str) {
+@define stringify(str) {
     return `"${str}"`;
 }
 

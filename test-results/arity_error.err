@@ -1,3 +1,0 @@
-[1m/mnt/c/Users/matthew/git/upp/examples/arity_error.c:15:5: error: @myMacro expected 2 arguments, but found 1[0m
-    @myMacro(1)
-    [1;31m^[0m

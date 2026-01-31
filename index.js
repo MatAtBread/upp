@@ -3,8 +3,8 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
-import { Registry } from './registry.js';
-import { resolveConfig } from './config_loader.js';
+import { Registry } from './src/registry.js';
+import { resolveConfig } from './src/config_loader.js';
 
 const args = process.argv.slice(2);
 

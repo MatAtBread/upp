@@ -3,7 +3,7 @@ import path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
-import { resolveConfig } from './config_loader.js';
+import { resolveConfig } from './src/config_loader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
