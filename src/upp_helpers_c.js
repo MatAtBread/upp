@@ -1,4 +1,6 @@
 import { UppHelpersBase } from './upp_helpers_base.js';
+import Parser from 'tree-sitter';
+import { PatternMatcher } from './pattern_matcher.js';
 
 /**
  * C-specific helper class.
@@ -11,8 +13,65 @@ class UppHelpersC extends UppHelpersBase {
      */
     constructor(registry) {
         super(registry);
+        this.matcher = null;
     }
 
+    /**
+     * Matches a pattern against code.
+     * Supports two signatures:
+     * 1. match(options, callback) - Legacy
+     * 2. match(node, srcOrOptions, callback) - New
+     * @param {import('tree-sitter').SyntaxNode} node - Target node.
+     * @param {string} src - Pattern source code.
+     * @param {function(Object): any} callback - Callback with captures.
+     * @param {Object} [options] - Match options.
+     * @param {boolean} [options.deep=false] - Whether to search deep.
+     * @returns {any} Result of callback or captures object (or null).
+     */
+    match(node, src, callback, options = {}) {
+        if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
+        if (typeof src !== 'string') throw new Error("upp.match: Argument 2 (src) must be a string.");
+
+        if (!this.matcher) {
+             // Pass a parser function bound to registry
+             // We need to parse strict fragment
+             const parser = new Parser();
+             parser.setLanguage(this.registry.language);
+
+             this.matcher = new PatternMatcher((src) => {
+                 return parser.parse(src);
+             });
+        }
+
+        const deep = options.deep === true;
+        const result = this.matcher.match(node, src, deep);
+
+        if (result) {
+            if (callback) {
+                return callback(result);
+            }
+            return result;
+        }
+        return null;
+    }
+
+        /**
+     * Matches a pattern against code.
+     * Supports two signatures:
+     * 1. match(options, callback) - Legacy
+     * 2. match(node, srcOrOptions, callback) - New
+     * @param {import('tree-sitter').SyntaxNode} node - Target node.
+     * @param {string} src - Pattern source code.
+     * @param {function(Object): any} callback - Callback with captures.
+     * @param {Object} [options] - Match options.
+     * @param {boolean} [options.deep=false] - Whether to search deep.
+     * @returns {any} Result of callback or captures object (or null).
+     */
+    matchReplace(node, src, callback, options = {}) {
+        this.match(node, src, (captures) => {
+            this.replace(node, callback(captures));
+        }, options);
+    }
     /**
      * Hoists content to the top of the file, skipping comments.
      * @param {string} content - The content to hoist.

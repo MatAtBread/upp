@@ -692,7 +692,7 @@ class Registry {
     applyTransforms(tree, helpers) {
         helpers.root = tree.rootNode || tree;
         for (const transform of this.transforms) {
-            transform(tree, helpers);
+            transform(tree.rootNode || tree, helpers);
         }
     }
 
