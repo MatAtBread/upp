@@ -32,12 +32,16 @@ class Registry {
         this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
         /** @type {Array<function>} */
         this.transforms = [];
+        /** @type {Map<string, import('tree-sitter').Query>} */
+        this.queryCache = new Map();
         /** @type {Object} */
         this.language = C;
         // Handle ESM/CJS interop for language modules
         if (this.language && this.language.default) {
             this.language = this.language.default;
         }
+        this.parser = new Parser();
+        this.parser.setLanguage(this.language);
 
         /** @type {UppHelpersC} */
         this.helpers = new UppHelpersC(this);
@@ -57,13 +61,9 @@ class Registry {
      */
     _parse(source) {
         if (typeof source !== 'string') {
-            const p2 = new Parser();
-            p2.setLanguage(this.language);
-            return p2.parse("");
+            return this.parser.parse("");
         }
-        const p = new Parser();
-        p.setLanguage(this.language);
-        return p.parse(source);
+        return this.parser.parse(source);
     }
 
     /**
@@ -665,7 +665,11 @@ class Registry {
      * @returns {import('tree-sitter').Query} Query object.
      */
     createQuery(pattern) {
-        return new Query(this.language, pattern);
+        if (!this.queryCache) this.queryCache = new Map();
+        if (this.queryCache.has(pattern)) return this.queryCache.get(pattern);
+        const q = new Query(this.language, pattern);
+        this.queryCache.set(pattern, q);
+        return q;
     }
 
     /**

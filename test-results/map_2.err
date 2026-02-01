@@ -1,3 +1,0 @@
-[1m/mnt/c/Users/matthew/git/upp/examples/map_2.c:16:5: error: @map expected 3 arguments, but found 2[0m
-    @map(arr, z) { z = z + 1; };
-    [1;31m^[0m

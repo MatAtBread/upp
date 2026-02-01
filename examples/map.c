@@ -1,5 +1,7 @@
-@define map(node) {
+@define map() {
     let arrayNode, varNode, bodyNode;
+
+    const node = upp.consume();
 
     if (node.type === 'function_definition') {
         arrayNode = node.childForFieldName('type');

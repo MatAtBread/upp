@@ -76,136 +76,99 @@
 
     // 4. Register global transformer for method calls
     upp.registerTransform((root, helpers) => {
-        // Find global references via Query (bypasses finding all references, targets only calls)
-        const callMatches = helpers.query(`(call_expression function: (field_expression field: (field_identifier) @method))`, root);
-
-        for (const match of callMatches) {
-            const methodNode = match.captures.method;
-            if (methodNode.text !== originalName) continue;
-
-            // Traverse up to find field_expression and call_expression from the capture
-            const fnNode = helpers.parent(methodNode);
-            if (!fnNode || fnNode.type !== 'field_expression') continue;
-
-            const callNode = helpers.parent(fnNode);
-            if (!callNode || callNode.type !== 'call_expression') continue;
-
-            // CHECK FOR CONFLICTS WITH EXISTING REPLACEMENTS (e.g. Defer deletion)
-            // Note: replacements is global for the registry in helpers
+        const transformCall = (callNode, objectNode, argsNode, operator) => {
+            // CHECK FOR CONFLICTS
             const isConflict = helpers.registry.helpers.replacements.some(r => {
                 return (r.start < callNode.endIndex && r.end > callNode.startIndex);
             });
-            if (isConflict) continue;
+            if (isConflict) return null;
 
-            const objectNode = helpers.childForFieldName(fnNode, 'argument');
-            const argsNode = helpers.childForFieldName(callNode, 'arguments');
-            const operator = helpers.child(fnNode, 1).text; // . or ->
-
-            // 5. Type Validation
+            // Type Validation
             const objDef = helpers.getDefinition(objectNode);
-
             if (objDef) {
                 let objType = helpers.getType(objDef);
 
                 // FALLBACK FOR VOID/BROKEN TYPES
                 if (objType.includes('void')) {
-                        const varName = objectNode.text;
-                        try {
-                            const declMatches = helpers.query(`
-                                (declaration
-                                    type: (_) @type
-                                    declarator: [(init_declarator declarator: (identifier) @id) (identifier) @id]
-                                )
-                            `, root);
-                            for (const m of declMatches) {
-                                if (m.captures.id.text === varName) {
-                                    objType = m.captures.type.text;
-                                    break;
-                                }
-                            }
-                        } catch (e) {}
+                    const varName = objectNode.text;
+                    try {
+                        const decls = helpers.query(`(declaration type: (_) @type declarator: [(identifier) @id (init_declarator declarator: (identifier) @id)])`, root);
+                        for (const d of decls) {
+                             if (d.captures.id.text === varName) {
+                                 objType = d.captures.type.text;
+                                 break;
+                             }
+                        }
+                    } catch (e) {}
                 }
 
-                // Cleanup type string
                 let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
                 let targetAlias = cleanTarget;
 
-                // Try to resolve typedef if mismatch
                 if (cleanObjType !== cleanTarget) {
                     try {
-                            const tdMatches = helpers.query(`(type_definition) @td`, root);
-                            for (const m of tdMatches) {
-                                const td = m.captures.td;
-                                const typeNode = helpers.childForFieldName(td, 'type');
-                                const nameNode = helpers.childForFieldName(td, 'declarator');
-
-                                if (!typeNode || !nameNode) continue;
-
-                                const nameText = nameNode.text;
-                                const typeText = typeNode.text.replace(/struct /g, '').trim();
-
-                                if (nameText === cleanTarget) {
-                                    targetAlias = typeText;
-                                    break;
-                                }
-                                if (nameText === cleanObjType) {
-                                    cleanObjType = typeText;
-                                }
-                            }
+                        const typedefs = helpers.query(`(type_definition type: (_) @type declarator: (type_identifier) @name)`, root);
+                        for (const t of typedefs) {
+                             const nameText = t.captures.name.text;
+                             const typeText = t.captures.type.text.replace(/struct /g, '').trim();
+                             if (nameText === cleanTarget) targetAlias = typeText;
+                             if (nameText === cleanObjType) cleanObjType = typeText;
+                        }
                     } catch(e) {}
                 }
 
-                if (cleanObjType === cleanTarget || cleanObjType === targetAlias) {
-                    const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
-                    const argsList = argsNode.text.slice(1, -1);
-                    const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
-
-                    helpers.replace(callNode, helpers.code`${newName}(${finalArgs})`);
-                }
-            } else {
-                // Fallback to name-only match
-                const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
-                const argsList = argsNode.text.slice(1, -1);
-                const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
-                helpers.replace(callNode, helpers.code`${newName}(${finalArgs})`);
+                if (cleanObjType !== cleanTarget && cleanObjType !== targetAlias) return null;
             }
+
+            const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
+            const argsText = argsNode.text.slice(1, -1);
+            const finalArgs = objRef + (argsText.trim() ? ', ' + argsText : '');
+            return helpers.code`${newName}(${finalArgs})`;
+        };
+
+        const calls = helpers.query(`
+            (call_expression
+                function: (field_expression
+                    argument: (_) @obj
+                    field: (field_identifier) @method))
+            @call
+        `, root);
+
+        for (const m of calls) {
+            if (m.captures.method.text !== originalName) continue;
+            const callNode = m.captures.call;
+            const objNode = m.captures.obj;
+            const opNode = helpers.child(helpers.parent(m.captures.method), 1);
+            const operator = opNode ? opNode.text : '.';
+            const argsNode = helpers.childForFieldName(callNode, 'arguments');
+
+            const result = transformCall(callNode, objNode, argsNode, operator);
+            if (result) helpers.replace(callNode, result);
         }
     });
 
     // 6. Special Handling for Defer
-    if (!isExternDecl) {
-        if (originalName === 'Defer') {
-            const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`);
-            for (const m of matches) {
-                if (m.captures.type.text === cleanTarget) {
-                    const declNode = m.captures.decl;
-                    // Find variable name in declaration
-                    // Handle: Type var; and Type var = val;
-                    let varName = null;
+    if (!isExternDecl && originalName === 'Defer') {
+        const deferHandler = (node, varName) => {
+             const isConflict = upp.registry.helpers.replacements.some(r => {
+                return (r.start < node.endIndex && r.end > node.startIndex);
+            });
+            if (isConflict) return null;
 
-                    // Simple case: Type var;
-                    for (let i = 0; i < declNode.childCount; i++) {
-                         const child = declNode.child(i);
-                         if (child.type === 'identifier') {
-                             varName = child.text;
-                             break;
-                         }
-                    }
+            return upp.code`${node} @defer ${varName}.Defer();`;
+        };
 
-                    // Complex case: Type var = val; (init_declarator)
-                    if (!varName) {
-                        const init = upp.childForFieldName(declNode, 'declarator'); // field: declarator?
-                        // Actually declaration children are not always fields.
-                        const initDecl = upp.query(`(init_declarator declarator: (identifier) @id)`, declNode);
-                        if (initDecl.length > 0) {
-                            varName = initDecl[0].captures.id.text;
-                        }
-                    }
+        const decls = upp.query(`
+            (declaration
+                type: (type_identifier) @type
+                declarator: [(identifier) @id (init_declarator declarator: (identifier) @id)])
+            @decl
+        `, root);
 
-                    if (varName) {
-                        upp.replace({ start: declNode.endIndex, end: declNode.endIndex }, upp.code` @defer ${varName}.Defer();`);
-                    }
-                }
+        for (const m of decls) {
+            if (m.captures.type.text === cleanTarget) {
+                const result = deferHandler(m.captures.decl, m.captures.id.text);
+                if (result) upp.replace(m.captures.decl, result);
             }
         }
     } // End of !isExternDecl

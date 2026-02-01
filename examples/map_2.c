@@ -1,7 +1,7 @@
-@define map(node,arrayName,varName) {
+@define map(arrayName,varName) {
     let bodyNode;
 
-    console.log(node.type);
+    const node = upp.consume();
     if (node.type !== 'compound_statement') {
         upp.error(node, `@map: Expected a block, but found ${node?.type}.`);
     }

@@ -67,6 +67,7 @@ export class PatternMatcher {
         }
 
         let patternRoot = patternTree.rootNode;
+
         if (patternRoot.type === 'translation_unit' && patternRoot.childCount > 0) {
             for (let i = 0; i < patternRoot.childCount; i++) {
                  const child = patternRoot.child(i);
@@ -76,6 +77,23 @@ export class PatternMatcher {
                  }
             }
         }
+
+        // Drill down from expression_statement if the pattern string doesn't end with a semicolon.
+        // This allows expression patterns (like assignments) to match expression nodes anywhere,
+        // rather than being locked to statement-level matching.
+        if (patternRoot.type === 'expression_statement') {
+            const significantChildren = [];
+            for (let i = 0; i < patternRoot.childCount; i++) {
+                const child = patternRoot.child(i);
+                if (child.type !== 'comment' && child.type !== ';') {
+                    significantChildren.push(child);
+                }
+            }
+            if (significantChildren.length === 1 && !patternStr.trim().endsWith(';')) {
+                patternRoot = significantChildren[0];
+            }
+        }
+
         return { patternRoot, constraints };
     }
 

@@ -8,46 +8,28 @@ import { PatternMatcher } from './pattern_matcher.js';
  * @extends UppHelpersBase
  */
 class UppHelpersC extends UppHelpersBase {
-     /**
+    /**
      * @param {import('./registry.js').Registry} registry - The registry instance.
      */
     constructor(registry) {
         super(registry);
-        this.matcher = null; // Unused, but kept for compatibility if accessed directly? No, remove.
+        this.matcher = new PatternMatcher((src) => this.registry._parse(src));
     }
-
-    // Shared matcher instance
-    static matcherInstance = null;
 
     /**
      * Matches a pattern against code.
-     * Supports two signatures:
-     * 1. match(options, callback) - Legacy
-     * 2. match(node, srcOrOptions, callback) - New
      * @param {import('tree-sitter').SyntaxNode} node - Target node.
      * @param {string} src - Pattern source code.
      * @param {function(Object): any} callback - Callback with captures.
      * @param {Object} [options] - Match options.
-     * @param {boolean} [options.deep=false] - Whether to search deep.
      * @returns {any} Result of callback or captures object (or null).
      */
     match(node, src, callback, options = {}) {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
         if (typeof src !== 'string') throw new Error("upp.match: Argument 2 (src) must be a string.");
 
-        if (!UppHelpersC.matcherInstance) {
-             // Pass a parser function bound to registry
-             // We need to parse strict fragment
-             const parser = new Parser();
-             parser.setLanguage(this.registry.language);
-
-             UppHelpersC.matcherInstance = new PatternMatcher((src) => {
-                 return parser.parse(src);
-             });
-        }
-
         const deep = options.deep === true;
-        const result = UppHelpersC.matcherInstance.match(node, src, deep);
+        const result = this.matcher.match(node, src, deep);
 
         if (result) {
             if (callback) {
@@ -75,6 +57,45 @@ class UppHelpersC extends UppHelpersBase {
                  }
             }
         }, options);
+    }
+
+    /**
+     * Matches all occurrences of a pattern.
+     * @param {import('tree-sitter').SyntaxNode} node - Target node.
+     * @param {string} src - Pattern source code.
+     * @param {function(Object): any} [callback] - Optional callback.
+     * @param {Object} [options] - Options.
+     * @returns {Array<Object>} Matches.
+     */
+    matchAll(node, src, callback, options = {}) {
+        if (!node) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
+        if (typeof src !== 'string') throw new Error("upp.matchAll: Argument 2 (src) must be a string.");
+
+        const deep = options.deep === true || (options.deep !== false && node.type === 'translation_unit');
+        const matches = this.matcher.matchAll(node, src, deep);
+
+        if (callback) {
+            return matches.map(m => callback(m));
+        }
+        return matches;
+    }
+
+    /**
+     * Replaces all matches of a pattern.
+     * @param {import('tree-sitter').SyntaxNode} node - Scope.
+     * @param {string} src - Pattern.
+     * @param {function(Object): string} callback - Replacement callback.
+     * @param {Object} [options] - Options.
+     */
+    matchReplaceAll(node, src, callback, options = {}) {
+        this.matchAll(node, src, (captures) => {
+            if (captures && captures.node) {
+                 const replacement = callback(captures);
+                 if (replacement !== null && replacement !== undefined) {
+                     this.replace(captures.node, replacement);
+                 }
+            }
+        }, { ...options, deep: true }); // Default to deep for matchReplaceAll
     }
     /**
      * Hoists content to the top of the file, skipping comments.

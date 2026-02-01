@@ -12,7 +12,7 @@ void hello() {
     printf("World\n");
 }
 
-void os_start(void (*task)()) {
+void os_start(typeof(hello) task) {
     task();
 }
 

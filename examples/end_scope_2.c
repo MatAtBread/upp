@@ -1,7 +1,8 @@
 /*
 NB: this macro impl doesn't work. It frees "nested" long after the scope has gone.
  */
-@define defer(node) {
+@define defer() {
+    const node = upp.consume();
     const fn = upp.findEnclosing(node, 'function_definition');
     if (!fn) upp.error(node, "@defer must be within a function");
 
@@ -98,6 +99,10 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
     });
     return "";
 }
+
+#include "io-lite.h"
+
+int some_condition = 0;
 
 int main() {
     char *str1 = malloc(100);

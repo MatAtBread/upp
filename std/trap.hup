@@ -62,39 +62,22 @@
     }
 
     // Transform Assignments
-    // We find references to varIdNode.
-    const refs = upp.findReferences(varIdNode);
-    for (const ref of refs) {
-        if (upp.isDescendant(declNode, ref)) continue;
+    const root = upp.root;
 
-        // Usage: z = expr OR obj.z = expr
-        // assignment_expression(left: field_expression(argument: identifier, field: field_identifier)) ??
+    // 1. Direct assignments: var = expr
+    upp.matchAll(root, `${varName} = $expr`, ({expr}) => {
+         upp.replace(expr, upp.code`${handlerName}(${expr})`);
+    });
 
-        let assignment = ref.parent;
-        // Check if ref is part of the LEFT side of assignment
-        // Simple case: z = ... (parent is assignment, left is ref)
-        // Struct case: obj.z = ... (parent is field_expression, parent.parent is assignment, left is field_expression)
+    // 2. Field assignments (Dot): obj.var = expr
+    upp.matchAll(root, `$obj.${varName} = $expr`, ({expr}) => {
+         upp.replace(expr, upp.code`${handlerName}(${expr})`);
+    });
 
-        // Traverse up to find assignment
-        while (assignment && assignment.type !== 'assignment_expression') {
-            assignment = assignment.parent;
-            // Stop if we hit a statement boundary or something indicating we aren't in an assignment l-value
-            if (assignment && (assignment.type === 'expression_statement' || assignment.type === 'compound_statement')) {
-                assignment = null;
-                break;
-            }
-        }
-
-        if (assignment && assignment.type === 'assignment_expression') {
-            const left = assignment.childForFieldName('left');
-            // Check if our ref is indeed part of the 'left' side
-            if (upp.isDescendant(left, ref)) {
-                 const right = assignment.childForFieldName('right');
-                 const rightText = right.text;
-                 upp.replace(right, `${handlerName}(${rightText})`);
-            }
-        }
-    }
+    // 3. Field assignments (Arrow): ptr->var = expr
+    upp.matchAll(root, `$ptr->${varName} = $expr`, ({expr}) => {
+         upp.replace(expr, upp.code`${handlerName}(${expr})`);
+    });
 
     // Reconstruct Declaration with Init (only for standard declarations, fields can't have init in C (mostly))
     if (declNode.type === 'declaration') {

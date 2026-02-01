@@ -1,9 +1,9 @@
-@define map(node, arrayName, varName) {
-    const evenBlock = node;
+@define map(arrayName, varName) {
+    const evenBlock = upp.consume('compound_statement');
     const oddBlock = upp.consume('compound_statement');
 
-    if (!oddBlock || oddBlock.type !== 'compound_statement') {
-        upp.error(node, "@map requires an even { block } and an odd { block }");
+    if (!oddBlock || !evenBlock) {
+        upp.error(upp.peek(), "@map requires an even { block } and an odd { block }");
     }
 
     return upp.code`

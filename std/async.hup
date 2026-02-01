@@ -23,17 +23,14 @@
     // Find all references to this function in the WHOLE tree
     if (name) {
         upp.registerTransform((root, helpers) => {
-            const matches = helpers.query(`(call_expression function: (identifier) @id) @call`, root);
-            for (const m of matches) {
+            const calls = helpers.query(`(call_expression function: (identifier) @id) @call`, root);
+            for (const m of calls) {
+                const callNode = m.captures.call;
                 if (m.captures.id.text === name) {
-                    const callNode = m.captures.call;
-                    // Skip if this "call" is actually the function's own declarator
-                    const parentType = callNode.parent ? callNode.parent.type : '';
-                    if (parentType === 'function_declarator') continue;
-
-                    // Double check: if it overlaps with the definition site, verify it's a real sub-call
-                    // In a healthy parse, a call_expression should not be the declarator anyway.
-                    helpers.replace(callNode, helpers.code`os_start(${name})`);
+                    const isInside = callNode.startIndex >= defStart && callNode.endIndex <= defEnd;
+                    if (!isInside) {
+                        helpers.replace(callNode, helpers.code`os_start(${name})`);
+                    }
                 }
             }
         });

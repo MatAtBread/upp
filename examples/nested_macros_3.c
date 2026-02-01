@@ -1,3 +1,4 @@
+static int expanded_inner = 1;
 @define inner() {
     return "expanded_inner";
 }

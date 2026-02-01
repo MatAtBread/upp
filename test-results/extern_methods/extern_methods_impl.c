@@ -12,9 +12,17 @@ struct Foo {
 };
 typedef struct Foo Foo;
 extern /* @method(Foo) void print(Foo *f) */ void  _Foo_method_print(Foo *f);
-/* @method(Foo) void print(Foo *f) {
+/* @method(Foo) void increment(Foo *f);
+@method(Foo) void print(Foo *f) {
     printf("Foo %d\n", f->x);
-} */ void _Foo_method_print(Foo *f) {
+}
+@method(Foo) void increment(Foo *f) {
+    f->x++;
+} */ void _Foo_method_increment(Foo *f); 
+void _Foo_method_print(Foo *f) {
     printf("Foo %d\n", f->x);
+} 
+void _Foo_method_increment(Foo *f) {
+    f->x++;
 } 
 

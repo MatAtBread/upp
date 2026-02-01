@@ -59,7 +59,7 @@ async function runUppTransformation(relativePath) {
         output = run.stdout + run.stderr;
 
         // 1. Check for existing .err snapshot (explicit override)
-        const errSnapshotPath = path.join(RESULTS_DIR, relativePath.replace(/\.c$/, '.err'));
+        const errSnapshotPath = path.join(RESULTS_DIR, relativePath + '.err');
         if (fs.existsSync(errSnapshotPath)) {
             resultPath = errSnapshotPath;
             isError = true;
@@ -68,7 +68,7 @@ async function runUppTransformation(relativePath) {
         // Note: checking stdout emptiness is fragile if Upp prints errors to stdout.
         // Checking exit code is better.
         else if (run.status !== 0 || (run.stderr?.length && !run.stdout?.trim().length)) {
-             resultPath = resultPath.replace(/\.c$/, '.err');
+             resultPath = resultPath + '.err';
              isError = true;
         }
     } catch (err) {
