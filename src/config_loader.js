@@ -25,9 +25,20 @@ function deepMerge(a, b) {
 }
 
 /**
+ * @typedef {Object} UppConfig
+ * @property {Object.<string, Object>} [lang] - Language specific configuration.
+ * @property {string[]} [includePaths] - List of include paths.
+ * @property {import('./dependency_cache.js').DependencyCache|null} [cache] - Dependency cache instance.
+ * @property {boolean} [write] - Whether write mode is enabled.
+ * @property {import('./diagnostics.js').DiagnosticsManager} [diagnostics] - Diagnostics manager instance.
+ * @property {string[]} [suppress] - List of warning codes to suppress.
+ * @property {string} [extends] - Path to parent config file.
+ */
+
+/**
  * Loads a config file and recursively handles "extends".
  * @param {string} configPath - Path to the JSON config file.
- * @returns {Object} The loaded and merged configuration object.
+ * @returns {UppConfig} The loaded and merged configuration object.
  */
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) return {};
@@ -63,7 +74,7 @@ function loadConfig(configPath) {
  * Resolves the configuration for a given source file path.
  * Searches up the directory tree for upp.json until .git or root is reached.
  * @param {string} sourcePath - Absolute path to the source file.
- * @returns {Object} The resolved configuration.
+ * @returns {UppConfig} The resolved configuration.
  */
 function resolveConfig(sourcePath) {
     let currentDir = path.dirname(path.resolve(sourcePath));

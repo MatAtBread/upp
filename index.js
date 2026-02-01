@@ -5,23 +5,25 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { Registry } from './src/registry.js';
 import { resolveConfig } from './src/config_loader.js';
+import { DependencyCache } from './src/dependency_cache.js';
+import { DiagnosticsManager } from './src/diagnostics.js';
+import { parseArgs } from './src/cli.js';
 
-const args = process.argv.slice(2);
-if (!args.length || args.includes('--help')) {
-    console.log("Usage: upp <file.c>");
+const options = parseArgs(process.argv.slice(2));
+
+if (options.isHelp) {
+    console.log("Usage: upp [options] <file.c>...");
+    console.log("Options:");
+    console.log("  -o <file>   Specify output file (only valid with single input)");
+    console.log("  -w, --write Auto-generate output files");
+    console.log("  -I <path>   Add include path");
     process.exit(0);
 }
 
-const outputFileIdx = args.indexOf('-o');
-let outputFile = null;
-if (outputFileIdx !== -1) {
-    outputFile = args[outputFileIdx + 1];
-    args.splice(outputFileIdx, 2);
-}
+const cache = new DependencyCache();
 
-for (const filePath of args)
+for (const absolutePath of options.inputFiles)
 {
-    const absolutePath = path.resolve(filePath);
     const dirName = path.dirname(absolutePath);
     const baseName = path.basename(absolutePath);
     const ext = path.extname(baseName).slice(1);
@@ -29,6 +31,9 @@ for (const filePath of args)
 
     // 1. Resolve Configuration
     const config = resolveConfig(absolutePath);
+    config.cache = cache;
+    config.write = options.writeMode;
+    config.diagnostics = new DiagnosticsManager(config);
     const langConfig = (config.lang && config.lang[ext]) || {};
 
     /**
@@ -66,6 +71,11 @@ for (const filePath of args)
     }
 
     // 3. Initialize Registry & Macros
+    const cliIncludePaths = options.includePaths;
+    const configIncludePaths = config.includePaths || [];
+    // CLI paths take precedence (or just append? usually search path order matters).
+    // Let's put CLI paths FIRST so they are searched first.
+    config.includePaths = [...new Set([...cliIncludePaths, ...configIncludePaths])];
     const registry = new Registry(config);
     registry.registerSource(initialSource, absolutePath);
 
@@ -85,8 +95,25 @@ for (const filePath of args)
 
         runCommand(langConfig['post-upp'], postVars);
     } else {
-        if (outputFile) {
-            fs.writeFileSync(outputFile, processedSource);
+        if (options.outputFile) {
+            fs.writeFileSync(options.outputFile, processedSource);
+        } else if (config.write) {
+            // Auto-generate output filename: remove .upp suffix if present, otherwise append .out?
+            // The plan says "remove .upp extension".
+            // If file is "foo.c.upp" -> "foo.c".
+            // If file is "foo.c" -> ... maybe don't overwrite? default to same behavior?
+            // Let's assume input files MUST be .upp to be auto-written, or we replace the extension.
+            // Safe logic: if ends in .upp, strip it. If not, error or warn?
+            // For now, let's verify pattern.
+            let outPath;
+            if (absolutePath.endsWith('.upp')) {
+                outPath = absolutePath.slice(0, -4);
+            } else {
+                console.warn(`Warning: Input file ${baseName} does not end in .upp. Appending .out`);
+                outPath = absolutePath + ".out";
+            }
+            fs.writeFileSync(outPath, processedSource);
+            // console.log(`Generated: ${path.relative(process.cwd(), outPath)}`);
         } else {
             console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
             console.log(processedSource);

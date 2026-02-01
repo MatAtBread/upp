@@ -2,8 +2,10 @@ import Parser from 'tree-sitter';
 const { Query } = Parser;
 import C from 'tree-sitter-c';
 import fs from 'fs';
+import path from 'path';
 import { reportError } from './errors.js';
 import { UppHelpersC } from './upp_helpers_c.js';
+import { DiagnosticCodes, DiagnosticsManager } from './diagnostics.js';
 
 /**
  * Main registry class for managing macros, parsing, and transformations.
@@ -24,6 +26,10 @@ class Registry {
         this.sourceCode = '';
         /** @type {string} */
         this.filePath = '';
+        /** @type {import('./dependency_cache.js').DependencyCache|null} */
+        this.cache = config.cache || null;
+        /** @type {DiagnosticsManager} */
+        this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
         /** @type {Array<function>} */
         this.transforms = [];
         /** @type {Object} */
@@ -39,6 +45,8 @@ class Registry {
         this.allTrees = [];
         /** @type {number} */
         this.idCounter = 0;
+        /** @type {Set<string>} */
+        this.loadedDependencies = new Set();
     }
 
     /**
@@ -66,23 +74,70 @@ class Registry {
     registerSource(sourceCode, filePath) {
         this.filePath = filePath;
         this.sourceCode = sourceCode;
+        // Local macros
+        const localMacros = this.scanMacros(this.sourceCode, this.filePath);
+        for (const [name, macro] of localMacros) {
+            this.macros.set(name, macro);
+        }
+    }
+
+    /**
+     * Scans source code for macro definitions and returns them.
+     * @param {string} source - The source code.
+     * @param {string} [originPath='unknown'] - Origin file path for debugging.
+     * @returns {Map<string, Object>} Found macros.
+     */
+
+    scanMacros(source, originPath = 'unknown') {
+        const found = new Map();
         const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let match;
-        while ((match = regex.exec(this.sourceCode)) !== null) {
+        while ((match = regex.exec(source)) !== null) {
             const [fullMatch, langTag, name, params] = match;
             const bodyStart = match.index + fullMatch.length;
-            const body = this.extractBody(this.sourceCode, bodyStart);
+            const body = this.extractBody(source, bodyStart);
             if (body !== null) {
-                this.macros.set(name, {
+                const { line, col } = DiagnosticsManager.getLineCol(source, match.index);
+
+                // Check if macro is already defined (globally or locally in this scan)
+                // Note: scanMacros returns a Map of *newly* found macros.
+                // Redefinition checks should happen when we merge them into the main registry OR here if we have access.
+                // We have access to this.macros.
+                if (this.macros.has(name)) {
+                     const existing = this.macros.get(name);
+                     // Allow redefinition if content is identical? OR always warn?
+                     // User said: "@xxx" from foo.h and "@xxx" from bar.h are distinct.
+                     // But if they share the name, the last one wins in the registry.
+                     // Warn about collision.
+                     // Distinct files defining same macro -> Collision.
+                     // Same file defining same macro twice -> Collision.
+                     // If existing.origin !== originPath, it's definitely a cross-file redefinition.
+
+                     // Helper message
+                     const existingLoc = existing.origin ? ` (previously known from ${existing.origin})` : '';
+                     this.diagnostics.reportWarning(
+                         DiagnosticCodes.MACRO_REDEFINITION,
+                         `Macro @${name} redefined${existingLoc}`,
+                         originPath,
+                         line,
+                         col,
+                         source
+                     );
+                }
+
+                found.set(name, {
                     language: langTag || 'js',
                     params: params.split(',').map(s => s.trim()).filter(s => s.length > 0),
                     body: body.trim(),
-                    startIndex: match.index,
-                    endIndex: bodyStart + body.length + 1
+                    startIndex: match.index, // Note: indices are relative to the file content passed
+                    endIndex: bodyStart + body.length + 1,
+                    origin: originPath,
+                    line,
+                    col
                 });
-                // console.log(`Registered macro: @${name} (Language: ${langTag || 'js'})`);
             }
         }
+        return found;
     }
 
     /**
@@ -221,6 +276,9 @@ class Registry {
              console.error("CRITICAL: process() called without valid sourceCode. Type:", typeof this.sourceCode);
              this.sourceCode = "";
         }
+
+        // Pre-process includes
+        this.processIncludes();
 
         while (iterations < maxIterations) {
             const cleanSource = this.maskDefinitions(this.sourceCode);
@@ -692,6 +750,159 @@ class Registry {
             throw e;
         }
         return refs;
+    }
+    /**
+     * Scans for #include "foo.upp" directives, loads macros, and rewrites to "foo".
+     */
+    processIncludes() {
+        const includeRegex = /^\s*#\s*include\s*"([^"]+\.upp)"/gm;
+        let match;
+        const replacements = [];
+
+        while ((match = includeRegex.exec(this.sourceCode)) !== null) {
+            const fullMatch = match[0];
+            const importPath = match[1];
+            const start = match.index;
+            const end = start + fullMatch.length;
+
+            // Resolve and load
+            const resolvedPath = this.resolveInclude(importPath);
+            if (resolvedPath) {
+                this.loadDependency(resolvedPath);
+
+                // Rewrite: remove .upp from the import path in the source
+                // The importPath is group 1. We want to replace the whole line or just the path?
+                // Replacing the path inside the quotes is safest.
+                // Reconstruct the line without .upp
+                const newPath = importPath.slice(0, -4); // remove .upp
+                const replacement = fullMatch.replace(importPath, newPath);
+
+                replacements.push({ start, end, replacement });
+            } else {
+                // Determine line/col for warning
+                const { line, col } = DiagnosticsManager.getLineCol(this.sourceCode, start);
+                this.diagnostics.reportWarning(
+                    DiagnosticCodes.MISSING_INCLUDE,
+                    `Could not resolve include: ${importPath}`,
+                    this.filePath,
+                    line,
+                    col,
+                    this.sourceCode
+                );
+            }
+        }
+
+        // Apply replacements in reverse
+        for (let i = replacements.length - 1; i >= 0; i--) {
+            const r = replacements[i];
+            this.sourceCode = this.sourceCode.slice(0, r.start) + r.replacement + this.sourceCode.slice(r.end);
+        }
+    }
+
+    /**
+     * Resolves an include path using the configured include paths.
+     * @param {string} importPath - The path from the #include directive.
+     * @returns {string|null} The absolute path if found, or null.
+     */
+    resolveInclude(importPath) {
+        if (path.isAbsolute(importPath)) {
+             return fs.existsSync(importPath) ? importPath : null;
+        }
+
+        const includePaths = this.config.includePaths || [process.cwd()];
+        for (const searchPath of includePaths) {
+            const candidate = path.resolve(searchPath, importPath);
+            if (fs.existsSync(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Loads a dependency file and extracts macros.
+     * @param {string} filePath - Absolute path to the dependency.
+     */
+    loadDependency(filePath) {
+        if (this.loadedDependencies.has(filePath)) return;
+        this.loadedDependencies.add(filePath);
+
+        // Check cache first
+        if (this.cache && this.cache.has(filePath)) {
+            const cached = this.cache.get(filePath);
+            for (const [name, macro] of cached.macros) {
+                if (!this.macros.has(name)) {
+                    this.macros.set(name, macro);
+                }
+            }
+            // Populate recursive includes from cache if available
+            if (cached.includes) {
+                for (const inc of cached.includes) {
+                    const resolved = this.resolveInclude(inc);
+                    if (resolved) this.loadDependency(resolved);
+                }
+                return;
+            }
+        }
+
+        try {
+            const source = fs.readFileSync(filePath, 'utf8');
+
+            // If -w is enabled, we need to generate the output for this dependency too.
+            // This is "recursive compilation".
+            if (this.config.write) {
+                // Determine output path: remove .upp extension
+                let outPath = null;
+                if (filePath.endsWith('.upp')) {
+                    outPath = filePath.slice(0, -4);
+                }
+
+                if (outPath) {
+                    // Avoid infinite recursion or double writing?
+                    // The cache check above handles "loading" recursion.
+                    // But if we are here, it wasn't cached, so we write it once.
+                    // We need a fresh registry for the dependency to process it fully.
+                    // We share the SAME cache.
+                    const subRegistry = new Registry(this.config);
+                    subRegistry.registerSource(source, filePath);
+                    const output = subRegistry.process();
+                    fs.writeFileSync(outPath, output);
+                    // console.log(`Recursively generated: ${path.relative(process.cwd(), outPath)}`);
+                }
+            }
+
+            // Scan macros fresh
+            const fileMacros = this.scanMacros(source, filePath);
+
+            // Update current registry
+            for (const [name, macro] of fileMacros) {
+                 if (!this.macros.has(name)) {
+                     this.macros.set(name, macro);
+                 }
+            }
+
+            const includes = [];
+
+            // Recursive scan for includes to load transitive macros
+            const recursiveIncludeRegex = /^\s*#\s*include\s*"([^"]+\.upp)"/gm;
+            let match;
+            while ((match = recursiveIncludeRegex.exec(source)) !== null) {
+                const subImport = match[1];
+                includes.push(subImport);
+                const resolved = this.resolveInclude(subImport);
+                if (resolved) {
+                    this.loadDependency(resolved);
+                }
+            }
+
+            // Update cache
+            if (this.cache) {
+                this.cache.set(filePath, { macros: fileMacros, includes });
+            }
+
+        } catch (err) {
+            console.error(`Failed to load dependency ${filePath}: ${err.message}`);
+        }
     }
 }
 
