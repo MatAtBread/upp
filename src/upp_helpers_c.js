@@ -13,8 +13,11 @@ class UppHelpersC extends UppHelpersBase {
      */
     constructor(registry) {
         super(registry);
-        this.matcher = null;
+        this.matcher = null; // Unused, but kept for compatibility if accessed directly? No, remove.
     }
+
+    // Shared matcher instance
+    static matcherInstance = null;
 
     /**
      * Matches a pattern against code.
@@ -32,19 +35,19 @@ class UppHelpersC extends UppHelpersBase {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
         if (typeof src !== 'string') throw new Error("upp.match: Argument 2 (src) must be a string.");
 
-        if (!this.matcher) {
+        if (!UppHelpersC.matcherInstance) {
              // Pass a parser function bound to registry
              // We need to parse strict fragment
              const parser = new Parser();
              parser.setLanguage(this.registry.language);
 
-             this.matcher = new PatternMatcher((src) => {
+             UppHelpersC.matcherInstance = new PatternMatcher((src) => {
                  return parser.parse(src);
              });
         }
 
         const deep = options.deep === true;
-        const result = this.matcher.match(node, src, deep);
+        const result = UppHelpersC.matcherInstance.match(node, src, deep);
 
         if (result) {
             if (callback) {
@@ -66,7 +69,10 @@ class UppHelpersC extends UppHelpersBase {
     matchReplace(node, src, callback, options = {}) {
         this.match(node, src, (captures) => {
             if (captures && captures.node) {
-                 this.replace(captures.node, callback(captures));
+                 const replacement = callback(captures);
+                 if (replacement !== null && replacement !== undefined) {
+                     this.replace(captures.node, replacement);
+                 }
             }
         }, options);
     }

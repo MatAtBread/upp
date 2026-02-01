@@ -8,6 +8,7 @@ export class PatternMatcher {
      */
     constructor(parseFn) {
         this.parseFn = parseFn;
+        this.cache = new Map();
     }
 
     /**
@@ -18,20 +19,55 @@ export class PatternMatcher {
      * @returns {Object|null} Captures object or null.
      */
     match(targetNode, patternStr, deep = false) {
-        const { cleanPattern, constraints } = this.preprocessPattern(patternStr);
-        const patternTree = this.parseFn(cleanPattern);
-        let patternRoot = patternTree.rootNode;
+        const { patternRoot, constraints } = this.prepare(patternStr);
+        if (deep) {
+            return this.findMatch(targetNode, patternRoot, constraints);
+        } else {
+            const captures = {};
+            if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
+                 captures.node = targetNode;
+                 return captures;
+            }
+            return null;
+        }
+    }
 
-        // Tree-sitter usually wraps fragments in translation_unit.
-        // We want the first significant child.
+    /**
+     * Matches all occurrences of a pattern.
+     * @returns {Array<Object>} Array of capture objects.
+     */
+    matchAll(targetNode, patternStr, deep = false) {
+        const { patternRoot, constraints } = this.prepare(patternStr);
+        if (deep) {
+            return this.findAllMatches(targetNode, patternRoot, constraints);
+        } else {
+            const captures = {};
+            if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
+                 captures.node = targetNode;
+                 return [captures];
+            }
+            return [];
+        }
+    }
+
+    prepare(patternStr) {
+        let cleanPattern, constraints, patternTree;
+
+        if (this.cache.has(patternStr)) {
+            const cached = this.cache.get(patternStr);
+            cleanPattern = cached.cleanPattern;
+            constraints = cached.constraints;
+            patternTree = cached.patternTree;
+        } else {
+            const result = this.preprocessPattern(patternStr);
+            cleanPattern = result.cleanPattern;
+            constraints = result.constraints;
+            patternTree = this.parseFn(cleanPattern);
+            this.cache.set(patternStr, { cleanPattern, constraints, patternTree });
+        }
+
+        let patternRoot = patternTree.rootNode;
         if (patternRoot.type === 'translation_unit' && patternRoot.childCount > 0) {
-            // Find first non-comment child? Or use the whole unit?
-            // Usually we want to match a statement or expression.
-            // If pattern is "int $x;", target is declaration.
-            // translation_unit -> declaration.
-            // So we start matching at the first child of translation_unit?
-            // Or we try to match translation_unit against target? (Unlikely)
-            // Let's find the first "real" node.
             for (let i = 0; i < patternRoot.childCount; i++) {
                  const child = patternRoot.child(i);
                  if (child.type !== 'comment') {
@@ -40,17 +76,7 @@ export class PatternMatcher {
                  }
             }
         }
-
-        if (deep) {
-            return this.findMatch(targetNode, patternRoot, constraints);
-        } else {
-            const captures = {};
-            if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
-                 captures.node = targetNode; // Includes the matched node itself? User said "return object with sourceNode"
-                 return captures;
-            }
-            return null;
-        }
+        return { patternRoot, constraints };
     }
 
     /**
@@ -67,6 +93,20 @@ export class PatternMatcher {
             if (result) return result;
         }
         return null;
+    }
+
+    findAllMatches(node, patternNode, constraints, results = []) {
+        const captures = {};
+        // Important: check if node matches
+        if (this.structuralMatch(node, patternNode, captures, constraints)) {
+            captures.node = node;
+            results.push(captures);
+        }
+        // Continue searching descendants
+        for (let i = 0; i < node.childCount; i++) {
+            this.findAllMatches(node.child(i), patternNode, constraints, results);
+        }
+        return results;
     }
 
     /**

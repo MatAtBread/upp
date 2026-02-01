@@ -4,14 +4,9 @@
 @define fieldsof(targetStruct) {
     // 1. Validate Context
     // We expect the macro to be inside a struct definition, i.e., parent should be field_declaration_list
-    // The contextNode might be the ERROR node or a placeholder node.
-    let ctx = upp.contextNode;
-    // Walk up to find field_declaration_list
-    while (ctx && ctx.type !== 'field_declaration_list' && ctx.type !== 'translation_unit') {
-        ctx = upp.parent(ctx);
-    }
+    const ctx = upp.findEnclosing(upp.contextNode, 'field_declaration_list');
 
-    if (!ctx || ctx.type !== 'field_declaration_list') {
+    if (!ctx) {
         upp.error(upp.invocation.invocationNode, "@fieldsof must be used inside a struct definition");
     }
 
