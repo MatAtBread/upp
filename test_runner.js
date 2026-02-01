@@ -45,69 +45,73 @@ function ensureResultDir(relativePath) {
     }
 }
 
+async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = "") {
+    const taskLabel = label ? `(${label})` : "";
+    if (!fs.existsSync(snapshotPath)) {
+        console.log(`[FAIL] ${relativePath} ${taskLabel} - No snapshot found. Creating new one.`);
+        fs.writeFileSync(snapshotPath, actualOutput);
+        return false;
+    }
+
+    const existingOutput = fs.readFileSync(snapshotPath, 'utf8');
+    if (actualOutput !== existingOutput) {
+        console.log(`[FAIL] ${relativePath} ${taskLabel} differs from snapshot!`);
+        console.log(getDiff(snapshotPath, actualOutput));
+
+        let shouldUpdate = UPDATE_FLAG;
+        if (!shouldUpdate && process.stdin.isTTY) {
+            const answer = await ask(`Update snapshot for ${relativePath} ${taskLabel}? (y/n): `);
+            if (answer === 'y') shouldUpdate = true;
+        }
+
+        if (shouldUpdate) {
+            fs.writeFileSync(snapshotPath, actualOutput);
+            console.log(`[UPDATE] Updated snapshot for ${relativePath} ${taskLabel}`);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    console.log(`[PASS] ${relativePath} ${taskLabel}`);
+    return true;
+}
+
 // Step 1: Run UPP transformation and verify snapshot
 async function runUppTransformation(relativePath) {
     const filePath = path.join(EXAMPLES_DIR, relativePath);
     ensureResultDir(relativePath);
-    let resultPath = path.join(RESULTS_DIR, relativePath);
     const baseName = path.basename(relativePath);
 
     let output;
     let isError = false;
+    let snapshotPath = path.join(RESULTS_DIR, relativePath);
+
     try {
         const run = spawnSync('node', ['index.js', filePath], { encoding: 'utf8' });
-        output = run.stdout + run.stderr;
+        output = (run.stdout || "") + (run.stderr || "");
 
-        // 1. Check for existing .err snapshot (explicit override)
-        const errSnapshotPath = path.join(RESULTS_DIR, relativePath + '.err');
-        if (fs.existsSync(errSnapshotPath)) {
-            resultPath = errSnapshotPath;
-            isError = true;
-        }
-        // 2. Check for runtime indicators of error
-        // Note: checking stdout emptiness is fragile if Upp prints errors to stdout.
-        // Checking exit code is better.
-        else if (run.status !== 0 || (run.stderr?.length && !run.stdout?.trim().length)) {
-             resultPath = resultPath + '.err';
+        // 1. Check if it's an error state
+        if (run.status !== 0 || (run.stderr?.length && !run.stdout?.trim().length)) {
              isError = true;
+             snapshotPath = snapshotPath + '.err';
         }
     } catch (err) {
-        console.error(`Error running ${baseName}:`, err.message);
-        return { pass: false, compilationReady: false, outputPath: null };
+        output = err.message + (err.stack ? "\n" + err.stack : "");
+        isError = true;
+        snapshotPath = snapshotPath + '.err';
     }
 
-    // Standard Snapshot Check
-    if (!fs.existsSync(resultPath)) {
-        console.log(`[NEW] Creating snapshot for ${relativePath}`);
-        fs.writeFileSync(resultPath, output);
-    } else {
-        const existingOutput = fs.readFileSync(resultPath, 'utf8');
-        if (output !== existingOutput) {
-            console.log(`[FAIL] ${relativePath} differs from snapshot!`);
-            console.log(getDiff(resultPath, output));
+    const passed = await verifySnapshot(relativePath, snapshotPath, output);
 
-            let shouldUpdate = UPDATE_FLAG;
-            if (!shouldUpdate && process.stdin.isTTY) {
-                const answer = await ask(`Update snapshot for ${relativePath}? (y/n): `);
-                if (answer === 'y') shouldUpdate = true;
-            }
-
-            if (shouldUpdate) {
-                fs.writeFileSync(resultPath, output);
-                console.log(`[UPDATE] Updated snapshot for ${relativePath}`);
-            } else {
-                console.log(`[FAIL] ${relativePath} failed.`);
-                return { pass: false, compilationReady: false, outputPath: null };
-            }
-        } else {
-             console.log(`[PASS] ${relativePath}`);
-        }
+    // Write output for compilation if it passed and wasn't intended to be an error
+    let outputPath = null;
+    if (passed && !isError) {
+        outputPath = path.join(path.dirname(filePath), `upp.${path.basename(filePath)}`);
+        fs.writeFileSync(outputPath, output);
     }
 
-    // Write output for compilation
-    const outputPath = path.join(path.dirname(filePath), `upp.${path.basename(filePath)}`);
-    fs.writeFileSync(outputPath, output);
-    return { pass: true, compilationReady: !isError, outputPath };
+    return { pass: passed, compilationReady: passed && !isError, outputPath };
 }
 
 
@@ -189,64 +193,51 @@ async function runTest(entryName) {
             return finalCmd;
         }
 
+        // Helper to get consistent error snapshot path
+        function getErrorSnapshotPath() {
+             return isSuite ? path.join(RESULTS_DIR, entryName, 'test.err') : path.join(RESULTS_DIR, entryName + '.err');
+        }
+
         // Compile
         const compileCmd = runCmd(langConfig.compile);
         try {
-            execSync(compileCmd, { cwd: EXAMPLES_DIR, stdio: 'pipe' });
+            execSync(compileCmd, { cwd: EXAMPLES_DIR, encoding: 'utf8', stdio: 'pipe' });
         } catch (err) {
-            console.error(`[FAIL] Compilation failed for ${entryName}`);
-             if (err.stderr) console.error(err.stderr.toString());
-             else console.error(err.message);
+            const compileOutput = (err.stdout || "") + (err.stderr || "");
+            const snapshotPath = getErrorSnapshotPath();
+            ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
+            const passed = await verifySnapshot(entryName, snapshotPath, compileOutput || err.message, "compilation error");
             cleanup(filesToDelete);
-            return false;
+            return passed; // Return true if error snapshot matches, false otherwise
         }
 
         // Run
         const runCmdStr = runCmd(langConfig.run);
         let runOutput;
         try {
-            runOutput = execSync(runCmdStr, { cwd: EXAMPLES_DIR, encoding: 'utf8' });
+            runOutput = execSync(runCmdStr, { cwd: EXAMPLES_DIR, encoding: 'utf8', stdio: 'pipe' });
         } catch (err) {
-            console.error(`[FAIL] Execution failed for ${entryName}`);
-            console.error(err.message);
+            const runErrorOutput = (err.stdout || "") + (err.stderr || "");
+            const snapshotPath = getErrorSnapshotPath();
+            ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
+            const passed = await verifySnapshot(entryName, snapshotPath, runErrorOutput || err.message, "execution error");
             cleanup(filesToDelete);
-            return false;
+            return passed; // Return true if error snapshot matches, false otherwise
         }
 
-        // Runtime Snapshot
+        // Runtime Snapshot (Success Case)
         let runResultPath;
         if (isSuite) {
-            ensureResultDir(path.join(entryName, 'test.run'));
             runResultPath = path.join(RESULTS_DIR, entryName, 'test.run');
         } else {
              runResultPath = path.join(RESULTS_DIR, entryName + '.run');
         }
+        ensureResultDir(isSuite ? path.join(entryName, 'test.run') : entryName + '.run');
 
-        if (!fs.existsSync(runResultPath)) {
-            console.log(`[NEW] Creating runtime snapshot for ${entryName}`);
-            fs.writeFileSync(runResultPath, runOutput);
-        } else {
-            const existingRunOutput = fs.readFileSync(runResultPath, 'utf8');
-            if (runOutput !== existingRunOutput) {
-                console.log(`[FAIL] ${entryName} runtime output differs!`);
-                console.log(getDiff(runResultPath, runOutput));
-
-                let shouldUpdate = UPDATE_FLAG;
-                if (!shouldUpdate && process.stdin.isTTY) {
-                    const answer = await ask(`Update runtime snapshot for ${entryName}? (y/n): `);
-                    if (answer === 'y') shouldUpdate = true;
-                }
-
-                if (shouldUpdate) {
-                    fs.writeFileSync(runResultPath, runOutput);
-                    console.log(`[UPDATE] Updated runtime snapshot for ${entryName}`);
-                } else {
-                    cleanup(filesToDelete);
-                    return false;
-                }
-            } else {
-                console.log(`[PASS] ${entryName} (runtime)`);
-            }
+        const runtimePassed = await verifySnapshot(entryName, runResultPath, runOutput, "runtime");
+        if (!runtimePassed) {
+            cleanup(filesToDelete);
+            return false;
         }
     }
 

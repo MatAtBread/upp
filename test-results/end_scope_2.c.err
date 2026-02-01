@@ -1,0 +1,5 @@
+/mnt/c/Users/matthew/git/upp/examples/upp.end_scope_2.c: In function ‘main’:
+/mnt/c/Users/matthew/git/upp/examples/upp.end_scope_2.c:31:9: error: ‘nested’ undeclared (first use in this function)
+   31 |  { free(nested); nested = ((void*)0); }
+      |         ^~~~~~
+/mnt/c/Users/matthew/git/upp/examples/upp.end_scope_2.c:31:9: note: each undeclared identifier is reported only once for each function it appears in
