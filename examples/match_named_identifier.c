@@ -1,0 +1,23 @@
+@define retype() {
+    upp.registerTransform((root, helpers) => {
+        helpers.matchReplaceAll(root, `$type $x__identifier = $val__number_literal;`, ({type,x,val}) => {
+            console.log(root.text);
+            return upp.code`${type} ${x} = (${type})${val};`;
+        }, { deep: true });
+    });
+}
+
+@retype;
+
+int foo = 100;
+int bar = 200;
+
+void f() {
+    char* bar = "hello";
+}
+
+int main() {
+    int bar = 5;
+    char baz = 'a';
+    return 0;
+}

@@ -163,7 +163,7 @@
                 type: (type_identifier) @type
                 declarator: [(identifier) @id (init_declarator declarator: (identifier) @id)])
             @decl
-        `, root);
+        `, upp.root);
 
         for (const m of decls) {
             if (m.captures.type.text === cleanTarget) {

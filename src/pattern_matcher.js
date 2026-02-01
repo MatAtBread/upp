@@ -1,3 +1,4 @@
+import Parser from 'tree-sitter';
 
 /**
  * Handles structural pattern matching for code fragments.
@@ -137,14 +138,6 @@ export class PatternMatcher {
      */
     structuralMatch(target, pattern, captures, constraints) {
         // 1. Check for wildcard in pattern
-        // Pattern logic: if pattern is an identifier starting with $, it captures TARGET.
-        // Wait, pattern must be parsed as identifier?
-        // "int $x = 0;". $x is an identifier.
-        // "if ($cond) ...". $cond is identifier.
-        // So we look for pattern nodes that are IDENTIFIERS and start with $.
-
-        // 1. Check for valid placeholder/wildcard in pattern
-        // Matches "$name" or "$name;" (statement wrapper)
         const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_]+);?$/);
         if (match) {
             const name = match[1];
@@ -177,9 +170,6 @@ export class PatternMatcher {
 
         // 2. Strict type check
         if (target.type !== pattern.type) {
-             // Exception: sometimes tree-sitter wraps things differently?
-             // e.g. parenthesized_expression vs expression?
-             // stick to strict for now.
              return false;
         }
 
@@ -189,8 +179,6 @@ export class PatternMatcher {
         }
 
         // 4. Children check
-        // Need to match significant children (skip comments?)
-        // Let's filter comments from both.
         const targetChildren = this.getChildren(target);
         const patternChildren = this.getChildren(pattern);
 

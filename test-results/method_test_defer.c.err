@@ -1,9 +1,0 @@
-Evaluation error in @method: root is not defined
-ReferenceError: root is not defined
-    at eval (eval at evaluateMacros (file:///mnt/c/Users/matthew/git/upp/src/registry.js:431:29), <anonymous>:124:12)
-    at Registry.evaluateMacros (file:///mnt/c/Users/matthew/git/upp/src/registry.js:469:32)
-    at Registry.process (file:///mnt/c/Users/matthew/git/upp/src/registry.js:316:18)
-    at file:///mnt/c/Users/matthew/git/upp/index.js:83:38
-    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
-    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
-    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
