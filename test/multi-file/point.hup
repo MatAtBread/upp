@@ -1,0 +1,8 @@
+#include "../../std/method.hup"
+
+typedef struct Point {
+    int x;
+    int y;
+} Point;
+
+extern @method(Point) void print(Point *p);

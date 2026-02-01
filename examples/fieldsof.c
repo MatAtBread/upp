@@ -1,5 +1,5 @@
 #include "io-lite.h"
-#include "../std/fieldsof.h"
+#include "../std/fieldsof.hup"
 
 struct Base {
     int x;

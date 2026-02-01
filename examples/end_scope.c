@@ -1,6 +1,6 @@
 #include "io-lite.h"
 
-#include "../std/defer.h"
+#include "../std/defer.hup"
 
 int some_condition;
 int main() {

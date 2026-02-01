@@ -73,9 +73,9 @@ for (const absolutePath of options.inputFiles)
     // 3. Initialize Registry & Macros
     const cliIncludePaths = options.includePaths;
     const configIncludePaths = config.includePaths || [];
-    // CLI paths take precedence (or just append? usually search path order matters).
-    // Let's put CLI paths FIRST so they are searched first.
-    config.includePaths = [...new Set([...cliIncludePaths, ...configIncludePaths])];
+    // CLI paths take precedence.
+    // Also include the directory of the input file itself (implicitly).
+    config.includePaths = [...new Set([dirName, ...cliIncludePaths, ...configIncludePaths])];
     const registry = new Registry(config);
     registry.registerSource(initialSource, absolutePath);
 
@@ -105,11 +105,17 @@ for (const absolutePath of options.inputFiles)
             // Let's assume input files MUST be .upp to be auto-written, or we replace the extension.
             // Safe logic: if ends in .upp, strip it. If not, error or warn?
             // For now, let's verify pattern.
+            // Auto-generate output filename: remove .upp suffix if present
+            // .cup -> .c, .hup -> .h
             let outPath;
-            if (absolutePath.endsWith('.upp')) {
+            if (absolutePath.endsWith('.hup')) {
+                outPath = absolutePath.slice(0, -2); // .hup -> .h
+            } else if (absolutePath.endsWith('.cup')) {
+                outPath = absolutePath.slice(0, -2); // .cup -> .c
+            } else if (absolutePath.endsWith('.upp')) {
                 outPath = absolutePath.slice(0, -4);
             } else {
-                console.warn(`Warning: Input file ${baseName} does not end in .upp. Appending .out`);
+                console.warn(`Warning: Input file ${baseName} does not end in .upp/.cup/.hup. Appending .out`);
                 outPath = absolutePath + ".out";
             }
             fs.writeFileSync(outPath, processedSource);

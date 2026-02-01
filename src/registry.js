@@ -204,7 +204,7 @@ class Registry {
             if (node.type === 'ERROR') {
                 const nodeText = node.text.trim();
                 if (nodeText === '@' || nodeText.startsWith('@')) {
-                    if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex)) {
+                    if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex, source)) {
                         const invocation = this.absorbInvocation(source, node.startIndex);
                         if (invocation && this.macros.has(invocation.name)) {
                             invocations.push({
@@ -225,13 +225,15 @@ class Registry {
     /**
      * Checks if an index is inside a macro definition.
      * @param {number} index - The index to check.
+     * @param {string} [source] - The source code to check against.
      * @returns {boolean} True if inside a definition.
      */
-    isInsideDefinition(index) {
+    isInsideDefinition(index, source = null) {
+        const src = source || this.sourceCode;
         const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let match;
-        while ((match = regex.exec(this.sourceCode)) !== null) {
-            const body = this.extractBody(this.sourceCode, match.index + match[0].length);
+        while ((match = regex.exec(src)) !== null) {
+            const body = this.extractBody(src, match.index + match[0].length);
             if (body !== null) {
                 const start = match.index;
                 const end = match.index + match[0].length + body.length + 1;
@@ -310,7 +312,10 @@ class Registry {
             }
 
             this.helpers.replacements = [];
-            this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true);
+            this.helpers.replacements = [];
+            this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true, this.filePath);
+
+            // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
 
             // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
             // this.mainTree is the clean tree (stripped macros).
@@ -367,7 +372,15 @@ class Registry {
      * @param {Object} helpers - Helper instance to use.
      * @param {boolean} [isGlobalPass=false] - Whether this is the main global pass.
      */
-    evaluateMacros(invocations, source, helpers, isGlobalPass = false) {
+    /**
+     * Evaluates found macros and schedules replacements.
+     * @param {Array<Object>} invocations - Macros to evaluate.
+     * @param {string} source - Source code.
+     * @param {Object} helpers - Helper instance to use.
+     * @param {boolean} [isGlobalPass=false] - Whether this is the main global pass.
+     * @param {string} [filePath='unknown'] - File path for error reporting.
+     */
+    evaluateMacros(invocations, source, helpers, isGlobalPass = false, filePath = 'unknown') {
         // 1. Re-scan for strippable definitions in the CURRENT sourceCode
         const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         const definitionsToStrip = [];
@@ -463,7 +476,7 @@ class Registry {
                 }
             } catch (err) {
                 if (err.isUppError) {
-                    this.reportError(err.node, err.message);
+                    this.reportError(err.node, err.message, source, filePath);
                 } else {
                     console.error(`Evaluation error in @${invocation.name}: ${err.message}`);
                     console.error(err.stack);
@@ -478,8 +491,15 @@ class Registry {
      * @param {import('tree-sitter').SyntaxNode} node - Node causing the error.
      * @param {string} message - Error message.
      */
-    reportError(node, message) {
-        reportError(node, this.sourceCode, message, this.filePath);
+    /**
+     * Reports an error to the specific file context.
+     * @param {import('tree-sitter').SyntaxNode} node - Node causing the error.
+     * @param {string} message - Error message.
+     * @param {string} [source] - Source code override.
+     * @param {string} [filePath] - File path override.
+     */
+    reportError(node, message, source = null, filePath = null) {
+        reportError(node, source || this.sourceCode, message, filePath || this.filePath);
     }
 
     /**
@@ -598,7 +618,7 @@ class Registry {
 
             const tempHelpers = new UppHelpersC(this);
             tempHelpers.contextNode = contextNode;
-            this.evaluateMacros(invocations, snippetSource, tempHelpers, false);
+            this.evaluateMacros(invocations, snippetSource, tempHelpers, false, 'snippet');
 
             // Apply changes to the snippet source
             let output = snippetSource;
@@ -646,6 +666,22 @@ class Registry {
      */
     createQuery(pattern) {
         return new Query(this.language, pattern);
+    }
+
+    /**
+     * Scans source code for include directives.
+     * @param {string} source - Source code to scan.
+     * @returns {Array<string>} List of imported paths.
+     */
+    scanIncludes(source) {
+        // Regex matches .upp, .hup, .cup
+        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
+        const includes = [];
+        let match;
+        while ((match = includeRegex.exec(source)) !== null) {
+            includes.push(match[1]);
+        }
+        return includes;
     }
 
     /**
@@ -755,7 +791,7 @@ class Registry {
      * Scans for #include "foo.upp" directives, loads macros, and rewrites to "foo".
      */
     processIncludes() {
-        const includeRegex = /^\s*#\s*include\s*"([^"]+\.upp)"/gm;
+        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
         let match;
         const replacements = [];
 
@@ -774,7 +810,15 @@ class Registry {
                 // The importPath is group 1. We want to replace the whole line or just the path?
                 // Replacing the path inside the quotes is safest.
                 // Reconstruct the line without .upp
-                const newPath = importPath.slice(0, -4); // remove .upp
+                const ext = path.extname(importPath);
+                // remove .upp or .hup/.cup extension if present?
+                // Logic: .hup -> .h, .cup -> .c, .upp -> remove (basename)
+                let newPath;
+                if (importPath.endsWith('.hup')) newPath = importPath.slice(0, -2); // .hup -> .h
+                else if (importPath.endsWith('.cup')) newPath = importPath.slice(0, -2); // .cup -> .c
+                else if (importPath.endsWith('.upp')) newPath = importPath.slice(0, -4); // .upp -> remove
+                else newPath = importPath; // fallback
+
                 const replacement = fullMatch.replace(importPath, newPath);
 
                 replacements.push({ start, end, replacement });
@@ -853,7 +897,11 @@ class Registry {
             if (this.config.write) {
                 // Determine output path: remove .upp extension
                 let outPath = null;
-                if (filePath.endsWith('.upp')) {
+                if (filePath.endsWith('.hup')) {
+                    outPath = filePath.slice(0, -2);
+                } else if (filePath.endsWith('.cup')) {
+                    outPath = filePath.slice(0, -2);
+                } else if (filePath.endsWith('.upp')) {
                     outPath = filePath.slice(0, -4);
                 }
 
@@ -881,18 +929,25 @@ class Registry {
                  }
             }
 
-            const includes = [];
+            const includes = this.scanIncludes(source);
 
             // Recursive scan for includes to load transitive macros
-            const recursiveIncludeRegex = /^\s*#\s*include\s*"([^"]+\.upp)"/gm;
-            let match;
-            while ((match = recursiveIncludeRegex.exec(source)) !== null) {
-                const subImport = match[1];
-                includes.push(subImport);
+            for (const subImport of includes) {
                 const resolved = this.resolveInclude(subImport);
                 if (resolved) {
                     this.loadDependency(resolved);
                 }
+            }
+
+            // Evaluate top-level invocations in the dependency (for side effects like registerTransform)
+            const tree = this._parse(source);
+            const invocations = this.findInvocations(tree, source);
+            if (invocations.length > 0) {
+                 const depHelpers = new UppHelpersC(this);
+                 this.evaluateMacros(invocations, source, depHelpers, false, filePath);
+                 // We discard depHelpers.replacements because we are not generating code for the dependency here
+                 // (unless -w path above handled it, but that uses a separate registry instance).
+                 // We only want the side effects on 'this.transforms' etc.
             }
 
             // Update cache

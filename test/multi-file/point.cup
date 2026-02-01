@@ -1,0 +1,6 @@
+#include "point.hup"
+#include <stdio.h>
+
+@method(Point) void print(Point *p) {
+    printf("Point(%d, %d)\n", p->x, p->y);
+}

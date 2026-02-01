@@ -1,4 +1,4 @@
-#include "../std/forward.h"
+#include "../std/forward.hup"
 
 @forward;
 

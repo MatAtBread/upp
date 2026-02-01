@@ -1,6 +1,6 @@
 #include "io-lite.h"
-#include "../std/method.h"
-#include "../std/defer.h"
+#include "../std/method.hup"
+#include "../std/defer.hup"
 
 struct TestStruct {
     int x;

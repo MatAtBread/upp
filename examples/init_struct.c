@@ -1,6 +1,6 @@
 #include "io-lite.h"
 
-#include "../std/method.h"
+#include "../std/method.hup"
 
 typedef struct {
     int x;

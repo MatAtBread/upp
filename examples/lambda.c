@@ -1,5 +1,5 @@
 #include "io-lite.h"
-#include "../std/lambda.h"
+#include "../std/lambda.hup"
 
 int main() {
     char *name = "Diego";

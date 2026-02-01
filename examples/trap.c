@@ -1,4 +1,4 @@
-#include "../std/trap.h"
+#include "../std/trap.hup"
 
 #include "io-lite.h"
 

@@ -1,4 +1,4 @@
-#include "../std/method.h"
+#include "../std/method.hup"
 
 struct Point {
     int x;
