@@ -55,21 +55,19 @@ class UppHelpersC extends UppHelpersBase {
         return null;
     }
 
-        /**
-     * Matches a pattern against code.
-     * Supports two signatures:
-     * 1. match(options, callback) - Legacy
-     * 2. match(node, srcOrOptions, callback) - New
-     * @param {import('tree-sitter').SyntaxNode} node - Target node.
-     * @param {string} src - Pattern source code.
-     * @param {function(Object): any} callback - Callback with captures.
-     * @param {Object} [options] - Match options.
-     * @param {boolean} [options.deep=false] - Whether to search deep.
-     * @returns {any} Result of callback or captures object (or null).
-     */
+     /**
+      * Matches a pattern against code and performs replacement.
+      * @param {import('tree-sitter').SyntaxNode} node - Target node (root search starts here).
+      * @param {string} src - Pattern source code.
+      * @param {function(Object): string} callback - Callback returning replacement string.
+      * @param {Object} [options] - Match options.
+      * @param {boolean} [options.deep=false] - Whether to search deep.
+      */
     matchReplace(node, src, callback, options = {}) {
         this.match(node, src, (captures) => {
-            this.replace(node, callback(captures));
+            if (captures && captures.node) {
+                 this.replace(captures.node, callback(captures));
+            }
         }, options);
     }
     /**
