@@ -7,10 +7,16 @@ import { Registry } from './src/registry.js';
 import { resolveConfig } from './src/config_loader.js';
 
 const args = process.argv.slice(2);
+if (!args.length || args.includes('--help')) {
+    console.log("Usage: upp <file.c>");
+    process.exit(0);
+}
 
-if (!args.length) {
-    console.error("Usage: node index.js <file.c>");
-    process.exit(1);
+const outputFileIdx = args.indexOf('-o');
+let outputFile = null;
+if (outputFileIdx !== -1) {
+    outputFile = args[outputFileIdx + 1];
+    args.splice(outputFileIdx, 2);
 }
 
 for (const filePath of args)
@@ -79,7 +85,11 @@ for (const filePath of args)
 
         runCommand(langConfig['post-upp'], postVars);
     } else {
-        console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
-        console.log(processedSource);
+        if (outputFile) {
+            fs.writeFileSync(outputFile, processedSource);
+        } else {
+            console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
+            console.log(processedSource);
+        }
     }
 }
