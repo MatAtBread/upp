@@ -213,6 +213,9 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
 
                 // Pass 1: Collect Variables
                 for (const m of decls) {
+                // Manual Visit Check
+                if (!helpers.visit(m.captures.declaration)) continue;
+
                 // If query matches, verify type name
                 const typeText = m.captures.type.text;
                 if (typeText.startsWith('RefPtr_')) {
@@ -387,6 +390,8 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
             // Pass 2: Assignments
             const assigns = robustQuery(`(assignment_expression left: (identifier) @left right: (_) @right) @assign`, startNode);
             for (const m of assigns) {
+                if (!helpers.visit(m.captures.assign)) continue;
+
                 const varName = m.captures.left.text;
                 if (refPtrVars.has(varName)) {
                     const typeSuffix = varTypes.get(varName);
@@ -429,6 +434,8 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
             // Query for field access using ->
             const fieldAccess = robustQuery(`(field_expression argument: (identifier) @lhs operator: "->" field: (field_identifier)) @expr`, startNode);
             for (const m of fieldAccess) {
+                if (!helpers.visit(m.captures.lhs)) continue;
+
                 const varName = m.captures.lhs.text;
                 if (refPtrVars.has(varName)) {
 // console.error(`DEBUG Pass 3 (->) match: ${varName} parent: ${m.captures.lhs.parent.type} range: ${m.captures.lhs.startIndex}-${m.captures.lhs.endIndex}`);
@@ -441,6 +448,8 @@ ${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_
             // Strict check for '*' operator to avoid matching '&' if tree-sitter confuses them
             const derefs = robustQuery(`(pointer_expression argument: (identifier) @arg) @expr`, startNode);
             for (const m of derefs) {
+                 if (!helpers.visit(m.captures.arg)) continue;
+
                  const expr = m.captures.expr;
                  const op = helpers.childForFieldName(expr, 'operator');
                  if (!op || op.text !== '*') continue;

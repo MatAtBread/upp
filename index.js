@@ -35,6 +35,7 @@ try {
     const config = resolveConfig(absolutePath);
     config.cache = cache;
     config.write = options.writeMode;
+    config.stats = options.showStats;
     config.diagnostics = new DiagnosticsManager(config);
     const langConfig = (config.lang && config.lang[ext]) || {};
 

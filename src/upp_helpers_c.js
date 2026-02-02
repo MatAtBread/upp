@@ -56,8 +56,7 @@ class UppHelpersC extends UppHelpersBase {
                  const key = this.transformKey + "::" + src;
 
                  if (this.transformKey) {
-                     if (this.registry.isVisited(key, captures.node)) return;
-                     this.registry.visit(key, captures.node);
+                     if (!this.registry.visit(key, captures.node)) return;
                  }
 
                  const replacement = callback(captures);
@@ -103,8 +102,7 @@ class UppHelpersC extends UppHelpersBase {
                  const key = this.transformKey + "::" + src;
 
                  if (this.transformKey) {
-                     if (this.registry.isVisited(key, captures.node)) return;
-                     this.registry.visit(key, captures.node);
+                     if (!this.registry.visit(key, captures.node)) return;
                  }
 
                  const replacement = callback(captures);

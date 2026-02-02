@@ -30,6 +30,7 @@ class Registry {
         this.cache = config.cache || null;
         /** @type {DiagnosticsManager} */
         this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
+        this.statsEnabled = !!config.stats;
         /** @type {Array<function>} */
         this.transforms = [];
         /** @type {Map<string, import('tree-sitter').Query>} */
@@ -53,6 +54,9 @@ class Registry {
         this.loadedDependencies = new Set();
         /** @type {Map<any, Set<number>>} */
         this.visitedNodes = new Map();
+
+        // Statistics
+        this.stats = { visitsAvoided: 0, visitsAllowed: 0 };
     }
 
     /**
@@ -91,6 +95,22 @@ class Registry {
      */
 
     scanMacros(source, originPath = 'unknown') {
+        // Validation: Check for definitions missing parentheses
+        const badSyntaxRegex = /@define(?:@\w+)?\s+(\w+)\s*\{/g;
+        let badMatch;
+        while ((badMatch = badSyntaxRegex.exec(source)) !== null) {
+             const name = badMatch[1];
+             const { line, col } = DiagnosticsManager.getLineCol(source, badMatch.index);
+             this.diagnostics.reportError(
+                 DiagnosticCodes.SYNTAX_ERROR,
+                 `Macro definition for '@${name}' is missing parentheses. Use '@define ${name}() { ... }'.`,
+                 originPath,
+                 line,
+                 col,
+                 source
+             );
+        }
+
         const found = new Map();
         const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let match;
@@ -327,7 +347,12 @@ class Registry {
 
             this.applyChanges(this.invocations);
             this.cleanTree = null;
+            this.cleanTree = null;
             iterations++;
+        }
+
+        if (this.statsEnabled && (this.stats.visitsAvoided > 0 || this.stats.visitsAllowed > 0)) {
+            console.error(`[Stats] Recursion Avoidance: Allowed=${this.stats.visitsAllowed}, Avoided=${this.stats.visitsAvoided}`);
         }
 
         return this.finishProcessing();
@@ -863,7 +888,11 @@ class Registry {
             this.visitedNodes.set(key, new Set());
         }
         const set = this.visitedNodes.get(key);
-        if (set.has(node.id)) return false;
+        if (set.has(node.id)) {
+            this.stats.visitsAvoided++;
+            return false;
+        }
+        this.stats.visitsAllowed++;
         set.add(node.id);
         return true;
     }

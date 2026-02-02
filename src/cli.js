@@ -7,6 +7,7 @@ import path from 'path';
  * @property {string[]} includePaths - List of absolute include paths.
  * @property {boolean} writeMode - Whether -w/--write was specified.
  * @property {boolean} runMode - Whether --run was specified.
+ * @property {boolean} showStats - Whether --stats was specified.
  * @property {boolean} isHelp - Whether --help was specified.
  */
 
@@ -23,6 +24,7 @@ export function parseArgs(args) {
             includePaths: [],
             writeMode: false,
             runMode: false,
+            showStats: false,
             isHelp: true
         };
     }
@@ -32,6 +34,7 @@ export function parseArgs(args) {
     const includePaths = [process.cwd()];
     let writeMode = false;
     let runMode = false;
+    let showStats = false;
 
     // Parse -o (Output File)
     const outputFileIdx = mutableArgs.indexOf('-o');
@@ -66,6 +69,13 @@ export function parseArgs(args) {
         runMode = true;
         if (runIdx !== -1) mutableArgs.splice(runIdx, 1);
         else mutableArgs.splice(rIdx, 1);
+    }
+
+    // Parse --stats
+    const statsIdx = mutableArgs.indexOf('--stats');
+    if (statsIdx !== -1) {
+        showStats = true;
+        mutableArgs.splice(statsIdx, 1);
     }
 
     // Parse -I (Include Paths)
@@ -104,6 +114,7 @@ export function parseArgs(args) {
         includePaths,
         writeMode,
         runMode,
+        showStats,
         isHelp: false
     };
 }
