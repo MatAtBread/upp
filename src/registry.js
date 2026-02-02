@@ -51,6 +51,8 @@ class Registry {
         this.idCounter = 0;
         /** @type {Set<string>} */
         this.loadedDependencies = new Set();
+        /** @type {Map<any, Set<number>>} */
+        this.visitedNodes = new Map();
     }
 
     /**
@@ -59,11 +61,11 @@ class Registry {
      * @param {string} source - Source code to parse.
      * @returns {import('tree-sitter').Tree} Tree-sitter tree.
      */
-    _parse(source) {
+    _parse(source, oldTree) {
         if (typeof source !== 'string') {
             return this.parser.parse("");
         }
-        return this.parser.parse(source);
+        return this.parser.parse(source, oldTree);
     }
 
     /**
@@ -283,12 +285,13 @@ class Registry {
         this.processIncludes();
 
         while (iterations < maxIterations) {
+            this.visitedNodes = new Map(); // Reset visited for new pass
             const cleanSource = this.maskDefinitions(this.sourceCode);
             if (typeof cleanSource !== 'string') {
                  console.error("CRITICAL: maskDefinitions returned non-string. Type:", typeof cleanSource);
                  break;
             }
-            this.mainTree = this._parse(cleanSource);
+            this.mainTree = this._parse(cleanSource, this.mainTree);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
             if (this.invocations.length === 0) {
@@ -428,6 +431,15 @@ class Registry {
             const hasRestParam = lastParam && lastParam.startsWith('...');
             const expectedArgs = macro.params.length;
 
+            // Recursion avoidance for macros:
+            // Use macro name as key. Check invocationNode.
+            if (this.visit(invocation.name, invocation.invocationNode)) {
+                 // New visit, proceed
+            } else {
+                 // Already visited this node for this macro
+                 continue;
+            }
+
             const macroFn = new Function('upp', 'console', ...macro.params, macro.body);
 
             try {
@@ -560,6 +572,51 @@ class Registry {
                     const comment = `/* ${commentText} */ `;
                     finalContent = comment + finalContent;
                 }
+
+                if (this.mainTree) {
+                    const startPos = DiagnosticsManager.getLineCol(this.sourceCode, change.start);
+                    const oldEndPos = DiagnosticsManager.getLineCol(this.sourceCode, change.end);
+
+                    // 0-indexed conversion
+                    startPos.line--; startPos.col--;
+                    oldEndPos.line--; oldEndPos.col--;
+
+                    // Calculate new end position
+                    // We need to count lines in finalContent to determine row delta
+                    // And chars in last line to determine col delta
+                    let newLines = 0;
+                    let lastLineLen = 0;
+                    for (let i = 0; i < finalContent.length; i++) {
+                        if (finalContent[i] === '\n') {
+                            newLines++;
+                            lastLineLen = 0;
+                        } else {
+                            lastLineLen++;
+                        }
+                    }
+
+                    const newEndRow = startPos.line + newLines;
+                    const newEndCol = newLines === 0 ? startPos.col + lastLineLen : lastLineLen;
+
+                    const edit = {
+                        startIndex: change.start,
+                        oldEndIndex: change.end,
+                        newEndIndex: change.start + finalContent.length,
+                        startPosition: { row: startPos.line, column: startPos.col },
+                        oldEndPosition: { row: oldEndPos.line, column: oldEndPos.col },
+                        newEndPosition: { row: newEndRow, column: newEndCol }
+                    };
+
+                    //console.error("Applying edit:", JSON.stringify(edit, null, 2));
+                    try {
+                        this.mainTree.edit(edit);
+                    } catch (e) {
+                        // If incremental update fails, discard the old tree to force a clean re-parse
+                        // This prevents crashes due to state desync while maintaining robustness
+                        this.mainTree = null;
+                    }
+                }
+
                 output = output.slice(0, change.start) + finalContent + output.slice(change.end);
                 lastStart = change.start;
             }
@@ -696,6 +753,8 @@ class Registry {
     applyTransforms(tree, helpers) {
         helpers.root = tree.rootNode || tree;
         for (const transform of this.transforms) {
+            // Set current transform key for recursion avoidance
+            helpers.transformKey = transform;
             transform(tree.rootNode || tree, helpers);
         }
     }
@@ -790,6 +849,35 @@ class Registry {
             throw e;
         }
         return refs;
+    }
+
+    /**
+     * Mark a node as visited to avoid infinite recursion.
+     * @param {any} key - The namespace key (transform function or macro name).
+     * @param {import('tree-sitter').SyntaxNode} node - The node to visit.
+     * @returns {boolean} True if new visit, False if already visited.
+     */
+    visit(key, node) {
+        if (!node) return false;
+        if (!this.visitedNodes.has(key)) {
+            this.visitedNodes.set(key, new Set());
+        }
+        const set = this.visitedNodes.get(key);
+        if (set.has(node.id)) return false;
+        set.add(node.id);
+        return true;
+    }
+
+    /**
+     * Check if a node has been visited.
+     * @param {any} key - The namespace key.
+     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
+     * @returns {boolean} True if visited.
+     */
+    isVisited(key, node) {
+        if (!node) return false;
+        if (!this.visitedNodes.has(key)) return false;
+        return this.visitedNodes.get(key).has(node.id);
     }
     /**
      * Scans for #include "foo.upp" directives, loads macros, and rewrites to "foo".

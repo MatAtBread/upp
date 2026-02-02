@@ -51,6 +51,15 @@ class UppHelpersC extends UppHelpersBase {
     matchReplace(node, src, callback, options = {}) {
         this.match(node, src, (captures) => {
             if (captures && captures.node) {
+                 // Automatic recursion avoidance
+                 // Key by transform AND pattern to allow different rules to touch the same node
+                 const key = this.transformKey + "::" + src;
+
+                 if (this.transformKey) {
+                     if (this.registry.isVisited(key, captures.node)) return;
+                     this.registry.visit(key, captures.node);
+                 }
+
                  const replacement = callback(captures);
                  if (replacement !== null && replacement !== undefined) {
                      this.replace(captures.node, replacement);
@@ -90,6 +99,14 @@ class UppHelpersC extends UppHelpersBase {
     matchReplaceAll(node, src, callback, options = {}) {
         this.matchAll(node, src, (captures) => {
             if (captures && captures.node) {
+                 // Automatic recursion avoidance
+                 const key = this.transformKey + "::" + src;
+
+                 if (this.transformKey) {
+                     if (this.registry.isVisited(key, captures.node)) return;
+                     this.registry.visit(key, captures.node);
+                 }
+
                  const replacement = callback(captures);
                  if (replacement !== null && replacement !== undefined) {
                      this.replace(captures.node, replacement);
@@ -206,6 +223,24 @@ class UppHelpersC extends UppHelpersBase {
      */
     findReferences(node) {
         return this.registry.findReferences(node);
+    }
+
+    /**
+     * Mark a node as visited.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {boolean} True if new visit.
+     */
+    visit(node) {
+        return this.registry.visit(this.transformKey, node);
+    }
+
+    /**
+     * Check if visited.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {boolean} True if visited.
+     */
+    isVisited(node) {
+        return this.registry.isVisited(this.transformKey, node);
     }
 }
 
