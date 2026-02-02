@@ -45,12 +45,18 @@ function ensureResultDir(relativePath) {
     }
 }
 
-async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = "") {
+async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = "", isSuccess = true) {
     const taskLabel = label ? `(${label})` : "";
     if (!fs.existsSync(snapshotPath)) {
-        console.log(`[FAIL] ${relativePath} ${taskLabel} - No snapshot found. Creating new one.`);
-        fs.writeFileSync(snapshotPath, actualOutput);
-        return false;
+        if (isSuccess) {
+            console.log(`[PASS] ${relativePath} ${taskLabel} - Created new snapshot.`);
+            fs.writeFileSync(snapshotPath, actualOutput);
+            return true;
+        } else {
+            console.log(`[FAIL] ${relativePath} ${taskLabel} - No snapshot found. Creating new one.`);
+            fs.writeFileSync(snapshotPath, actualOutput);
+            return false;
+        }
     }
 
     const existingOutput = fs.readFileSync(snapshotPath, 'utf8');
@@ -102,7 +108,7 @@ async function runUppTransformation(relativePath) {
         snapshotPath = snapshotPath + '.err';
     }
 
-    const passed = await verifySnapshot(relativePath, snapshotPath, output);
+    const passed = await verifySnapshot(relativePath, snapshotPath, output, "", !isError);
 
     // Write output for compilation if it passed and wasn't intended to be an error
     let outputPath = null;
@@ -206,7 +212,7 @@ async function runTest(entryName) {
             const compileOutput = (err.stdout || "") + (err.stderr || "");
             const snapshotPath = getErrorSnapshotPath();
             ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
-            const passed = await verifySnapshot(entryName, snapshotPath, compileOutput || err.message, "compilation error");
+            const passed = await verifySnapshot(entryName, snapshotPath, compileOutput || err.message, "compilation error", false);
             cleanup(filesToDelete);
             return passed; // Return true if error snapshot matches, false otherwise
         }
@@ -220,7 +226,7 @@ async function runTest(entryName) {
             const runErrorOutput = (err.stdout || "") + (err.stderr || "");
             const snapshotPath = getErrorSnapshotPath();
             ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
-            const passed = await verifySnapshot(entryName, snapshotPath, runErrorOutput || err.message, "execution error");
+            const passed = await verifySnapshot(entryName, snapshotPath, runErrorOutput || err.message, "execution error", false);
             cleanup(filesToDelete);
             return passed; // Return true if error snapshot matches, false otherwise
         }
@@ -234,7 +240,7 @@ async function runTest(entryName) {
         }
         ensureResultDir(isSuite ? path.join(entryName, 'test.run') : entryName + '.run');
 
-        const runtimePassed = await verifySnapshot(entryName, runResultPath, runOutput, "runtime");
+        const runtimePassed = await verifySnapshot(entryName, runResultPath, runOutput, "runtime", true);
         if (!runtimePassed) {
             cleanup(filesToDelete);
             return false;
