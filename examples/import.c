@@ -1,0 +1,10 @@
+#include "../std/import.hup"
+
+@import(io) "io-lite.h";
+@import(str) "string.h";
+
+int main() {
+    io.printf("Hello, World!\n");
+    str.strlen("Hello");
+    return 0;
+}

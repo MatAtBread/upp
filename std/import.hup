@@ -1,0 +1,10 @@
+@define import(nameSpace) {
+    const path = upp.consume('expression_statement')?.firstNamedChild;
+    if (path.type !== 'string_literal') {
+        throw new Error('@import requires a string literal path');
+    }
+    upp.registerTransform((root, helpers) => {
+        helpers.matchReplaceAll(root, `${nameSpace}.$field`, ({field}) => field);
+    });
+    return upp.code`\n#include ${path.text}`;
+}
