@@ -1,7 +1,6 @@
 @define retype() {
     upp.registerTransform((root, helpers) => {
         helpers.matchReplaceAll(root, `$type $x__identifier = $val__number_literal;`, ({type,x,val}) => {
-            console.log(root.text);
             return upp.code`${type} ${x} = (${type})${val};`;
         }, { deep: true });
     });

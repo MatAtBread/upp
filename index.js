@@ -16,14 +16,16 @@ if (options.isHelp) {
     console.log("Options:");
     console.log("  -o <file>   Specify output file (only valid with single input)");
     console.log("  -w, --write Auto-generate output files");
+    console.log("  -r, --run   Transpile, compile and run the input file(s)");
     console.log("  -I <path>   Add include path");
     process.exit(0);
 }
 
 const cache = new DependencyCache();
 
-for (const absolutePath of options.inputFiles)
-{
+try {
+    for (const absolutePath of options.inputFiles)
+    {
     const dirName = path.dirname(absolutePath);
     const baseName = path.basename(absolutePath);
     const ext = path.extname(baseName).slice(1);
@@ -52,7 +54,7 @@ for (const absolutePath of options.inputFiles)
         } catch (err) {
             console.error(`Command failed: ${finalCmd}`);
             console.error(err.message);
-            process.exit(1);
+            throw err;
         }
     }
 
@@ -82,7 +84,41 @@ for (const absolutePath of options.inputFiles)
     // 4. Transformation Stage
     const processedSource = registry.process();
 
-    // 5. Post-upp Stage
+    // 5. Run Stage
+    if (options.runMode) {
+        const tempBaseName = `.temp_${fileNameWithoutExt}_${Math.random().toString(36).slice(2, 8)}`;
+        const tempPath = path.join(dirName, `${tempBaseName}.${ext}`);
+        const exePath = path.join(dirName, tempBaseName + (process.platform === 'win32' ? '.exe' : '.out'));
+
+        fs.writeFileSync(tempPath, processedSource);
+
+        const runVars = {
+            ...vars,
+            'OUTPUT': tempPath,
+            'FILENAME': tempBaseName,
+            'BASENAME': `${tempBaseName}.${ext}`
+        };
+
+        try {
+            if (langConfig['compile']) {
+                runCommand(langConfig['compile'], runVars);
+            }
+            if (langConfig['run']) {
+                const output = runCommand(langConfig['run'], runVars);
+                if (output) process.stdout.write(output);
+            }
+        } finally {
+            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+            // Cleanup potential executables
+            [".exe", ".out", ""].forEach(ext => {
+                const p = path.join(dirName, tempBaseName + ext);
+                if (fs.existsSync(p) && p !== tempPath) fs.unlinkSync(p);
+            });
+        }
+        continue; // Skip normal output stages
+    }
+
+    // 6. Post-upp Stage
     if (langConfig['post-upp']) {
         const outputPath = path.join(dirName, `upp.${baseName}`);
         fs.writeFileSync(outputPath, processedSource);
@@ -125,4 +161,7 @@ for (const absolutePath of options.inputFiles)
             console.log(processedSource);
         }
     }
+    }
+} catch (err) {
+    process.exit(1);
 }
