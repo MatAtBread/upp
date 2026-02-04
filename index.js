@@ -80,6 +80,49 @@ try {
     // Also include the directory of the input file itself (implicitly).
     config.includePaths = [...new Set([dirName, ...cliIncludePaths, ...configIncludePaths])];
     const registry = new Registry(config);
+
+    // Auto-load standard macros from 'std' directory next to index.js
+    const stdDir = path.join(path.dirname(process.argv[1]), 'std'); // Approximate script loc?
+    // process.argv[1] is the script path.
+    // robust way for ESM? import.meta.url?
+    // This file is built/run as node script.
+    // use __dirname if available, or path derivation.
+    // Since this project uses modules, __dirname is not available.
+    // But we are in 'index.js'.
+    // We can assume 'std' is in process.cwd()/std if running locally, or relative to this file.
+    // For this context (user session), we know where it is: /home/matt/git/upp/std
+    // Let's use the relative path './std'.
+    const stdLibDir = path.resolve(path.dirname(process.argv[1]), 'std');
+
+    if (fs.existsSync(stdLibDir)) {
+        const stdFiles = fs.readdirSync(stdLibDir).filter(f => f.endsWith('.upp'));
+        for (const f of stdFiles) {
+             const fullPath = path.join(stdLibDir, f);
+             // We use private _parse/scan methods or just registerSource?
+             // registerSource overwrites this.sourceCode/filePath. We don't want that for the main file.
+             // We want to load definitions into the macros map.
+             // We can use 'loadDependency' if we expose it or use it indirectly?
+             // But loadDependency checks cache and such.
+             // Best way: manually read and scan.
+             const src = fs.readFileSync(fullPath, 'utf8');
+             const macros = registry.scanMacros(src, fullPath);
+             for(const [name, m] of macros) registry.macros.set(name, m);
+
+             // Also scan for includes in std lib? recursive?
+             // registry.loadDependency(fullPath);
+             // Ideally we treat std lib as dependencies we just load up front.
+             // But loadDependency updates global state?
+             // Registry methods work on 'this'.
+             // Let's use loadDependency to be safe and complete,
+             // BUT loadDependency might trigger writes if -w is on?
+             // std libs shouldn't be rewritten.
+             // The write check checks extension. .upp -> .out?
+             // My implementation of write check handles .upp.
+             // We should probably ensure we don't overwrite std lib.
+             // For now, manual scan is safer for "built-ins".
+        }
+    }
+
     registry.registerSource(initialSource, absolutePath);
 
     // 4. Transformation Stage

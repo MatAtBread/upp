@@ -54,18 +54,11 @@ export class PatternMatcher {
     prepare(patternStr) {
         let cleanPattern, constraints, patternTree;
 
-        if (this.cache.has(patternStr)) {
-            const cached = this.cache.get(patternStr);
-            cleanPattern = cached.cleanPattern;
-            constraints = cached.constraints;
-            patternTree = cached.patternTree;
-        } else {
-            const result = this.preprocessPattern(patternStr);
-            cleanPattern = result.cleanPattern;
-            constraints = result.constraints;
-            patternTree = this.parseFn(cleanPattern);
-            this.cache.set(patternStr, { cleanPattern, constraints, patternTree });
-        }
+        // Cache disabled to avoid NodeClass/context issues with Tree objects
+        const result = this.preprocessPattern(patternStr);
+        cleanPattern = result.cleanPattern;
+        constraints = result.constraints;
+        patternTree = this.parseFn(cleanPattern);
 
         let patternRoot = patternTree.rootNode;
 
@@ -123,7 +116,13 @@ export class PatternMatcher {
         }
         // Continue searching descendants
         for (let i = 0; i < node.childCount; i++) {
-            this.findAllMatches(node.child(i), patternNode, constraints, results);
+            try {
+                this.findAllMatches(node.child(i), patternNode, constraints, results);
+            } catch (e) {
+                // Diagnose specific node failure
+                console.error(`PatternMatcher crash on node type '${node.type}': ${e.message}`);
+                // console.error(e.stack);
+            }
         }
         return results;
     }

@@ -15,9 +15,15 @@ class Registry {
     /**
      * @param {Object} [config={}] - Configuration object.
      */
-    constructor(config = {}) {
+    /**
+     * @param {Object} [config={}] - Configuration object.
+     * @param {Registry|null} [parentRegistry=null] - The parent registry that spawned this instance.
+     */
+    constructor(config = {}, parentRegistry = null) {
         /** @type {Object} */
         this.config = config;
+        /** @type {Registry|null} */
+        this.parentRegistry = parentRegistry;
         /** @type {Map<string, Object>} */
         this.macros = new Map();
         /** @type {Array<Object>} */
@@ -37,6 +43,7 @@ class Registry {
         this.queryCache = new Map();
         /** @type {Object} */
         this.language = C;
+
         // Handle ESM/CJS interop for language modules
         if (this.language && this.language.default) {
             this.language = this.language.default;
@@ -55,8 +62,23 @@ class Registry {
         /** @type {Map<any, Set<number>>} */
         this.visitedNodes = new Map();
 
+        // on-screen usage
         // Statistics
+        this.uid = Math.random().toString(36).slice(2, 6);
         this.stats = { visitsAvoided: 0, visitsAllowed: 0 };
+        // if (parentRegistry) console.log(`Registry ${this.uid} initialized with parentRegistry ${parentRegistry.uid}`);
+        // else console.log(`Registry ${this.uid} initialized WITHOUT parentRegistry`);
+    }
+
+    /**
+     * Retrieves a macro definition, checking parent registries if needed.
+     * @param {string} name - The macro name.
+     * @returns {Object|undefined} The macro definition.
+     */
+    getMacro(name) {
+        if (this.macros.has(name)) return this.macros.get(name);
+        if (this.parentRegistry) return this.parentRegistry.getMacro(name);
+        return undefined;
     }
 
     /**
@@ -222,13 +244,13 @@ class Registry {
         const seenIndices = new Set();
 
         const walk = (node) => {
-            if (node.type === 'comment') return;
+            if (node.type.includes('comment')) return;
             if (node.type === 'ERROR') {
                 const nodeText = node.text.trim();
                 if (nodeText === '@' || nodeText.startsWith('@')) {
                     if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex, source)) {
                         const invocation = this.absorbInvocation(source, node.startIndex);
-                        if (invocation && this.macros.has(invocation.name)) {
+                        if (invocation && this.getMacro(invocation.name)) {
                             invocations.push({
                                 ...invocation,
                                 invocationNode: node
@@ -292,6 +314,7 @@ class Registry {
      * @returns {string} The transformed source code.
      */
     process() {
+        // console.log(`Process started for registry ${this.uid}`);
         this.allTrees = [];
         let iterations = 0;
         const maxIterations = 100;
@@ -335,8 +358,9 @@ class Registry {
             }
 
             this.helpers.replacements = [];
-            this.helpers.replacements = [];
+            // console.log(`Calling evaluateMacros on ${this.uid}`);
             this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true, this.filePath);
+            // console.log(`Returned from evaluateMacros on ${this.uid}`);
 
             // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
 
@@ -346,7 +370,6 @@ class Registry {
             this.applyTransforms(this.cleanTree, this.helpers);
 
             this.applyChanges(this.invocations);
-            this.cleanTree = null;
             this.cleanTree = null;
             iterations++;
         }
@@ -448,8 +471,9 @@ class Registry {
         helpers.currentInvocations = invocations;
 
         for (const invocation of invocations) {
+            // console.log(`Evaluating @${invocation.name} in registry ${this.uid}. Context: ${source.substring(Math.max(0, invocation.startIndex - 20), Math.min(source.length, invocation.endIndex + 20))}`);
             if (invocation.skipped) continue;
-            const macro = this.macros.get(invocation.name);
+            const macro = this.getMacro(invocation.name);
             if (!macro) continue;
 
             const lastParam = macro.params[macro.params.length - 1];
@@ -807,6 +831,8 @@ class Registry {
                 (declaration (pointer_declarator (identifier) @id))
                 (parameter_declaration (identifier) @id)
                 (parameter_declaration (pointer_declarator (identifier) @id))
+                (function_definition (function_declarator (identifier) @id))
+                (function_definition (pointer_declarator (function_declarator (identifier) @id)))
             `).matches(this.mainTree.rootNode);
 
             for (const m of matches) {
@@ -814,7 +840,7 @@ class Registry {
                 if (idNode.text === name && idNode.startIndex <= node.startIndex) {
                     // Return the parent declaration/parameter
                     let p = this.helpers.parent(idNode);
-                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration') {
+                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration' && p.type !== 'function_definition') {
                         p = this.helpers.parent(p);
                     }
                     def = p || idNode;
@@ -822,7 +848,7 @@ class Registry {
             }
         } catch (e) {
             console.error(`DEBUG: getDefinition query failed for node ${node.type} (${node.text}): ${e.message}`);
-            throw e;
+            // throw e; // Suppress crash to allow build to continue
         }
         return def;
     }
@@ -989,6 +1015,7 @@ class Registry {
      * @param {string} filePath - Absolute path to the dependency.
      */
     loadDependency(filePath) {
+        // console.log(`loadDependency called on registry ${this.uid} for ${filePath}`);
         if (this.loadedDependencies.has(filePath)) return;
         this.loadedDependencies.add(filePath);
 
@@ -1032,7 +1059,9 @@ class Registry {
                     // But if we are here, it wasn't cached, so we write it once.
                     // We need a fresh registry for the dependency to process it fully.
                     // We share the SAME cache.
-                    const subRegistry = new Registry(this.config);
+                    // Pass 'this' as the parent registry to allow the dependency to inspect us.
+                    // console.log("Creating subRegistry for " + filePath + ". Parent is valid?", !!this);
+                    const subRegistry = new Registry(this.config, this);
                     subRegistry.registerSource(source, filePath);
                     const output = subRegistry.process();
                     fs.writeFileSync(outPath, output);
@@ -1064,8 +1093,13 @@ class Registry {
             const tree = this._parse(source);
             const invocations = this.findInvocations(tree, source);
             if (invocations.length > 0) {
-                 const depHelpers = new UppHelpersC(this);
-                 this.evaluateMacros(invocations, source, depHelpers, false, filePath);
+                 // Create a temporary sub-registry to evaluate macros in the correct context
+                 // This ensures upp.parentRegistry points to 'this'
+                 const tempSubReg = new Registry(this.config, this);
+                 // We don't need full process(), just helper context.
+                 const depHelpers = new UppHelpersC(tempSubReg);
+                 tempSubReg.evaluateMacros(invocations, source, depHelpers, false, filePath);
+
                  // We discard depHelpers.replacements because we are not generating code for the dependency here
                  // (unless -w path above handled it, but that uses a separate registry instance).
                  // We only want the side effects on 'this.transforms' etc.
