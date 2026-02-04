@@ -1,5 +1,5 @@
 #include "../io-lite.h"
-#include "extern_methods.h"
+@include(extern_methods.hup)
 
 @method(Foo) void print(Foo *f) {
     printf("Foo %d\n", f->x);

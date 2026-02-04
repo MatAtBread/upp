@@ -1,4 +1,4 @@
-#include "extern_methods.h"
+@include(extern_methods.hup)
 
 int main() {
     Foo f = { .x = 1 };
