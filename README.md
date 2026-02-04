@@ -2,6 +2,8 @@
 
 UPP is a powerful macro pre-processor for C (and other languages) that leverages the **Tree-sitter** AST for intelligent, context-aware code transformations. Unlike traditional string-based pre-processors (like the C pre-processor), UPP allows you to write macros that understand the syntax and semantics of your code.
 
+STATUS: ALPHA
+
 ## Installation
 
 ```
@@ -11,6 +13,8 @@ npm install @matatbread/upp
 ## What is UPP?
 
 UPP allows you to define custom macros that can inspect the abstract syntax tree (AST) of your source code, modify it and generate new code. This enables features like struct methods, automatic defer, closures, and more, all in standard C.
+
+UPP is not a compiler. It is a pre-processor that generates C code. You will need to compile the generated C code with a C compiler of your choice. UPP comes with a utility `upp-transpile` that will generate the C code and print it to the console. It also comes with a utility `upp` that will generate the C code and compile it with a C compiler of your choice. You can also use UPP as a library in your own tools.
 
 ### Example: `@trace`
 
@@ -67,6 +71,9 @@ int main() {
 }
 ```
 
+
+## Using UPP
+
 The `upp-transpile` utility is a handy way to see what upp macros have done to your code, however the main use-case for `upp` is as a wrapper for your C compiler of choice.
 
 ```bash
@@ -75,6 +82,8 @@ $ ./a.out
 Entering my_function
 magic number 0
 ```
+All the command line options you specify are passed to the C compiler, making UPP an incredibly simple "drop-in" replacement for your C compiler: just prefix the compilation commands in your build system with "upp ". When `upp` is invoked like this, it find the .c files, and checks if there is a .cup file with the same name in the same directory. If there is, it will transpile the .cup file to a .c file, and then compile it with the C compiler, treating the resulting .c file as a build artifact. If there is not, it will just compile the .c file with the C compiler, assuming it's a source file. You build system will simply treat the generated .c files as your source, and continue as normal.
+
 Typically, rather than define your macros in your C files, you'd put them in ".hup" files, and use `@include` to reference them.
 
 The only built in macro is `@define`, even `@include` is implemented as a macro which you can find in `std/include.hup`.
