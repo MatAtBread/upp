@@ -2,20 +2,40 @@
   "name": "upp",
   "version": "1.0.0",
   "description": "The Universal Pre-Processor",
-  "main": "index.js",
-  "type": "module",
-  "scripts": {
-    "test": "node test_runner.js && ./test/run.sh",
-    "clean": "rm -rf test-results/*"
+  "keywords": [
+    "preprocessor",
+    "syntax",
+    "semantic",
+    "programming",
+    "language"
+  ],
+  "homepage": "https://github.com/MatAtBread/upp#readme",
+  "bugs": {
+    "url": "https://github.com/MatAtBread/upp/issues"
   },
-  "author": "matatbread@mailed.me.uk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MatAtBread/upp.git"
+  },
   "license": "MIT",
+  "author": "matatbread@mailed.me.uk",
+  "type": "module",
+  "main": "index.js",
   "bin": {
     "upp": "index.js",
     "upp-transpile": "transpile.js"
   },
+  "directories": {
+    "example": "examples",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test_runner.js && ./test/run.sh",
+    "clean": "rm -rf test-results/*"
+  },
   "dependencies": {
     "tree-sitter": "^0.21.0",
     "tree-sitter-c": "^0.21.0"
-  }
+  },
+  "devDependencies": {}
 }
