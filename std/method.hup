@@ -118,6 +118,8 @@
                 }
 
                 if (cleanObjType !== cleanTarget && cleanObjType !== targetAlias) return null;
+            } else {
+                 return null;
             }
 
             const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
@@ -127,22 +129,28 @@
         };
 
         const calls = helpers.query(`
-            (call_expression
-                function: (field_expression
-                    argument: (_) @obj
-                    field: (field_identifier) @method))
-            @call
+            (call_expression) @call
         `, root);
 
         for (const m of calls) {
-            if (m.captures.method.text !== originalName) continue;
             const callNode = m.captures.call;
-            const objNode = m.captures.obj;
-            const opNode = helpers.child(helpers.parent(m.captures.method), 1);
-            const operator = opNode ? opNode.text : '.';
-            const argsNode = helpers.childForFieldName(callNode, 'arguments');
+            const funcNode = callNode.childForFieldName('function');
 
-            const result = transformCall(callNode, objNode, argsNode, operator);
+            if (!funcNode || funcNode.type !== 'field_expression') continue;
+
+            const objectNode = funcNode.childForFieldName('argument');
+            const methodNode = funcNode.childForFieldName('field');
+            if (!objectNode || !methodNode) continue;
+
+            if (methodNode.text !== originalName) continue;
+
+            // field_expression structure: argument, operator, field
+            const opNode = funcNode.child(1);
+            const operator = opNode ? opNode.text : '.';
+
+            const argsNode = callNode.childForFieldName('arguments');
+
+            const result = transformCall(callNode, objectNode, argsNode, operator);
             if (result) helpers.replace(callNode, result);
         }
     });
@@ -175,39 +183,6 @@
 
     return outputText;
 
-}
-
-@define useCreate(T) {
-    let node = upp.consume();
-    let name, init;
-    const text = node.text.trim();
-
-    if (node.type === 'type_identifier' || node.type === 'identifier') {
-        name = text;
-        init = "= {0}";
-        // Optional: consume the trailing semicolon if it exists to avoid ;;
-        if (node.nextSibling && node.nextSibling.type === ';') {
-            upp.replace(node.nextSibling, "");
-        }
-    } else {
-        const match = text.match(/^(\w+)\s*=\s*(.*);?$/);
-        name = match[1];
-        init = ' = ' + match[2].replace(/;$/, '');
-    }
-
-    // Check for renamed symbol in the AST
-    const renamedSymbol = `_${T}_method_Create`;
-    const hasCreate = upp.query(`
-        (function_definition
-            declarator: (function_declarator
-                declarator: (identifier) @name))
-    `, upp.root).some(m => m.captures.name.text === renamedSymbol);
-
-    if (hasCreate) {
-        upp.replace({start: node.endIndex, end: node.endIndex}, ` ${name}.Create();`);
-    }
-
-    return upp.code`${T} ${name} ${init};`;
 }
 
 #endif

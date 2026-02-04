@@ -158,24 +158,24 @@ class Registry {
                 // We have access to this.macros.
                 if (this.macros.has(name)) {
                      const existing = this.macros.get(name);
-                     // Allow redefinition if content is identical? OR always warn?
-                     // User said: "@xxx" from foo.h and "@xxx" from bar.h are distinct.
-                     // But if they share the name, the last one wins in the registry.
-                     // Warn about collision.
-                     // Distinct files defining same macro -> Collision.
-                     // Same file defining same macro twice -> Collision.
-                     // If existing.origin !== originPath, it's definitely a cross-file redefinition.
 
                      // Helper message
                      const existingLoc = existing.origin ? ` (previously known from ${existing.origin})` : '';
-                     this.diagnostics.reportWarning(
-                         DiagnosticCodes.MACRO_REDEFINITION,
-                         `Macro @${name} redefined${existingLoc}`,
-                         originPath,
-                         line,
-                         col,
-                         source
-                     );
+
+                     // User Option 3: "macro re-definitions from the same position in the same file should not be considered UPP001 errors"
+                     // This happens when the same header is included multiple times via different paths or contexts.
+                     if (existing.origin === originPath && existing.startIndex === match.index) {
+                         // Identical definition (same file, same position). Silent ignore.
+                     } else {
+                         this.diagnostics.reportWarning(
+                             DiagnosticCodes.MACRO_REDEFINITION,
+                             `Macro @${name} redefined${existingLoc}`,
+                             originPath,
+                             line,
+                             col,
+                             source
+                         );
+                     }
                 }
 
                 found.set(name, {
@@ -441,6 +441,9 @@ class Registry {
      * @param {string} [filePath='unknown'] - File path for error reporting.
      */
     evaluateMacros(invocations, source, helpers, isGlobalPass = false, filePath = 'unknown') {
+        const oldCleanTree = this.cleanTree;
+        const oldMainTree = this.mainTree;
+
         // 1. Re-scan for strippable definitions in the CURRENT sourceCode
         const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         const definitionsToStrip = [];
@@ -553,6 +556,12 @@ class Registry {
                 }
                 process.exit(1);
             }
+        }
+
+        // Restore context if this was a sub-evaluation
+        if (!isGlobalPass) {
+            this.cleanTree = oldCleanTree;
+            this.mainTree = oldMainTree;
         }
     }
 
@@ -796,10 +805,11 @@ class Registry {
      */
     applyTransforms(tree, helpers) {
         helpers.root = tree.rootNode || tree;
+        const rootNode = tree.rootNode || tree;
         for (const transform of this.transforms) {
             // Set current transform key for recursion avoidance
             helpers.transformKey = transform;
-            transform(tree.rootNode || tree, helpers);
+            transform(rootNode, helpers);
         }
     }
 
@@ -1004,14 +1014,12 @@ class Registry {
                  }
             }
 
-            // Header Generation Logic (.hup -> .h)
+            // Header Generation and Side-Effect Propagation
             if (filePath.endsWith('.hup')) {
                 const outputPath = filePath.slice(0, -4) + '.h';
 
                 // We need to fully expand the file to generate the .h content.
                 // We use a temporary child registry for this context.
-                // It inherits from 'this' so it can see macros we just loaded (and others in scope).
-                // Actually, if we just loaded macros into 'this', the child will see them.
                 const tempRegistry = new Registry(this.config, this);
 
                 // Register source and process
@@ -1020,34 +1028,26 @@ class Registry {
                 const output = tempRegistry.process();
 
                 fs.writeFileSync(outputPath, output);
-            }
 
-            // 6. Evaluate top-level invocations for side effects (like @include in the header itself)
-            // Note: registerSource + process() above ALREADY processed invocations for the .h output.
-            // Do we need to process them for 'this' registry?
-            // Only if they have side effects on 'this' (e.g. defining macros via invoke?).
-            // @include is handled by `process()` calling `loadDependency`.
-            // Since we processed it in `tempRegistry`, any `@include`s there triggered `tempRegistry.loadDependency`,
-            // which recursively loaded macros into `tempRegistry`.
-            // But those macros are NOT in `this` registry!
-            // Wait. `tempRegistry` has parent `this`.
-            // New macros defined in `tempRegistry` stay in `tempRegistry`?
-            // Registry logic: `macros` map is local.
-            // So implicit dependencies (macros defined in included files) are NOT propagated up!
-            // This is a problem if `async.hup` includes `other.hup` and needs `other`'s macros.
-            // The fix: We must explicitly propagate loaded dependencies/macros from the temp traversal?
-            // OR, we just replicate the old logic: evaluate invocations on the *current* registry too?
-
-            // Standard approach:
-            // 1. We scanned definitions (top-level @define) and put them in `this`.
-            // 2. We need to run top-level side-effects (like @include) in `this` context.
-            const tree = this._parse(source);
-            const invocations = this.findInvocations(tree, source);
-            if (invocations.length > 0) {
-                 // We evaluate them in `this` context to propagate side effects (like transforms or loaded macros)
-                 // to the current registry.
-                 const depHelpers = new UppHelpersC(this);
-                 this.evaluateMacros(invocations, source, depHelpers, false, filePath);
+                // Propagate macros and transforms from tempRegistry back to 'this' registry
+                for (const [name, macro] of tempRegistry.macros) {
+                    if (!this.macros.has(name)) {
+                        this.macros.set(name, macro);
+                    }
+                }
+                for (const transform of tempRegistry.transforms) {
+                    if (!this.transforms.includes(transform)) {
+                        this.transforms.push(transform);
+                    }
+                }
+            } else {
+                 // Non-.hup files: Evaluate top-level invocations for side effects the old way
+                 const tree = this._parse(source);
+                 const invocations = this.findInvocations(tree, source);
+                 if (invocations.length > 0) {
+                      const depHelpers = new UppHelpersC(this);
+                      this.evaluateMacros(invocations, source, depHelpers, false, filePath);
+                 }
             }
 
             // Update cache
