@@ -2,211 +2,250 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { Registry } from './src/registry.js';
-import { resolveConfig } from './src/config_loader.js';
 import { DependencyCache } from './src/dependency_cache.js';
 import { DiagnosticsManager } from './src/diagnostics.js';
 import { parseArgs } from './src/cli.js';
 
-const options = parseArgs(process.argv.slice(2));
+const command = parseArgs(process.argv.slice(2));
 
-if (options.isHelp) {
-    console.log("Usage: upp [options] <file.c>...");
-    console.log("Options:");
-    console.log("  -o <file>   Specify output file (only valid with single input)");
-    console.log("  -w, --write Auto-generate output files");
-    console.log("  -r, --run   Transpile, compile and run the input file(s)");
-    console.log("  -I <path>   Add include path");
-    process.exit(0);
+if (!command.isUppCommand) {
+    console.error("Usage: upp <compiler_command>");
+    console.error("Example: upp gcc -c main.c -o main.o");
+    process.exit(1);
 }
 
 const cache = new DependencyCache();
 
-try {
-    for (const absolutePath of options.inputFiles)
-    {
-    const dirName = path.dirname(absolutePath);
-    const baseName = path.basename(absolutePath);
-    const ext = path.extname(baseName).slice(1);
-    const fileNameWithoutExt = path.parse(baseName).name;
+// 1. Process sources
+// Identify common preprocessor args (exclude all sources, output flags, and dep flags)
+const commonPrepArgs = [];
+let skipNext = false;
+for (let i = 1; i < command.fullCommand.length; i++) {
+    const arg = command.fullCommand[i];
+    if (skipNext) { skipNext = false; continue; }
+    if (arg === '-o') { skipNext = true; continue; }
+    if (arg === '-c' || arg === '-S' || arg === '-E') continue;
+    // Filter out ANY source file identified by CLI
+    if (command.sources.some(s => s.cFile === arg)) continue;
+    if (arg.endsWith('.c')) continue;
 
-    // 1. Resolve Configuration
-    const config = resolveConfig(absolutePath);
-    config.cache = cache;
-    config.write = options.writeMode;
-    config.stats = options.showStats;
-    config.diagnostics = new DiagnosticsManager(config);
-    const langConfig = (config.lang && config.lang[ext]) || {};
-
-    /**
-     * Executes a shell command with variable interpolation.
-     * @param {string} cmd - The command string with ${VAR} placeholders.
-     * @param {Object<string, string>} vars - Map of variable names to values.
-     * @returns {string} The standard output of the command.
-     */
-    function runCommand(cmd, vars) {
-        let finalCmd = cmd;
-        for (const [key, value] of Object.entries(vars)) {
-            finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
-        }
-        try {
-            return execSync(finalCmd, { cwd: dirName, encoding: 'utf8' });
-        } catch (err) {
-            console.error(`Command failed: ${finalCmd}`);
-            console.error(err.message);
-            throw err;
-        }
+    // Filter Dependency flags (we handle them specifically)
+    if (arg === '-MD' || arg === '-MMD' || arg === '-MP') continue;
+    if (arg === '-MF' || arg === '-MT' || arg === '-MQ') {
+        skipNext = true;
+        continue;
     }
 
-    const vars = {
-        'INPUT': absolutePath,
-        'BASENAME': fileNameWithoutExt,
-        'FILENAME': baseName
-    };
-
-    // 2. Resolve Initial Source
-    let initialSource;
-    if (langConfig['pre-upp']) {
-        initialSource = runCommand(langConfig['pre-upp'], vars);
-    } else {
-        initialSource = fs.readFileSync(absolutePath, 'utf8');
-    }
-
-    // 3. Initialize Registry & Macros
-    const cliIncludePaths = options.includePaths;
-    const configIncludePaths = config.includePaths || [];
-    // CLI paths take precedence.
-    // Also include the directory of the input file itself (implicitly).
-    config.includePaths = [...new Set([dirName, ...cliIncludePaths, ...configIncludePaths])];
-    const registry = new Registry(config);
-
-    // Auto-load standard macros from 'std' directory next to index.js
-    const stdDir = path.join(path.dirname(process.argv[1]), 'std'); // Approximate script loc?
-    // process.argv[1] is the script path.
-    // robust way for ESM? import.meta.url?
-    // This file is built/run as node script.
-    // use __dirname if available, or path derivation.
-    // Since this project uses modules, __dirname is not available.
-    // But we are in 'index.js'.
-    // We can assume 'std' is in process.cwd()/std if running locally, or relative to this file.
-    // For this context (user session), we know where it is: /home/matt/git/upp/std
-    // Let's use the relative path './std'.
-    const stdLibDir = path.resolve(path.dirname(process.argv[1]), 'std');
-
-    if (fs.existsSync(stdLibDir)) {
-        const stdFiles = fs.readdirSync(stdLibDir).filter(f => f.endsWith('.upp'));
-        for (const f of stdFiles) {
-             const fullPath = path.join(stdLibDir, f);
-             // We use private _parse/scan methods or just registerSource?
-             // registerSource overwrites this.sourceCode/filePath. We don't want that for the main file.
-             // We want to load definitions into the macros map.
-             // We can use 'loadDependency' if we expose it or use it indirectly?
-             // But loadDependency checks cache and such.
-             // Best way: manually read and scan.
-             const src = fs.readFileSync(fullPath, 'utf8');
-             const macros = registry.scanMacros(src, fullPath);
-             for(const [name, m] of macros) registry.macros.set(name, m);
-
-             // Also scan for includes in std lib? recursive?
-             // registry.loadDependency(fullPath);
-             // Ideally we treat std lib as dependencies we just load up front.
-             // But loadDependency updates global state?
-             // Registry methods work on 'this'.
-             // Let's use loadDependency to be safe and complete,
-             // BUT loadDependency might trigger writes if -w is on?
-             // std libs shouldn't be rewritten.
-             // The write check checks extension. .upp -> .out?
-             // My implementation of write check handles .upp.
-             // We should probably ensure we don't overwrite std lib.
-             // For now, manual scan is safer for "built-ins".
-        }
-    }
-
-    registry.registerSource(initialSource, absolutePath);
-
-    // 4. Transformation Stage
-    const processedSource = registry.process();
-
-    // 5. Run Stage
-    if (options.runMode) {
-        const tempBaseName = `.temp_${fileNameWithoutExt}_${Math.random().toString(36).slice(2, 8)}`;
-        const tempPath = path.join(dirName, `${tempBaseName}.${ext}`);
-        const exePath = path.join(dirName, tempBaseName + (process.platform === 'win32' ? '.exe' : '.out'));
-
-        fs.writeFileSync(tempPath, processedSource);
-
-        const runVars = {
-            ...vars,
-            'OUTPUT': tempPath,
-            'FILENAME': tempBaseName,
-            'BASENAME': `${tempBaseName}.${ext}`
-        };
-
-        try {
-            if (langConfig['compile']) {
-                runCommand(langConfig['compile'], runVars);
-            }
-            if (langConfig['run']) {
-                const output = runCommand(langConfig['run'], runVars);
-                if (output) process.stdout.write(output);
-            }
-        } finally {
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            // Cleanup potential executables
-            [".exe", ".out", ""].forEach(ext => {
-                const p = path.join(dirName, tempBaseName + ext);
-                if (fs.existsSync(p) && p !== tempPath) fs.unlinkSync(p);
-            });
-        }
-        continue; // Skip normal output stages
-    }
-
-    // 6. Post-upp Stage
-    if (langConfig['post-upp']) {
-        const outputPath = path.join(dirName, `upp.${baseName}`);
-        fs.writeFileSync(outputPath, processedSource);
-
-        const postVars = {
-            ...vars,
-            'OUTPUT': outputPath,
-            'OUTPUT_BASENAME': fileNameWithoutExt
-        };
-
-        runCommand(langConfig['post-upp'], postVars);
-    } else {
-        if (options.outputFile) {
-            fs.writeFileSync(options.outputFile, processedSource);
-        } else if (config.write) {
-            // Auto-generate output filename: remove .upp suffix if present, otherwise append .out?
-            // The plan says "remove .upp extension".
-            // If file is "foo.c.upp" -> "foo.c".
-            // If file is "foo.c" -> ... maybe don't overwrite? default to same behavior?
-            // Let's assume input files MUST be .upp to be auto-written, or we replace the extension.
-            // Safe logic: if ends in .upp, strip it. If not, error or warn?
-            // For now, let's verify pattern.
-            // Auto-generate output filename: remove .upp suffix if present
-            // .cup -> .c, .hup -> .h
-            let outPath;
-            if (absolutePath.endsWith('.hup')) {
-                outPath = absolutePath.slice(0, -2); // .hup -> .h
-            } else if (absolutePath.endsWith('.cup')) {
-                outPath = absolutePath.slice(0, -2); // .cup -> .c
-            } else if (absolutePath.endsWith('.upp')) {
-                outPath = absolutePath.slice(0, -4);
-            } else {
-                console.warn(`Warning: Input file ${baseName} does not end in .upp/.cup/.hup. Appending .out`);
-                outPath = absolutePath + ".out";
-            }
-            fs.writeFileSync(outPath, processedSource);
-            // console.log(`Generated: ${path.relative(process.cwd(), outPath)}`);
-        } else {
-            console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
-            console.log(processedSource);
-        }
-    }
-    }
-} catch (err) {
-    console.error(err);
-    process.exit(1);
+    commonPrepArgs.push(arg);
 }
+// Add essential flags
+commonPrepArgs.push('-E', '-P', '-x', 'c');
+
+// Store extra dependencies collected from sub-files (e.g. #includes inside .hup)
+let extraDeps = [];
+
+/**
+ * Runs the pre-processor on a specific file.
+ * @param {string} filePath - Path to file.
+ * @param {string[]} [customFlags=[]] - Additional flags (e.g. deps).
+ * @returns {string} Pre-processed content.
+ */
+function preprocess(filePath, customFlags = []) {
+    const args = [...commonPrepArgs, ...customFlags, filePath];
+    return execSync(`${command.compiler} ${args.join(' ')}`, { encoding: 'utf8' });
+}
+
+for (const source of command.sources) {
+    extraDeps = []; // Reset for each source
+    if (fs.existsSync(source.absCupFile)) {
+        try {
+            // Run Pre-processor on main input with Main Dep Flags
+            const preProcessed = preprocess(source.cupFile, command.depFlags);
+
+            // Resolve config (simple search for upp.json)
+            let loadedConfig = {};
+            let lookupDir = path.dirname(source.absCupFile);
+            while (true) {
+                const configPath = path.join(lookupDir, 'upp.json');
+                if (fs.existsSync(configPath)) {
+                    try {
+                        loadedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+                        break;
+                    } catch (e) { /* ignore */ }
+                }
+                const parent = path.dirname(lookupDir);
+                if (parent === lookupDir) break;
+                lookupDir = parent;
+            }
+
+            // Define UPP variable for expansion (directory of executable)
+            // process.argv[1] is the script path (upp/index.js usually)
+            const UPP_DIR = path.dirname(process.argv[1]);
+
+            // Helper to expand variables
+            const expandVars = (p) => p.replace('${UPP}', UPP_DIR);
+
+            // Include Paths: source dir + CLI + config
+            const configIncludesRaw = loadedConfig.include_paths || [];
+            if (loadedConfig.includePaths) configIncludesRaw.push(...loadedConfig.includePaths);
+
+            // Resolve config includes
+            const resolvedConfigIncludes = configIncludesRaw.map(p => {
+                 const expanded = expandVars(p);
+                 return path.isAbsolute(expanded) ? expanded : path.resolve(lookupDir, expanded);
+            });
+
+            // Final Include Paths (prioritize config)
+            const finalIncludePaths = [
+                path.dirname(source.absCupFile), // Implicit sibling lookup
+                ...resolvedConfigIncludes,
+                ...(command.includePaths || [])
+            ];
+
+            // Initialize Registry
+            const config = {
+                 cache,
+                 includePaths: finalIncludePaths,
+                 diagnostics: new DiagnosticsManager({}),
+                 preprocess: (file) => {
+                     // Same preprocess logic as before...
+                     if (command.depFlags.length > 0) {
+                         const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
+                         const flags = ['-MD', '-MF', tempD];
+                         try {
+                             const out = preprocess(file, flags);
+                             if (fs.existsSync(tempD)) {
+                                 const content = fs.readFileSync(tempD, 'utf8');
+                                 const match = content.match(/^[^:]+:(.*)/s);
+                                 if (match) { extraDeps.push(match[1]); }
+                                 fs.unlinkSync(tempD);
+                             }
+                             return out;
+                         } catch (e) {
+                             if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
+                             throw e;
+                         }
+                     }
+                     return preprocess(file);
+                 }
+            };
+            const registry = new Registry(config);
+
+            // Core Loading (from config.core)
+            const coreFiles = loadedConfig.core || [];
+            // Also load legacy std/*.upp if core not defined?
+            // User intention seems to be explicit control.
+            // But let's support loading 'async.hup' if listed.
+
+            for (const coreFile of coreFiles) {
+                // Find file in include paths
+                let foundPath = null;
+                for (const inc of finalIncludePaths) {
+                    const p = path.join(inc, coreFile);
+                    if (fs.existsSync(p)) {
+                        foundPath = p;
+                        break;
+                    }
+                }
+
+                if (foundPath) {
+                   // We must process it using loadDependency to ensure .h generation and caching
+                   registry.loadDependency(foundPath);
+                } else {
+                    console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
+                }
+            }
+
+            // Legacy fall back: if no core defined, try std/*.upp?
+            // User explicitly requested removal of .upp convention.
+            // If core is empty, we do nothing. Safe.
+
+            // Process Macros
+            registry.registerSource(preProcessed, source.absCupFile);
+            const output = registry.process();
+
+            // Write output to the .c file
+            fs.writeFileSync(source.absCFile, output);
+
+            // Dependency Tracking Logic (unchanged)
+            if (command.depFlags.length > 0) {
+                 let dFile = command.depOutputFile;
+                 if (!dFile) {
+                     const parsed = path.parse(source.cupFile);
+                     dFile = path.join(parsed.dir, parsed.name + '.d');
+                 }
+
+                 if (dFile && fs.existsSync(dFile)) {
+                     const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
+                     const transitive = extraDeps.join('');
+
+                     const content = fs.readFileSync(dFile, 'utf8');
+                     const targetMatch = content.match(/^([^:]+):/);
+                     if (targetMatch) {
+                         const target = targetMatch[1].trim();
+                         fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
+                     }
+                 }
+            }
+
+            // Add resolved include paths to the FINAL compiler command so it can find generated headers
+            // We append -I for each resolved path that isn't already there?
+            // Compiler args are preserved. simple append is usually safe (last wins or additive).
+            for (const inc of resolvedConfigIncludes) {
+                // Check if already present? simpler to just add.
+                // But we must add them to 'finalArgs' logic later.
+                // We'll store them in 'command.additionalIncludes'?
+                if (!command.additionalIncludes) command.additionalIncludes = [];
+                command.additionalIncludes.push(inc);
+            }
+
+        } catch (e) {
+            console.error(`[upp] Error processing ${source.cupFile}:`);
+            console.error(e.message);
+            process.exit(1);
+        }
+    }
+}
+
+// 2. Execute Original Compiler Command
+// Strip dependency flags to prevent overwriting the .d file we just patched
+// (The compiler would generate an empty .d file because it sees pre-processed input)
+const finalArgs = [];
+let skipNextFinal = false;
+for (let i = 1; i < command.fullCommand.length; i++) {
+    const arg = command.fullCommand[i];
+    if (skipNextFinal) { skipNextFinal = false; continue; }
+
+    // Check if this arg is in depFlags
+    // We need to handle flags with arguments (like -MF file) correctly.
+    // command.depFlags contains ALL parts (flags and values).
+    // So we just check inclusion?
+    // Limitation: if same string appears as other arg? Unlikely for -MD.
+    // BUT 'file.d' might appear elsewhere?
+    // command.depFlags is explicit list from CLI parsing.
+    // We can filter by index if we tracked it, but simple inclusion is risky for values.
+    // Better: Re-detect using same logic as CLI or assume depFlags set is unique enough?
+    // Actually, distinct array approach is better.
+    // Let's reuse the logic:
+    if (arg === '-MD' || arg === '-MMD' || arg === '-MP') { // Added -MP handling
+        continue;
+    }
+    if (arg === '-MF' || arg === '-MT' || arg === '-MQ') {
+        skipNextFinal = true;
+        continue;
+    }
+    finalArgs.push(arg);
+}
+
+// Append additional includes from upp.json
+if (command.additionalIncludes) {
+    for (const inc of command.additionalIncludes) {
+        finalArgs.push('-I' + inc);
+    }
+}
+
+// console.log(`[upp] Executing: ${command.compiler} ${finalArgs.join(' ')}`);
+const child = spawnSync(command.compiler, finalArgs, { stdio: 'inherit' });
+process.exit(child.status);

@@ -13,7 +13,10 @@ class UppHelpersC extends UppHelpersBase {
      */
     constructor(registry) {
         super(registry);
-        this.matcher = new PatternMatcher((src) => this.registry._parse(src), this.registry.language);
+        // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
+        const patternParser = new Parser();
+        patternParser.setLanguage(registry.language);
+        this.matcher = new PatternMatcher((src) => patternParser.parse(src), registry.language);
     }
 
     /**

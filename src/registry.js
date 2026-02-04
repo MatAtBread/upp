@@ -17,6 +17,9 @@ class Registry {
      */
     /**
      * @param {Object} [config={}] - Configuration object.
+     * @param {import('./dependency_cache.js').DependencyCache} [config.cache] - Shared dependency cache.
+     * @param {string[]} [config.includePaths] - List of include paths.
+     * @param {function(string): string} [config.preprocess] - Callback to preprocess a file (e.g. run cpp).
      * @param {Registry|null} [parentRegistry=null] - The parent registry that spawned this instance.
      */
     constructor(config = {}, parentRegistry = null) {
@@ -88,10 +91,16 @@ class Registry {
      * @returns {import('tree-sitter').Tree} Tree-sitter tree.
      */
     _parse(source, oldTree) {
+        // ALWAYS create a fresh parser instance to avoid "NodeClass is not a constructor"
+        // errors which occur when a shared parser is reused (e.g. in recursive macro loading).
+        // This ensures strict isolation of Tree objects.
+        const parser = new Parser();
+        parser.setLanguage(this.language);
+
         if (typeof source !== 'string') {
-            return this.parser.parse("");
+            return parser.parse("");
         }
-        return this.parser.parse(source, oldTree);
+        return parser.parse(source); // Force full parse, ignore oldTree
     }
 
     /**
@@ -324,8 +333,8 @@ class Registry {
              this.sourceCode = "";
         }
 
-        // Pre-process includes
-        this.processIncludes();
+        // Pre-processing handled externally
+        // this.processIncludes();
 
         while (iterations < maxIterations) {
             this.visitedNodes = new Map(); // Reset visited for new pass
@@ -778,21 +787,7 @@ class Registry {
         return q;
     }
 
-    /**
-     * Scans source code for include directives.
-     * @param {string} source - Source code to scan.
-     * @returns {Array<string>} List of imported paths.
-     */
-    scanIncludes(source) {
-        // Regex matches .upp, .hup, .cup
-        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
-        const includes = [];
-        let match;
-        while ((match = includeRegex.exec(source)) !== null) {
-            includes.push(match[1]);
-        }
-        return includes;
-    }
+
 
     /**
      * run registered transforms on the tree
@@ -934,61 +929,7 @@ class Registry {
         if (!this.visitedNodes.has(key)) return false;
         return this.visitedNodes.get(key).has(node.id);
     }
-    /**
-     * Scans for #include "foo.upp" directives, loads macros, and rewrites to "foo".
-     */
-    processIncludes() {
-        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
-        let match;
-        const replacements = [];
 
-        while ((match = includeRegex.exec(this.sourceCode)) !== null) {
-            const fullMatch = match[0];
-            const importPath = match[1];
-            const start = match.index;
-            const end = start + fullMatch.length;
-
-            // Resolve and load
-            const resolvedPath = this.resolveInclude(importPath);
-            if (resolvedPath) {
-                this.loadDependency(resolvedPath);
-
-                // Rewrite: remove .upp from the import path in the source
-                // The importPath is group 1. We want to replace the whole line or just the path?
-                // Replacing the path inside the quotes is safest.
-                // Reconstruct the line without .upp
-                const ext = path.extname(importPath);
-                // remove .upp or .hup/.cup extension if present?
-                // Logic: .hup -> .h, .cup -> .c, .upp -> remove (basename)
-                let newPath;
-                if (importPath.endsWith('.hup')) newPath = importPath.slice(0, -2); // .hup -> .h
-                else if (importPath.endsWith('.cup')) newPath = importPath.slice(0, -2); // .cup -> .c
-                else if (importPath.endsWith('.upp')) newPath = importPath.slice(0, -4); // .upp -> remove
-                else newPath = importPath; // fallback
-
-                const replacement = fullMatch.replace(importPath, newPath);
-
-                replacements.push({ start, end, replacement });
-            } else {
-                // Determine line/col for warning
-                const { line, col } = DiagnosticsManager.getLineCol(this.sourceCode, start);
-                this.diagnostics.reportWarning(
-                    DiagnosticCodes.MISSING_INCLUDE,
-                    `Could not resolve include: ${importPath}`,
-                    this.filePath,
-                    line,
-                    col,
-                    this.sourceCode
-                );
-            }
-        }
-
-        // Apply replacements in reverse
-        for (let i = replacements.length - 1; i >= 0; i--) {
-            const r = replacements[i];
-            this.sourceCode = this.sourceCode.slice(0, r.start) + r.replacement + this.sourceCode.slice(r.end);
-        }
-    }
 
     /**
      * Resolves an include path using the configured include paths.
@@ -1011,7 +952,8 @@ class Registry {
     }
 
     /**
-     * Loads a dependency file and extracts macros.
+     * Loads a dependency file, pre-processes it, and extracts macros.
+     * Also recursively compiles .hup files to .h files for C compiler compatibility.
      * @param {string} filePath - Absolute path to the dependency.
      */
     loadDependency(filePath) {
@@ -1027,46 +969,29 @@ class Registry {
                     this.macros.set(name, macro);
                 }
             }
-            // Populate recursive includes from cache if available
-            if (cached.includes) {
-                for (const inc of cached.includes) {
-                    const resolved = this.resolveInclude(inc);
-                    if (resolved) this.loadDependency(resolved);
-                }
-                return;
-            }
+            // Even if cached, we might need to regenerate the .h file if it's missing?
+            // Or assume cache implies file exists?
+            // Safer to check existence and regenerate if missing, but for now specific flow overrides cache?
+            // Let's assume strict build: if calling loadDependency, usually we process.
+            // But strict caching might skip this.
+            // We'll proceed to loading macros from cache, but check if .h generation is needed.
+            // Usually cache is valid only if file hasn't changed.
+            // But output .h might be deleted?
+            // Let's regenerate .h always if it's a .hup file, to be safe.
         }
 
         try {
-            const source = fs.readFileSync(filePath, 'utf8');
-
-            // If -w is enabled, we need to generate the output for this dependency too.
-            // This is "recursive compilation".
-            if (this.config.write) {
-                // Determine output path: remove .upp extension
-                let outPath = null;
-                if (filePath.endsWith('.hup')) {
-                    outPath = filePath.slice(0, -2);
-                } else if (filePath.endsWith('.cup')) {
-                    outPath = filePath.slice(0, -2);
-                } else if (filePath.endsWith('.upp')) {
-                    outPath = filePath.slice(0, -4);
+            // Use pre-processor if configured (for .hup files)
+            let source;
+            if (this.config.preprocess) {
+                try {
+                    source = this.config.preprocess(filePath);
+                } catch (e) {
+                    console.error(`Preprocessing failed for ${filePath}: ${e.message}`);
+                    source = fs.readFileSync(filePath, 'utf8'); // Fallback?
                 }
-
-                if (outPath) {
-                    // Avoid infinite recursion or double writing?
-                    // The cache check above handles "loading" recursion.
-                    // But if we are here, it wasn't cached, so we write it once.
-                    // We need a fresh registry for the dependency to process it fully.
-                    // We share the SAME cache.
-                    // Pass 'this' as the parent registry to allow the dependency to inspect us.
-                    // console.log("Creating subRegistry for " + filePath + ". Parent is valid?", !!this);
-                    const subRegistry = new Registry(this.config, this);
-                    subRegistry.registerSource(source, filePath);
-                    const output = subRegistry.process();
-                    fs.writeFileSync(outPath, output);
-                    // console.log(`Recursively generated: ${path.relative(process.cwd(), outPath)}`);
-                }
+            } else {
+                source = fs.readFileSync(filePath, 'utf8');
             }
 
             // Scan macros fresh
@@ -1079,35 +1004,55 @@ class Registry {
                  }
             }
 
-            const includes = this.scanIncludes(source);
+            // Header Generation Logic (.hup -> .h)
+            if (filePath.endsWith('.hup')) {
+                const outputPath = filePath.slice(0, -4) + '.h';
 
-            // Recursive scan for includes to load transitive macros
-            for (const subImport of includes) {
-                const resolved = this.resolveInclude(subImport);
-                if (resolved) {
-                    this.loadDependency(resolved);
-                }
+                // We need to fully expand the file to generate the .h content.
+                // We use a temporary child registry for this context.
+                // It inherits from 'this' so it can see macros we just loaded (and others in scope).
+                // Actually, if we just loaded macros into 'this', the child will see them.
+                const tempRegistry = new Registry(this.config, this);
+
+                // Register source and process
+                tempRegistry.registerSource(source, filePath);
+                // process() will expand macros (like @package) and strip definitions.
+                const output = tempRegistry.process();
+
+                fs.writeFileSync(outputPath, output);
             }
 
-            // Evaluate top-level invocations in the dependency (for side effects like registerTransform)
+            // 6. Evaluate top-level invocations for side effects (like @include in the header itself)
+            // Note: registerSource + process() above ALREADY processed invocations for the .h output.
+            // Do we need to process them for 'this' registry?
+            // Only if they have side effects on 'this' (e.g. defining macros via invoke?).
+            // @include is handled by `process()` calling `loadDependency`.
+            // Since we processed it in `tempRegistry`, any `@include`s there triggered `tempRegistry.loadDependency`,
+            // which recursively loaded macros into `tempRegistry`.
+            // But those macros are NOT in `this` registry!
+            // Wait. `tempRegistry` has parent `this`.
+            // New macros defined in `tempRegistry` stay in `tempRegistry`?
+            // Registry logic: `macros` map is local.
+            // So implicit dependencies (macros defined in included files) are NOT propagated up!
+            // This is a problem if `async.hup` includes `other.hup` and needs `other`'s macros.
+            // The fix: We must explicitly propagate loaded dependencies/macros from the temp traversal?
+            // OR, we just replicate the old logic: evaluate invocations on the *current* registry too?
+
+            // Standard approach:
+            // 1. We scanned definitions (top-level @define) and put them in `this`.
+            // 2. We need to run top-level side-effects (like @include) in `this` context.
             const tree = this._parse(source);
             const invocations = this.findInvocations(tree, source);
             if (invocations.length > 0) {
-                 // Create a temporary sub-registry to evaluate macros in the correct context
-                 // This ensures upp.parentRegistry points to 'this'
-                 const tempSubReg = new Registry(this.config, this);
-                 // We don't need full process(), just helper context.
-                 const depHelpers = new UppHelpersC(tempSubReg);
-                 tempSubReg.evaluateMacros(invocations, source, depHelpers, false, filePath);
-
-                 // We discard depHelpers.replacements because we are not generating code for the dependency here
-                 // (unless -w path above handled it, but that uses a separate registry instance).
-                 // We only want the side effects on 'this.transforms' etc.
+                 // We evaluate them in `this` context to propagate side effects (like transforms or loaded macros)
+                 // to the current registry.
+                 const depHelpers = new UppHelpersC(this);
+                 this.evaluateMacros(invocations, source, depHelpers, false, filePath);
             }
 
             // Update cache
             if (this.cache) {
-                this.cache.set(filePath, { macros: fileMacros, includes });
+                this.cache.set(filePath, { macros: fileMacros, includes: [] });
             }
 
         } catch (err) {

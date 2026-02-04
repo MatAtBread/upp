@@ -1,0 +1,18 @@
+@include(method.hup)
+
+struct Point {
+    int x;
+    int y;
+};
+typedef struct Point Point;
+
+// Standardized paren style.
+@method(Point) int distance(Point *p) {
+    return p->x * p->x + p->y * p->y;
+}
+
+int main() {
+    Point p;
+    int r = p.distance();
+    return 0;
+}

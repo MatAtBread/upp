@@ -1,9 +1,9 @@
+
 import fs from 'fs';
 import path from 'path';
 import { execSync, spawnSync } from 'child_process';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
-import { resolveConfig } from './src/config_loader.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -32,9 +32,14 @@ function ask(question) {
 function getDiff(file1, content2) {
     const tempFile = path.join(RESULTS_DIR, '.temp_output');
     fs.writeFileSync(tempFile, content2);
-    const result = spawnSync('diff', ['-u', '--color=always', file1, tempFile], { encoding: 'utf8' });
-    fs.unlinkSync(tempFile);
-    return result.stdout;
+    // Use git diff if available for color, else plain diff
+    try {
+         const result = spawnSync('diff', ['-u', '--color=always', file1, tempFile], { encoding: 'utf8' });
+         fs.unlinkSync(tempFile);
+         return result.stdout;
+    } catch (e) {
+         return "Diff failed: " + e.message;
+    }
 }
 
 // Ensure result directory exists for a file
@@ -47,22 +52,26 @@ function ensureResultDir(relativePath) {
 
 async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = "", isSuccess = true) {
     const taskLabel = label ? `(${label})` : "";
+
+    // Normalize output? (Remove absolute paths to make snapshots portable)
+    const normalizedOutput = actualOutput.split(process.cwd()).join('.');
+
     if (!fs.existsSync(snapshotPath)) {
         if (isSuccess) {
             console.log(`[PASS] ${relativePath} ${taskLabel} - Created new snapshot.`);
-            fs.writeFileSync(snapshotPath, actualOutput);
+            fs.writeFileSync(snapshotPath, normalizedOutput);
             return true;
         } else {
             console.log(`[FAIL] ${relativePath} ${taskLabel} - No snapshot found. Creating new one.`);
-            fs.writeFileSync(snapshotPath, actualOutput);
+            fs.writeFileSync(snapshotPath, normalizedOutput);
             return false;
         }
     }
 
     const existingOutput = fs.readFileSync(snapshotPath, 'utf8');
-    if (actualOutput !== existingOutput) {
+    if (normalizedOutput !== existingOutput) {
         console.log(`[FAIL] ${relativePath} ${taskLabel} differs from snapshot!`);
-        console.log(getDiff(snapshotPath, actualOutput));
+        console.log(getDiff(snapshotPath, normalizedOutput));
 
         let shouldUpdate = UPDATE_FLAG;
         if (!shouldUpdate && process.stdin.isTTY) {
@@ -71,7 +80,7 @@ async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = 
         }
 
         if (shouldUpdate) {
-            fs.writeFileSync(snapshotPath, actualOutput);
+            fs.writeFileSync(snapshotPath, normalizedOutput);
             console.log(`[UPDATE] Updated snapshot for ${relativePath} ${taskLabel}`);
             return true;
         } else {
@@ -83,167 +92,132 @@ async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = 
     return true;
 }
 
-// Step 1: Run UPP transformation and verify snapshot
-async function runUppTransformation(relativePath) {
-    const filePath = path.join(EXAMPLES_DIR, relativePath);
-    ensureResultDir(relativePath);
-    const baseName = path.basename(relativePath);
-
-    let output;
-    let isError = false;
-    let snapshotPath = path.join(RESULTS_DIR, relativePath);
-
-    try {
-        const run = spawnSync('node', ['index.js', filePath], { encoding: 'utf8' });
-        output = (run.stdout || "") + (run.stderr || "");
-
-        // 1. Check if it's an error state
-        if (run.status !== 0 || (run.stderr?.length && !run.stdout?.trim().length)) {
-             isError = true;
-             snapshotPath = snapshotPath + '.err';
-        }
-    } catch (err) {
-        output = err.message + (err.stack ? "\n" + err.stack : "");
-        isError = true;
-        snapshotPath = snapshotPath + '.err';
-    }
-
-    const passed = await verifySnapshot(relativePath, snapshotPath, output, "", !isError);
-
-    // Write output for compilation if it passed and wasn't intended to be an error
-    let outputPath = null;
-    if (passed && !isError) {
-        outputPath = path.join(path.dirname(filePath), `upp.${path.basename(filePath)}`);
-        fs.writeFileSync(outputPath, output);
-    }
-
-    return { pass: passed, compilationReady: passed && !isError, outputPath };
+// Check if a file is an error test (by convention, e.g. ends with _error.cup)
+function isErrorTest(filename) {
+    return filename.includes('_error');
 }
-
 
 async function runTest(entryName) {
     const entryPath = path.join(EXAMPLES_DIR, entryName);
     const stat = fs.statSync(entryPath);
     const filesToDelete = [];
 
+    // Identify Source Files
     let sourceFiles = [];
     let isSuite = false;
+    let mainCupFileRaw = "";
 
     if (stat.isDirectory()) {
          isSuite = true;
-         // Find all .c files in the directory
-         const files = fs.readdirSync(entryPath).filter(f => f.endsWith('.c') && !f.startsWith('upp.'));
-         if (files.length === 0) return true; // Empty suite
+         const files = fs.readdirSync(entryPath).filter(f => f.endsWith('.cup'));
+         if (files.length === 0) return true;
          sourceFiles = files.map(f => path.join(entryName, f));
+         mainCupFileRaw = sourceFiles[0]; // Assuming first logical cup file is main for checking
     } else {
         sourceFiles = [entryName];
+        mainCupFileRaw = entryName;
     }
 
-    // 1. Transform all files
-    const transformedFiles = [];
-    let compilationReady = true;
+    // Determine target executable name
+    const exeName = isSuite ? entryName : path.basename(entryName, '.cup');
+    const exePath = path.join(EXAMPLES_DIR, `${exeName}.exe`);
+    filesToDelete.push(exePath);
 
-    for (const file of sourceFiles) {
-        const res = await runUppTransformation(file);
+    // Command Construction
+    // We assume input files like `examples/foo.cup` are passed to `upp cc` as `examples/foo.c`.
+    const inputCFiles = sourceFiles.map(f => f.slice(0, -4) + '.c');
 
-        if (res.outputPath) {
-            transformedFiles.push(res.outputPath);
-            filesToDelete.push(res.outputPath);
+    // Arguments: upp cc examples/foo.c -o examples/foo.exe
+    const uppCmdArgs = ['cc', ...inputCFiles.map(f => path.join('examples', f)), '-o', path.join('examples', path.basename(exePath))];
+
+    // Capture Compilation Output
+    // We want to verify:
+    // 1. Exit code (0 usually, non-zero for error tests)
+    // 2. Stdout/Stderr (for error messages)
+    // 3. Generated .c content (<file>.c snapshot)
+
+    let compileOutput = "";
+    let isCompileError = false;
+
+    try {
+        const run = spawnSync('node', ['index.js', ...uppCmdArgs], { encoding: 'utf8' });
+        compileOutput = (run.stdout || "") + (run.stderr || "");
+        if (run.status !== 0) {
+            isCompileError = true;
         }
-
-        if (!res.pass) {
-            cleanup(filesToDelete);
-            return false;
-        }
-
-        if (!res.compilationReady) {
-            compilationReady = false;
-        }
+    } catch (e) {
+        compileOutput = e.message;
+        isCompileError = true;
     }
 
-    if (!compilationReady) {
+    const testIsErrorExpected = isErrorTest(entryName);
+
+    // Verify Compilation output text (usually empty on success, or error message)
+    if (isCompileError) {
+        const snapshotPath = path.join(RESULTS_DIR, entryName.slice(0, -4) + '.err');
+        ensureResultDir(path.basename(snapshotPath));
+
+        const passed = await verifySnapshot(entryName, snapshotPath, compileOutput, "compilation error", false);
         cleanup(filesToDelete);
-        return true; // Passed snapshot checks, but not runnable
+
+        if (testIsErrorExpected) return passed;
+        return false; // Unexpected error
+    } else {
+        if (testIsErrorExpected) {
+             console.log(`[FAIL] ${entryName} expected compilation error but succeeded.`);
+             return false;
+        }
     }
 
-    // 2. Compile and Run
-    // Config context:
-    const mainFileShort = sourceFiles[0];
-    const mainFilePath = path.join(EXAMPLES_DIR, mainFileShort);
-    const config = resolveConfig(mainFilePath);
-    const ext = path.extname(mainFilePath).slice(1);
-    const langConfig = (config.lang && config.lang[ext]) || {};
+    // Capture Generated .c Content for Snapshot
+    for (let i = 0; i < sourceFiles.length; i++) {
+        const cupFile = sourceFiles[i];
+        const cFile = inputCFiles[i]; // relative to examples dir
+        const absCFile = path.join(EXAMPLES_DIR, cFile);
 
-    if (langConfig.compile && langConfig.run) {
-         // HACK: We will join all input paths and replace ${INPUT} with the list.
-         const inputList = transformedFiles.join(' ');
+        if (fs.existsSync(absCFile)) {
+             const content = fs.readFileSync(absCFile, 'utf8');
+             // Snapshot name: file.c
+             const baseName = path.basename(cFile);
+             const snapshotName = baseName;
 
-         // Output executable path
-         const exeName = isSuite ? entryName : path.basename(entryName, '.c');
-         const exePath = path.join(EXAMPLES_DIR, `${exeName}.exe`);
-         filesToDelete.push(exePath);
+             let resPath = "";
+             if (isSuite) {
+                 resPath = path.join(entryName, snapshotName);
+             } else {
+                 resPath = snapshotName;
+             }
+             ensureResultDir(resPath);
 
-         const vars = {
-            'INPUT': mainFilePath,
-            'BASENAME': exeName,
-            'FILENAME': exeName,
-            'OUTPUT': inputList,
-            'OUTPUT_BASENAME': exeName
-        };
+             const passed = await verifySnapshot(resPath, path.join(RESULTS_DIR, resPath), content, "gen code", true);
+             if (!passed) {
+                 cleanup(filesToDelete);
+                 return false;
+             }
 
-        function runCmd(cmd) {
-            let finalCmd = cmd;
-            for (const [key, value] of Object.entries(vars)) {
-                finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
+             filesToDelete.push(absCFile);
+        }
+    }
+
+    // Run Execution
+    if (fs.existsSync(exePath)) {
+        try {
+            const run = spawnSync(exePath, [], { encoding: 'utf8', execution: 'pipe' });
+            const runOutput = (run.stdout || "") + (run.stderr || "");
+
+            const snapshotSuffix = '.run';
+            const resPath = isSuite ? path.join(entryName, 'test.run') : entryName.slice(0, -4) + snapshotSuffix;
+            ensureResultDir(resPath);
+
+            const passed = await verifySnapshot(resPath, path.join(RESULTS_DIR, resPath), runOutput, "runtime", true);
+            if (!passed) {
+                cleanup(filesToDelete);
+                return false;
             }
-            return finalCmd;
-        }
-
-        // Helper to get consistent error snapshot path
-        function getErrorSnapshotPath() {
-             return isSuite ? path.join(RESULTS_DIR, entryName, 'test.err') : path.join(RESULTS_DIR, entryName + '.err');
-        }
-
-        // Compile
-        const compileCmd = runCmd(langConfig.compile);
-        try {
-            execSync(compileCmd, { cwd: EXAMPLES_DIR, encoding: 'utf8', stdio: 'pipe' });
-        } catch (err) {
-            const compileOutput = (err.stdout || "") + (err.stderr || "");
-            const snapshotPath = getErrorSnapshotPath();
-            ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
-            const passed = await verifySnapshot(entryName, snapshotPath, compileOutput || err.message, "compilation error", false);
-            cleanup(filesToDelete);
-            return passed; // Return true if error snapshot matches, false otherwise
-        }
-
-        // Run
-        const runCmdStr = runCmd(langConfig.run);
-        let runOutput;
-        try {
-            runOutput = execSync(runCmdStr, { cwd: EXAMPLES_DIR, encoding: 'utf8', stdio: 'pipe' });
-        } catch (err) {
-            const runErrorOutput = (err.stdout || "") + (err.stderr || "");
-            const snapshotPath = getErrorSnapshotPath();
-            ensureResultDir(isSuite ? path.join(entryName, 'test.err') : entryName + '.err');
-            const passed = await verifySnapshot(entryName, snapshotPath, runErrorOutput || err.message, "execution error", false);
-            cleanup(filesToDelete);
-            return passed; // Return true if error snapshot matches, false otherwise
-        }
-
-        // Runtime Snapshot (Success Case)
-        let runResultPath;
-        if (isSuite) {
-            runResultPath = path.join(RESULTS_DIR, entryName, 'test.run');
-        } else {
-             runResultPath = path.join(RESULTS_DIR, entryName + '.run');
-        }
-        ensureResultDir(isSuite ? path.join(entryName, 'test.run') : entryName + '.run');
-
-        const runtimePassed = await verifySnapshot(entryName, runResultPath, runOutput, "runtime", true);
-        if (!runtimePassed) {
-            cleanup(filesToDelete);
-            return false;
+        } catch (e) {
+             console.log(`[FAIL] Execution failed for ${entryName}: ${e.message}`);
+             cleanup(filesToDelete);
+             return false;
         }
     }
 
@@ -265,20 +239,25 @@ async function main() {
 
     if (args.length > 0) {
         entries = args.map(f => {
-            return path.basename(f);
+            return path.basename(f); // .cup file or dir
         });
     } else {
         const all = fs.readdirSync(EXAMPLES_DIR);
         entries = all.filter(f => {
-            if (f.startsWith('upp.')) return false;
+            // if (f.startsWith('upp.')) return false;
+            // if (f.endsWith('.exe')) return false;
+            // if (f.endsWith('.c')) return false; // Ignore artifacts
             const p = path.join(EXAMPLES_DIR, f);
             const stat = fs.statSync(p);
-            return f.endsWith('.c') || stat.isDirectory();
+            return f.endsWith('.cup') || stat.isDirectory();
         });
     }
 
+    console.log(`Found ${entries.length} tests.`);
+
     let allPassed = true;
     for (const entry of entries) {
+        if (entry === 'upp.json') continue;
         const passed = await runTest(entry);
         if (!passed) allPassed = false;
     }
