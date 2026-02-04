@@ -16,8 +16,22 @@ import fs from 'fs';
  * @returns {CompilerCommand} The parsed command info.
  */
 export function parseArgs(args) {
-    if (!args.length) {
-        return { isUppCommand: false, fullCommand: [], compiler: '', sources: [], includePaths: [] };
+    if (args[0] === '--transpile' || args[0] === '-T') {
+        const file = args[1];
+        if (!file) {
+            console.error("Error: --transpile requires a file argument.");
+            process.exit(1);
+        }
+        return {
+            mode: 'transpile',
+            file: path.resolve(file),
+            isUppCommand: true,
+            fullCommand: args,
+            compiler: 'cc', // Default for transpilation context
+            sources: [],
+            includePaths: [],
+            depFlags: []
+        };
     }
 
     const compiler = args[0];

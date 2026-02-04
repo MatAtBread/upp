@@ -14,6 +14,7 @@ const command = parseArgs(process.argv.slice(2));
 if (!command.isUppCommand) {
     console.error("Usage: upp <compiler_command>");
     console.error("Example: upp gcc -c main.c -o main.o");
+    console.error("Support: upp --transpile <file.cup>");
     process.exit(1);
 }
 
@@ -22,14 +23,67 @@ const cache = new DependencyCache();
 let extraDeps = []; // Collected from -M flags during preprocessing
 
 function preprocess(filePath, extraFlags = []) {
-    // We add -x c to force C processing even for .hup files
-    // We use -E -P to get clean output
+    const compiler = command.compiler || 'cc';
     const flags = [...extraFlags, '-E', '-P', '-x', 'c'].join(' ');
     try {
-        const cmd = `${command.compiler} ${flags} "${filePath}"`;
+        const cmd = `${compiler} ${flags} "${filePath}"`;
         return execSync(cmd, { encoding: 'utf8' });
     } catch (e) {
-        // GCC stderr is already printed
+        process.exit(1);
+    }
+}
+
+// Helper for core transpilation of a single file
+function transpileOne(sourceFile, outputCFile = null) {
+    const absSource = path.resolve(sourceFile);
+    const preProcessed = preprocess(absSource, command.depFlags || []);
+    const loadedConfig = resolveConfig(absSource);
+
+    const resolvedConfigIncludes = loadedConfig.includePaths || [];
+    const finalIncludePaths = [
+        path.dirname(absSource),
+        ...resolvedConfigIncludes,
+        ...(command.includePaths || [])
+    ];
+
+    const config = {
+         cache,
+         includePaths: finalIncludePaths,
+         diagnostics: new DiagnosticsManager({}),
+         preprocess: (file) => {
+             // ... same logic as below but simplified or shared ...
+             return preprocess(file);
+         }
+    };
+    const registry = new Registry(config);
+    const coreFiles = loadedConfig.core || [];
+    for (const coreFile of coreFiles) {
+        let foundPath = null;
+        for (const inc of finalIncludePaths) {
+            const p = path.join(inc, coreFile);
+            if (fs.existsSync(p)) { foundPath = p; break; }
+        }
+        if (foundPath) registry.loadDependency(foundPath);
+    }
+
+    registry.registerSource(preProcessed, absSource);
+    const output = registry.process();
+
+    if (outputCFile) {
+        fs.writeFileSync(outputCFile, output);
+        return output;
+    } else {
+        return output;
+    }
+}
+
+if (command.mode === 'transpile') {
+    try {
+        const output = transpileOne(command.file);
+        process.stdout.write(output);
+        process.exit(0);
+    } catch (e) {
+        console.error(`[upp] Error: ${e.message}`);
         process.exit(1);
     }
 }

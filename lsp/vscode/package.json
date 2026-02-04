@@ -56,7 +56,17 @@
         "command": "upp.showLivePreview",
         "title": "UPP: Show Live Transpilation"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "UPP",
+      "properties": {
+        "upp.path": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Absolute path to the UPP directory (containing transpile.js). If null, attempts to find it in the current workspace or PATH."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

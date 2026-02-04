@@ -86,30 +86,27 @@ function activate(context) {
             return masked;
         }
         async generateTranspiled(doc) {
-            const rootPath = path.join(context.extensionUri.fsPath, '..', '..');
-            const transpileScript = path.join(rootPath, 'transpile.js');
+            const config = vscode.workspace.getConfiguration('upp');
+            const customPath = config.get('path');
             const originalPath = doc.uri.fsPath;
             const tempPath = path.join(path.dirname(originalPath), `.upp_preview_${path.basename(originalPath)}`);
             try {
                 fs.writeFileSync(tempPath, doc.getText());
                 return new Promise((resolve) => {
-                    (0, child_process_1.exec)(`node "${transpileScript}" "${tempPath}"`, { cwd: rootPath }, (err, stdout, stderr) => {
-                        if (fs.existsSync(tempPath))
-                            fs.unlinkSync(tempPath);
-                        if (err) {
-                            resolve(`// Transpilation Error (Exit Code ${err.code}):\n${stderr || err.message}`);
+                    // Strategy 1: Use 'upp' from PATH if available and no custom path is set
+                    const cmd = customPath ? `node "${path.join(customPath, 'index.js')}" --transpile "${tempPath}"` : `upp --transpile "${tempPath}"`;
+                    (0, child_process_1.exec)(cmd, { cwd: path.dirname(originalPath) }, (err, stdout, stderr) => {
+                        // If Strategy 1 fails (upp not in path) and we didn't have a custom path, try auto-detection
+                        if (err && !customPath) {
+                            this.fallbackTranspile(tempPath, resolve);
                         }
                         else {
-                            // SPLIT ROBUSTLY: The transpiler uses 40 '=' characters
-                            const separator = "========================================\n";
-                            const parts = stdout.split(separator);
-                            if (parts.length >= 3) {
-                                // Content is after the 2nd separator (FILE header)
-                                resolve(parts[2].trim());
-                            }
-                            else {
-                                resolve("// Unexpected output format from transpiler:\n" + stdout);
-                            }
+                            if (fs.existsSync(tempPath))
+                                fs.unlinkSync(tempPath);
+                            if (err)
+                                resolve(`// Transpilation Error:\n${stderr || err.message}`);
+                            else
+                                resolve(stdout.trim());
                         }
                     });
                 });
@@ -119,6 +116,37 @@ function activate(context) {
                     fs.unlinkSync(tempPath);
                 return `// Extension Error: ${e instanceof Error ? e.message : String(e)}`;
             }
+        }
+        fallbackTranspile(tempPath, resolve) {
+            // Strategy 2: Search for index.js in workspace or dev path
+            let rootPath;
+            const devPath = path.join(context.extensionUri.fsPath, '..', '..');
+            if (fs.existsSync(path.join(devPath, 'index.js'))) {
+                rootPath = devPath;
+            }
+            else if (vscode.workspace.workspaceFolders) {
+                for (const folder of vscode.workspace.workspaceFolders) {
+                    if (fs.existsSync(path.join(folder.uri.fsPath, 'index.js'))) {
+                        rootPath = folder.uri.fsPath;
+                        break;
+                    }
+                }
+            }
+            if (!rootPath) {
+                if (fs.existsSync(tempPath))
+                    fs.unlinkSync(tempPath);
+                resolve(`// Error: 'upp' command not found in PATH and UPP project not detected.\n// Please install UPP globally (npm i -g .) or set "upp.path" in settings.`);
+                return;
+            }
+            const indexScript = path.join(rootPath, 'index.js');
+            (0, child_process_1.exec)(`node "${indexScript}" --transpile "${tempPath}"`, { cwd: rootPath }, (err, stdout, stderr) => {
+                if (fs.existsSync(tempPath))
+                    fs.unlinkSync(tempPath);
+                if (err)
+                    resolve(`// Transpilation Error (Fallback):\n${stderr || err.message}`);
+                else
+                    resolve(stdout.trim());
+            });
         }
         findClosingBrace(content, start) {
             let depth = 1;
