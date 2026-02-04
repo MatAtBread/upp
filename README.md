@@ -110,7 +110,7 @@ Enables C++ style method syntax for C structs.
 
 ### `@defer code;`
 Schedules a piece of code to run at the end of the current scope.
-- **Example**: `@defer free(ptr);`
+- **Example**: `char *ptr = malloc(10); @defer free(ptr);`
 - **File**: `std/defer.h`
 
 ### `@async`
