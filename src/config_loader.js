@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const UPP_INSTALL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Deep merges two objects. B overrides A.
@@ -8,6 +11,10 @@ import path from 'path';
  * @returns {Object} The merged object.
  */
 function deepMerge(a, b) {
+    if (b === undefined) return a;
+    if (Array.isArray(a) && Array.isArray(b)) {
+        return [...new Set([...a, ...b])];
+    }
     if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
         return b;
     }
@@ -43,6 +50,7 @@ function deepMerge(a, b) {
 function loadConfig(configPath) {
     if (!fs.existsSync(configPath)) return {};
 
+    const configDir = path.dirname(configPath);
     let config = {};
     try {
         const content = fs.readFileSync(configPath, 'utf8');
@@ -52,10 +60,20 @@ function loadConfig(configPath) {
         return {};
     }
 
+    // Resolve includePaths relative to THIS config file
+    const resolvePath = (p) => {
+        const expanded = p.replace('${UPP}', UPP_INSTALL_DIR);
+        return path.isAbsolute(expanded) ? expanded : path.resolve(configDir, expanded);
+    };
+
+    if (config.includePaths) {
+        config.includePaths = config.includePaths.map(resolvePath);
+    }
+
     if (config.extends) {
         let parentPath = config.extends;
         if (!path.isAbsolute(parentPath)) {
-            parentPath = path.resolve(path.dirname(configPath), parentPath);
+            parentPath = path.resolve(configDir, parentPath);
         }
         // If parentPath is a directory, look for upp.json inside it
         if (fs.existsSync(parentPath) && fs.lstatSync(parentPath).isDirectory()) {
@@ -106,6 +124,12 @@ function resolveConfig(sourcePath) {
 
     if (configPath) {
         return loadConfig(configPath);
+    }
+
+    // Final fallback: check UPP installation directory
+    const installConfigPath = path.join(UPP_INSTALL_DIR, 'upp.json');
+    if (fs.existsSync(installConfigPath)) {
+        return loadConfig(installConfigPath);
     }
 
     return { lang: {} }; // Return empty default if none found

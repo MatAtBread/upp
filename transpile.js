@@ -6,6 +6,7 @@ import { execSync } from 'child_process';
 import { Registry } from './src/registry.js';
 import { DependencyCache } from './src/dependency_cache.js';
 import { DiagnosticsManager } from './src/diagnostics.js';
+import { resolveConfig } from './src/config_loader.js';
 
 const cupFile = process.argv[2];
 if (!cupFile) {
@@ -19,36 +20,18 @@ if (!fs.existsSync(absCupFile)) {
     process.exit(1);
 }
 
-const UPP_DIR = path.dirname(new URL(import.meta.url).pathname);
 const cache = new DependencyCache();
 const diagnostics = new DiagnosticsManager({});
 
-// 1. Resolve Config (mimicking index.js)
-let loadedConfig = {};
-let lookupDir = path.dirname(absCupFile);
-while (true) {
-    const configPath = path.join(lookupDir, 'upp.json');
-    if (fs.existsSync(configPath)) {
-        try {
-            loadedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-            break;
-        } catch (e) { /* ignore */ }
-    }
-    const parent = path.dirname(lookupDir);
-    if (parent === lookupDir) break;
-    lookupDir = parent;
-}
+// 1. Resolve Config (Search up tree for upp.json, supports extends and UPP fallback)
+const loadedConfig = resolveConfig(absCupFile);
 
-const expandVars = (p) => p.replace('${UPP}', UPP_DIR);
-const configIncludesRaw = loadedConfig.include_paths || loadedConfig.includePaths || [];
-const resolvedConfigIncludes = configIncludesRaw.map(p => {
-    const expanded = expandVars(p);
-    return path.isAbsolute(expanded) ? expanded : path.resolve(lookupDir, expanded);
-});
+const configIncludesRaw = loadedConfig.includePaths || [];
+if (loadedConfig.includePaths) configIncludesRaw.push(...loadedConfig.includePaths);
 
 const finalIncludePaths = [
     path.dirname(absCupFile),
-    ...resolvedConfigIncludes
+    ...configIncludesRaw
 ];
 
 // 2. Pre-process

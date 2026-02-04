@@ -1,5 +1,5 @@
 {
     "comments": true,
-    "include_paths": ["${UPP}/std"],
+    "includePaths": ["${UPP}/std"],
     "core": ["include.hup"]
 }
