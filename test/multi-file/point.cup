@@ -1,5 +1,6 @@
-#include "point.hup"
-#include <stdio.h>
+#include "../../examples/io-lite.h"
+
+@include(point.hup)
 
 @method(Point) void print(Point *p) {
     printf("Point(%d, %d)\n", p->x, p->y);

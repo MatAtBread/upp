@@ -185,4 +185,37 @@
 
 }
 
+@define useCreate(T) {
+    let node = upp.consume();
+    let name, init;
+    const text = node.text.trim();
+
+    if (node.type === 'type_identifier' || node.type === 'identifier') {
+        name = text;
+        init = "= {0}";
+        // Optional: consume the trailing semicolon if it exists to avoid ;;
+        if (node.nextSibling && node.nextSibling.type === ';') {
+            upp.replace(node.nextSibling, "");
+        }
+    } else {
+        const match = text.match(/^(\w+)\s*=\s*(.*);?$/);
+        name = match[1];
+        init = ' = ' + match[2].replace(/;$/, '');
+    }
+
+    // Check for renamed symbol in the AST
+    const renamedSymbol = `_${T}_method_Create`;
+    const hasCreate = upp.query(`
+        (function_definition
+            declarator: (function_declarator
+                declarator: (identifier) @name))
+    `, upp.root).some(m => m.captures.name.text === renamedSymbol);
+
+    if (hasCreate) {
+        upp.replace({start: node.endIndex, end: node.endIndex}, ` ${name}.Create();`);
+    }
+
+    return upp.code`${T} ${name} ${init};`;
+}
+
 #endif

@@ -458,12 +458,29 @@ class Registry {
             }
         }
 
-        // 2. Clear source of macros and definitions to find clean target nodes
+        // 2. Clear source of ALL macro invocations and definitions to find clean target nodes.
+        // We mask even unknown macros to ensure tree-sitter generates a valid C AST.
         let cleanSource = source;
-        const allStrippable = [
-            ...definitionsToStrip,
-            ...invocations.map(i => ({ start: i.startIndex, end: i.endIndex }))
-        ];
+        const allStrippable = [...definitionsToStrip];
+
+        // Find all @ invocations
+        const macroRegex = /@(\w+)/g;
+        let mMatch;
+        while ((mMatch = macroRegex.exec(source)) !== null) {
+            const inv = this.absorbInvocation(source, mMatch.index);
+            if (inv) {
+                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
+                macroRegex.lastIndex = inv.endIndex;
+            }
+        }
+
+        // Also add known invocations if they were missed (unlikely but safe)
+        for (const inv of invocations) {
+            if (!allStrippable.some(s => s.start === inv.startIndex)) {
+                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
+            }
+        }
+
         allStrippable.sort((a, b) => b.start - a.start);
 
         for (const range of allStrippable) {

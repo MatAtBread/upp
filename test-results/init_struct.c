@@ -16,9 +16,9 @@ void _Point_method_Create(Point *p) {
     printf("Point created(%d, %d)\n", p->x, p->y);
 } 
 int main() {
-    @useCreate(Point)p;
-    @useCreate(Point)q = { .x = 5, .y = 9 };
-    p.print();
-    q.print();
+    Point p = {0};
+    Point q  = { .x = 5, .y = 9 };
+    _Point_method_print(&(p));
+    _Point_method_print(&(q));
     return 0;
 }

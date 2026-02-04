@@ -1,4 +1,4 @@
-#include "point.hup"
+@include(point.hup)
 int main() {
     Point p = { .x = 1, .y = 2 };
     p.print();

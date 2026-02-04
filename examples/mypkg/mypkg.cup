@@ -1,3 +1,4 @@
+@implements(mypkg)
 @include(mypkg.hup)
 
 int add(int a, int b) {

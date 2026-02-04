@@ -1,0 +1,23 @@
+#include "../io-lite.h"
+@include(mypkg.hup)
+
+// This 'add' should NOT be renamed because we are a consumer, not the implementation.
+// There is no @implements(mypkg) here.
+int add(int a, int b) {
+    return (a + b) * 10;
+}
+
+int main() {
+    int x = add(1, 2);           // Should call local add -> 30
+    int y = mypkg_add(1, 2);     // Should call pkg add -> 3
+
+    printf("Local add: %d\n", x);
+    printf("Pkg add: %d\n", y);
+
+    if (x == 30 && y == 3) {
+        printf("SUCCESS\n");
+        return 0;
+    }
+    printf("FAILURE\n");
+    return 1;
+}

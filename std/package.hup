@@ -1,8 +1,11 @@
+@define implements(pkgName) {
+    return "";
+}
+
 @define package(pkgName) {
     if (!upp.parentTree) {
         // This macro is intended to be run from an included file (like pkg.hup)
         // inspecting the parent (like pkg.cup).
-        // If run directly, it does nothing or warns.
         console.warn("@package used without a parent context (should be used inside an @included file)");
         return;
     }
@@ -10,47 +13,17 @@
     const nameSpace = pkgName + "_";
     const publicProtos = [];
 
-    // 1. Scan Parent Tree for Definitions
-    // We need to find all function definitions in the parent tree
-    // And prefix them, AND generate prototypes for non-static ones.
-
-    // We can't use upp.matchReplace on parentTree directly because we are not in the parent's registry pass?
-    // Actually, registerParentTransform lets us hook into the parent's transformation phase.
-    // But we want to inspect *now* to generate the header content for the *current* file (the .h output).
-    // The parent tree (pkg.cup) should be largely parsed by now (it's paused at @include).
-    // Wait. @include happens in `main.cup`, but `pkg.cup` is the one defining the functions?
-
-    // RE-READING PLAN:
-    // Input: pkg.cup
-    // pkg.cup contains: @include(pkg.hup)
-    // pkg.hup contains: @package(pkg)
-
-    // Correct.
-    // pkg.cup is the parent.
-    // pkg.hup is the child (where we are now).
-    // pkg.cup has the function definitions.
-
-    // Problem: At the point `@include(pkg.hup)` is encountered in `pkg.cup`,
-    // `pkg.cup` has been parsed (into `upp.parentTree`), but the function definitions
-    // typically follow the `@include`?
-    // C requires includes at the top.
-    // If `@include` is at the top, `upp.parentTree` might only contain the `@include` node and nothing else yet
-    // if parsing is incremental?
-    // NO. upp parses the whole file first. `this.sourceCode` and `this.mainTree` exist.
-    // So even if `@include` is at line 1, `upp.parentTree` contains the whole file's AST.
-    // EXCEPT, `upp` might be processing strictly sequentially?
-    // Let's check `process()` in `Registry.js`.
-    // It calls `_parse`, then `findInvocations`.
-    // So yes, the full tree exists.
+    // 1. Check if the parent file explicitly implements this package
+    const parentInvocations = upp.parentRegistry.invocations;
+    const parentSource = upp.parentRegistry.sourceCode;
+    const isImpl = parentInvocations.some(inv =>
+        (inv.name === 'implements' || inv.name === 'implement') && inv.args[0] === pkgName
+    ) || new RegExp(`@(implements|implement)\\s*\\(\\s*${pkgName}\\s*\\)`).test(parentSource);
 
     const root = upp.parentTree;
 
-    // We want to register a transform on the parent to rename things.
-
-
-    // 1. Scanning NOW
-    // We use upp.query on upp.parentTree.
-    // Note: We need to respect the language of the parent.
+    // 2. Scan Parent Tree for Definitions to generate Public Prototypes
+    // We always do this so that the header (this file) contains the exported symbols.
     const definitions = upp.parentRegistry.helpers.query('(function_definition) @fn', root);
 
     for (const match of definitions) {
@@ -65,11 +38,7 @@
              }
         }
 
-        // Use helper to get sig. Note: helper methods need a node.
-        // We can use 'upp' helper (instance of UppHelpersC) to inspect 'fn' (node from parent).
-        // Tree-sitter nodes are cross-registry compatible if in same process memory.
         const { returnType, name, params } = upp.parentRegistry.helpers.getFunctionSignature(fn);
-
         if (name === "unknown" || name.startsWith(nameSpace)) continue;
 
         if (!isStatic) {
@@ -77,69 +46,63 @@
         }
     }
 
-    // 2. Registering Transform for LATER
-    upp.registerParentTransform((_root, pHelpers) => {
-         pHelpers.matchReplaceAll(_root, '$fn__function_definition', ({fn}) => {
-             // Logic repeated to ensure consistency
-             let isStatic = false;
-             try {
-                 for(let i=0; i<fn.childCount; i++) {
-                     const child = fn.child(i);
-                     if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                         isStatic = true;
-                         break;
-                     }
-                 }
-             } catch (e) {
-                 // Ignore
-             }
-             if (isStatic) return;
-
-             const { returnType, name, params } = pHelpers.getFunctionSignature(fn);
-             const body = pHelpers.childForFieldName(fn, 'body');
-             if (name === "unknown" || name.startsWith(nameSpace)) return;
-
-             return pHelpers.code`${returnType} ${nameSpace}${name}${params} ${body}`;
-         });
-
-         // Also rename calls!
-         // This is harder. We need to know which functions are renamed.
-         // Effectively we need to rename ANY call to a function that we renamed.
-         // For simplicity, we assume we rename *local* calls to *local* functions.
-         pHelpers.matchReplaceAll(_root, '$call__call_expression', ({call}) => {
-             const funcNode = pHelpers.childForFieldName(call, 'function');
-             if (!funcNode) return null;
-             const funcName = funcNode.text;
-
-             const def = pHelpers.getDefinition(funcNode);
-             if (def && pHelpers.isDescendant(_root, def)) {
-                 // Defined in this file.
-                 let fnDef = def;
-                 while(fnDef && fnDef.type !== 'function_definition') fnDef = fnDef.parent;
-
-                 if (fnDef) {
-                     let isStaticVal = false;
-                     try {
-                          for(let i=0; i<fnDef.childCount; i++) {
-                             const child = fnDef.child(i);
-                             if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                                 isStaticVal = true;
-                                 break;
-                             }
+    // 3. Registering Transform for the Parent (only if IMPLEMENTING)
+    if (isImpl) {
+        upp.registerParentTransform((_root, pHelpers) => {
+             // Rename definitions
+             pHelpers.matchReplaceAll(_root, '$fn__function_definition', ({fn}) => {
+                 let isStatic = false;
+                 try {
+                     for(let i=0; i<fn.childCount; i++) {
+                         const child = fn.child(i);
+                         if (child.type === 'storage_class_specifier' && child.text === 'static') {
+                             isStatic = true;
+                             break;
                          }
-                     } catch (e) {
-                         // Ignore tree-sitter errors
-                         upp.reportError(e);
                      }
-                     if (!isStaticVal && !funcName.startsWith(nameSpace)) {
-                         const args = pHelpers.childForFieldName(call, 'arguments');
-                         return pHelpers.code`${nameSpace}${funcName}${args}`;
+                 } catch (e) {}
+
+                 if (isStatic) return;
+
+                 const { returnType, name, params } = pHelpers.getFunctionSignature(fn);
+                 const body = pHelpers.childForFieldName(fn, 'body');
+                 if (name === "unknown" || name.startsWith(nameSpace)) return;
+
+                 return pHelpers.code`${returnType} ${nameSpace}${name}${params} ${body}`;
+             });
+
+             // Rename local calls
+             pHelpers.matchReplaceAll(_root, '$call__call_expression', ({call}) => {
+                 const funcNode = pHelpers.childForFieldName(call, 'function');
+                 if (!funcNode) return null;
+                 const funcName = funcNode.text;
+
+                 const def = pHelpers.getDefinition(funcNode);
+                 if (def && pHelpers.isDescendant(_root, def)) {
+                     let fnDef = def;
+                     while(fnDef && fnDef.type !== 'function_definition') fnDef = fnDef.parent;
+
+                     if (fnDef) {
+                         let isStaticVal = false;
+                         try {
+                              for(let i=0; i<fnDef.childCount; i++) {
+                                 const child = fnDef.child(i);
+                                 if (child.type === 'storage_class_specifier' && child.text === 'static') {
+                                     isStaticVal = true;
+                                     break;
+                                 }
+                             }
+                         } catch (e) {}
+
+                         if (!isStaticVal && !funcName.startsWith(nameSpace)) {
+                             const args = pHelpers.childForFieldName(call, 'arguments');
+                             return pHelpers.code`${nameSpace}${funcName}${args}`;
+                         }
                      }
                  }
-             }
-         });
-    });
-
+             });
+        });
+    }
 
     return publicProtos.join('\n');
 }

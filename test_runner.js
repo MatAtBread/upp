@@ -92,9 +92,9 @@ async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = 
     return true;
 }
 
-// Check if a file is an error test (by convention, e.g. ends with _error.cup)
+// Check if a file is an error test (by convention, e.g. starts with _error.cup)
 function isErrorTest(filename) {
-    return filename.includes('_error');
+    return filename.startsWith('error_');
 }
 
 async function runTest(entryName) {

@@ -7,6 +7,7 @@ import { Registry } from './src/registry.js';
 import { DependencyCache } from './src/dependency_cache.js';
 import { DiagnosticsManager } from './src/diagnostics.js';
 import { parseArgs } from './src/cli.js';
+import { fileURLToPath } from 'url';
 
 const command = parseArgs(process.argv.slice(2));
 
@@ -81,8 +82,7 @@ for (const source of command.sources) {
             }
 
             // Define UPP variable for expansion (directory of executable)
-            // process.argv[1] is the script path (upp/index.js usually)
-            const UPP_DIR = path.dirname(process.argv[1]);
+            const UPP_DIR = path.dirname(fileURLToPath(import.meta.url));
 
             // Helper to expand variables
             const expandVars = (p) => p.replace('${UPP}', UPP_DIR);
@@ -103,6 +103,7 @@ for (const source of command.sources) {
                 ...resolvedConfigIncludes,
                 ...(command.includePaths || [])
             ];
+
 
             // Initialize Registry
             const config = {
