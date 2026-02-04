@@ -1,0 +1,587 @@
+
+#include "io-lite.h"
+
+@define RefPtr(T) {
+    let typeName = T.trim();
+    if (typeName.startsWith('struct ')) {
+        typeName = typeName.slice(7).trim();
+    }
+    const refTypeName = `RefPtr_${typeName}`;
+
+    if (!upp.registry.state) {
+        upp.registry.state = {};
+        // console.error("Initialized registry state");
+    }
+
+    // console.error("Evaluating RefPtr for " + typeName);
+
+    // 0. Detect Custom Mechanics (Intrusive)
+    // 0. Detect Custom Mechanics (Intrusive)
+    const detectCustomMethod = (methodSuffix) => {
+        if (!upp.root) {
+            // console.error("No root available for detection");
+            return false;
+        }
+        const methodName = `_${typeName}_method_${methodSuffix}`;
+        // Simple search in global scope functions
+        const defs = upp.query(`(function_definition declarator: (function_declarator declarator: (identifier) @name)) @def`, upp.root);
+        if (defs.some(m => m.captures.name.text === methodName)) return true;
+
+        // Check pending invocations (same pass)
+        // We look for @RefRetain(T) or @RefRelease(T)
+        // Only checking specific macros for now
+        const targetMacro = `Ref${methodSuffix}`; // RefRetain or RefRelease
+        if (upp.registry && upp.registry.invocations) {
+            return upp.registry.invocations.some(inv => {
+                if (inv.name === targetMacro) {
+                    const arg0 = inv.args[0].trim();
+                    let argType = arg0;
+                    if (argType.startsWith('struct ')) argType = argType.slice(7).trim();
+                    return argType === typeName;
+                }
+                return false;
+            });
+        }
+        return false;
+    };
+
+    const hasRetain = detectCustomMethod('Retain');
+    const hasRelease = detectCustomMethod('Release');
+    const isIntrusive = hasRetain; // Assume if Retain exists, it's intrusive
+
+    if (!upp.registry.state['RefPtr_' + typeName]) {
+        // console.error(`RefPtr for ${typeName}: Intrusive=${isIntrusive}`);
+
+        // Define struct body
+        let structBody = `
+    ${T} *ptr;
+    int *count;
+`;
+        if (isIntrusive) {
+             structBody = `
+    ${T} *ptr;
+`;
+        }
+
+        // Define Helper Impls
+        let retainImpl = `
+    if (p.count) {
+        (*p.count)++;
+    }
+`;
+        let releaseImpl = `
+    if (p.count) {
+        (*p.count)--;
+        if (*p.count == 0) {
+             _${typeName}_method_Defer(p.ptr);
+             free(p.count);
+             free(p.ptr);
+        }
+    }
+`;
+        let wrapImpl = `
+    int *count = malloc(sizeof(int));
+    *count = 1; /* Starts at 1 */
+    return (${refTypeName}){ ptr, count };
+`;
+
+        if (isIntrusive) {
+            retainImpl = `
+    if (p.ptr) {
+        _${typeName}_method_Retain(p.ptr);
+    }
+`;
+            if (hasRelease) {
+                releaseImpl = `
+    if (p.ptr) {
+        _${typeName}_method_Release(p.ptr);
+    }
+`;
+            } else {
+                // Warning: Retain but no Release?
+                releaseImpl = `/* Warning: Retain defined but no Release detected */`;
+            }
+
+            wrapImpl = `
+    // Intrusive wrap: assume ptr has count=1 or we adopt it.
+    // Standard RefPtr practice acts as "taking ownership".
+    // If wrapping a raw pointer from Create(), it has 1.
+    return (${refTypeName}){ ptr };
+`;
+        }
+
+        const headerCode = `
+// Forward declaration of Type
+struct ${typeName};
+
+// Forward declaration of Defer method (convention)
+void _${typeName}_method_Defer(${T} *f);
+${isIntrusive ? `
+// Forward Custom Hooks
+void _${typeName}_method_Retain(${T} *p);
+void _${typeName}_method_Release(${T} *p);
+` : ''}
+
+typedef struct {${structBody}} ${refTypeName};
+
+void _retain_${typeName}(${refTypeName} p) {
+${retainImpl}}
+
+void _release_${typeName}(${refTypeName} p) {
+${releaseImpl}}
+
+${refTypeName} _wrap_${typeName}(${T} *ptr) {
+${wrapImpl}}
+
+${refTypeName} _copy_${typeName}(${refTypeName} p) {
+    _retain_${typeName}(p);
+    return p;
+}
+
+// New assign helpers
+${refTypeName} _assign_wrap_${typeName}(${refTypeName} *lhs, ${T} *rhs_ptr) {
+    _release_${typeName}(*lhs); // Release old value
+    *lhs = _wrap_${typeName}(rhs_ptr); // Wrap new pointer
+    return *lhs;
+}
+
+${refTypeName} _assign_copy_${typeName}(${refTypeName} *lhs, ${refTypeName} rhs_val) {
+    if (lhs->ptr != rhs_val.ptr) { // Avoid self-assignment issues
+        _retain_${typeName}(rhs_val); // Retain new value
+        _release_${typeName}(*lhs);   // Release old value
+        *lhs = rhs_val;               // Assign
+    }
+    return *lhs;
+}
+
+`;
+        upp.hoist(headerCode);
+        upp.registry.state['RefPtr_' + typeName] = true;
+    }
+
+    // 2. Register Global Transformer (Once)
+    if (!upp.registry.state['RefPtr_Transformer']) {
+        // console.error("Registering RefPtr Transformer"); // Removed debug
+        upp.registerTransform((root, helpers) => {
+            // console.error("Running RefPtr Transformer"); // Removed debug
+
+            // Fix: ensure we use rootNode if root is a Tree
+            try {
+                // Fix: ensure we use rootNode if root is a Tree
+                const startNode = root.rootNode || root;
+                // console.error("StartNode: " + startNode); // Debug
+
+                if (!startNode) return;
+
+                // Debug language mismatch
+                // Accessing internal properties might be restricted, but let's try
+                // The C binding might not expose .language property directly on Tree.
+                // But let's try to construct a query using helpers.TreeSitter if available.
+
+                // Workaround: Use the language from the helper, but verify if we can match.
+                // If this fails, we try to grab language from elsewhere?
+
+                // Define a robust query function that survives this mess
+                const robustQuery = (pattern, node) => {
+                     try {
+                         // Try default way
+                         return helpers.query(pattern, node);
+                      } catch (e) {
+                          // console.error("Standard query failed: " + e.message);
+                         // Try to use the node's own tree language if accessible?
+                         // parse() might not attach language to tree in JS binding.
+
+                         // If we assume the helper's language IS correct but the node is strict?
+                         // Maybe we need to use `new helpers.TreeSitter.Query(helpers.Language, pattern)` manually?
+                         // That's what helpers.query does.
+                         if (node.tree && node.tree.language && helpers.TreeSitter) {
+                             try {
+                                 const q = new helpers.TreeSitter.Query(node.tree.language, pattern);
+                                 return q.matches(node);
+                             } catch (e2) {
+                                 // console.error("Fallback query failed: " + e2.message);
+                             }
+                         }
+                         throw e;
+                     }
+                };
+
+                const decls = robustQuery(`(declaration type: (type_identifier) @type declarator: (_) @decl) @declaration`, startNode);
+                // console.error("Found " + decls.length + " typed declarations"); // Removed debug
+                const refPtrVars = new Set();
+                const varTypes = new Map();
+
+                // Pass 1: Collect Variables
+                for (const m of decls) {
+                // Manual Visit Check
+                if (!helpers.visit(m.captures.declaration)) continue;
+
+                // If query matches, verify type name
+                const typeText = m.captures.type.text;
+                if (typeText.startsWith('RefPtr_')) {
+                    const typeSuffix = typeText.slice(7);
+
+                    // Handle init_declarator vs declarator
+                    let varName = m.captures.decl.text;
+                    const isInit = m.captures.decl.type === 'init_declarator';
+
+                    if (isInit) {
+                        const res = helpers.query('(init_declarator declarator: (_) @decl)', m.captures.decl);
+                        if (res.length > 0) {
+                             varName = res[0].captures.decl.text;
+                        } else {
+                             // Fallback
+                             varName = m.captures.decl.text;
+                        }
+                    }
+
+                    if (varName.includes('[')) continue;
+
+                    refPtrVars.add(varName);
+                    varTypes.set(varName, typeSuffix);
+
+                    const declNode = m.captures.declaration;
+
+                    // A. Cleanup at Scope Exit
+                    const scope = helpers.findEnclosing(declNode, 'compound_statement');
+                    if (scope) {
+                        const releaseCallCode = `_release_${typeSuffix}(${varName});`;
+
+                        // Check if already inserted at end of scope
+                        // Look at the last statement or statements near end
+                        let alreadyInserted = false;
+                        const closingBrace = scope.child(scope.childCount - 1); // }
+                        if (closingBrace) {
+                             let prev = closingBrace.previousNamedSibling;
+                             while (prev && prev.startPosition.row === closingBrace.startPosition.row) { // Same line? No.
+                                 // Just walk back a few nodes or check text
+                                 if (prev.text.includes(releaseCallCode.trim())) { // weak check
+                                     alreadyInserted = true;
+                                     break;
+                                 }
+                                 prev = prev.previousNamedSibling;
+                             }
+                        }
+
+                        // Better: check if the text range immediately before closure matches
+                        const scopeText = scope.text;
+                        if (scopeText.includes(releaseCallCode.trim())) {
+                             // This is too broad (could be elsewhere).
+                             // We need strict position check or node check.
+                             // But strict position is hard because we re-parse.
+                             // We can mark the node? No.
+                             // We can check if `scope` children include an expression_statement with the call.
+                        }
+
+                        // Let's use a specific comment tag? /* @generated */
+                        // Or just parse the children.
+
+                        // New approach: query for the release call in the scope
+                        // (call_expression function: (identifier) @fn arguments: (argument_list (identifier) @arg))
+                        const cleanupQuery = helpers.query(`(call_expression function: (identifier) @fn arguments: (argument_list (identifier) @arg))`, scope);
+                        for (const match of cleanupQuery) {
+                            if (match.captures.fn.text === `_release_${typeSuffix}` && match.captures.arg.text === varName) {
+                                // Found a release call. Is it at the end?
+                                // Assume yes if found. (Simplification)
+                                alreadyInserted = true;
+                                break;
+                            }
+                        }
+
+                        if (!alreadyInserted) {
+                            const endBrace = scope.endIndex - 1;
+                            helpers.replace({start: endBrace, end: endBrace}, helpers.code`${releaseCallCode} `);
+                        }
+
+                        const returns = helpers.query(`(return_statement) @ret`, scope);
+                        for (const ret of returns) {
+                            if (ret.captures.ret.startIndex > declNode.startIndex) {
+                                // Check if returning the variable itself
+                                let retArg = ret.captures.ret.childForFieldName('value');
+                                if (!retArg) retArg = ret.captures.ret.childForFieldName('expression'); // Try expression
+                                if (!retArg && ret.captures.ret.childCount > 1) retArg = ret.captures.ret.child(1); // Try index 1 (0 is return kw)
+
+                                let isReturningVar = false;
+                                if (retArg && retArg.text.trim() === varName) {
+                                     isReturningVar = true;
+                                }
+
+                                // Also handle `return (p);`
+                                if (retArg && retArg.type === 'parenthesized_expression' && retArg.text === `(${varName})`) {
+                                     isReturningVar = true;
+                                }
+
+                                if (isReturningVar) {
+                                     // Do NOT release. Ownership transfer.
+                                     continue;
+                                }
+
+                                // Check if preceded by release (idempotency)
+                                const prev = ret.captures.ret.previousNamedSibling;
+                                let annotated = false;
+                                if (prev && prev.type === 'expression_statement' && prev.text.includes(releaseCallCode.trim())) {
+                                    annotated = true;
+                                }
+                                if (!annotated) {
+                                     helpers.replace({start: ret.captures.ret.startIndex, end: ret.captures.ret.startIndex}, helpers.code`${releaseCallCode} `);
+                                }
+                            }
+                        }
+                    }
+
+                    // Helper for Init Generic
+                    const getInitExpr = (valExpr) => {
+                        return `_Generic((${valExpr}), struct ${typeSuffix}*: _wrap_${typeSuffix}, void*: _wrap_${typeSuffix}, RefPtr_${typeSuffix}: _copy_${typeSuffix})(${valExpr})`;
+                    };
+
+                    // B. Initialization (Ownership Transfer)
+                    if (isInit) {
+                         // Workaround for tree-sitter crash: avoid childForFieldName
+                         let val = null;
+                         for (let i = 0; i < m.captures.decl.childCount; i++) {
+                             const child = m.captures.decl.child(i);
+                             // Need field name? childForFieldName implementation is native.
+                             // We can guess: value is usually the last child of init_declarator?
+                             // Or use helpers.query again on this node?
+                         }
+
+                         // Safer: use query
+                         const valMatch = helpers.query('(init_declarator value: (_) @val)', m.captures.decl);
+                         if (valMatch.length > 0) {
+                             val = valMatch[0].captures.val;
+                         }
+
+                        // Use _Generic init macro if not already wrapped
+                        if (val && !val.text.includes('Generic(') && !val.text.includes('_wrap_') && !val.text.includes('_copy_')) {
+                             helpers.replace(val, helpers.code`${getInitExpr(val.text)}`);
+                        }
+                    } else {
+                        // Empty declaration: @RefPtr(T) p;
+
+                        // Check if Create method exists
+                        // Mangling: _${typeSuffix}_method_Create
+                        const createMethodName = `_${typeSuffix}_method_Create`;
+
+                        // Robustly search for function definition with this name
+                        // We query for ANY function_declarator with this name,
+                        // and check if it's part of a function_definition.
+                        const createFn = helpers.query(`(function_definition) @def`, startNode).find(m => {
+                            const defNode = m.captures.def;
+                            // Search for the name identifier within the declarator subtree
+                            const nameNode = helpers.query(`(function_declarator declarator: (identifier) @name)`, defNode);
+                            if (nameNode.length > 0) {
+                                return nameNode[0].captures.name.text === createMethodName;
+                            }
+                            return false;
+                        });
+
+                        if (createFn) {
+                             // Use Create()
+                             const callExpr = `${createMethodName}()`;
+                             helpers.replace(m.captures.decl, helpers.code`${varName} = ${getInitExpr(callExpr)}`);
+                        } else {
+                             // Default fallback: calloc
+                             helpers.replace(m.captures.decl, helpers.code`${varName} = _wrap_${typeSuffix}(calloc(1, sizeof(struct ${typeSuffix})))`);
+                        }
+                    }
+                }
+            }
+
+            // Pass 2: Assignments
+            const assigns = robustQuery(`(assignment_expression left: (identifier) @left right: (_) @right) @assign`, startNode);
+            for (const m of assigns) {
+                if (!helpers.visit(m.captures.assign)) continue;
+
+                const varName = m.captures.left.text;
+                if (refPtrVars.has(varName)) {
+                    const typeSuffix = varTypes.get(varName);
+                    const rightExpr = m.captures.right.text;
+                    const assignmentNode = m.captures.assign;
+
+                    // Check if parent is a parenthesis_expression or comma_expression that WE generated
+                    // (retain, release, assignment)
+                     const parent = assignmentNode.parent;
+                     if (parent && parent.type === 'comma_expression') {
+                         // Check if siblings are retain/release
+                         // This is hard to detect perfectly.
+                         // Check text of parent?
+                         if (parent.text.includes(`_release_${typeSuffix}`)) {
+                             continue;
+                         }
+                     }
+                     // Or check if the assignment is wrapped in parens?
+                     // ( ... , a = b)
+                     // If we generate `(..., a=b)`, the assignment is inside parens?
+                     // No, `a=b` is the last element of comma expr.
+                     // The comma expr is inside parens.
+                     // So `assignmentNode.parent` is comma_expression.
+
+                     // Double check: if parent text starts with `(_retain_...`
+                     // helpers.replace replaces the ASSIGNMENT node with `(...)`.
+                     // So the NEW tree has `(comma_expr)` instead of `assignment`.
+                     // But inside `comma_expr`, there is `assignment`.
+                     // So query finds it AGAIN.
+                     // We MUST ignore assignments inside our generated comma expression.
+
+                    const genericAssign = `_Generic((${rightExpr}), struct ${typeSuffix}*: _assign_wrap_${typeSuffix}, void*: _assign_wrap_${typeSuffix}, RefPtr_${typeSuffix}: _assign_copy_${typeSuffix})(&${varName}, ${rightExpr})`;
+
+                    // Replace `p = val` with inline Generic
+                    helpers.replace(m.captures.assign, helpers.code`${genericAssign}`);
+                }
+            }
+
+            // Pass 3: Member Access Elision (p->x and *p)
+            // Query for field access using ->
+            const fieldAccess = robustQuery(`(field_expression argument: (identifier) @lhs operator: "->" field: (field_identifier)) @expr`, startNode);
+            for (const m of fieldAccess) {
+                if (!helpers.visit(m.captures.lhs)) continue;
+
+                const varName = m.captures.lhs.text;
+                if (refPtrVars.has(varName)) {
+// console.error(`DEBUG Pass 3 (->) match: ${varName} parent: ${m.captures.lhs.parent.type} range: ${m.captures.lhs.startIndex}-${m.captures.lhs.endIndex}`);
+                     // Rewrite p->x to p.ptr->x
+                     helpers.replace(m.captures.lhs, helpers.code`${varName}.ptr`);
+                }
+            }
+
+            // Query for dereference (*p)
+            // Strict check for '*' operator to avoid matching '&' if tree-sitter confuses them
+            const derefs = robustQuery(`(pointer_expression argument: (identifier) @arg) @expr`, startNode);
+            for (const m of derefs) {
+                 if (!helpers.visit(m.captures.arg)) continue;
+
+                 const expr = m.captures.expr;
+                 const op = helpers.childForFieldName(expr, 'operator');
+                 if (!op || op.text !== '*') continue;
+
+                 const varName = m.captures.arg.text;
+                 if (refPtrVars.has(varName)) {
+                     helpers.replace(m.captures.arg, helpers.code`${varName}.ptr`);
+                 }
+            }
+            } catch (err) {
+                // console.error("RefPtr Transformer Error: " + err.message);
+            }
+        });
+        upp.registry.state['RefPtr_Transformer'] = true;
+    }
+
+    return refTypeName;
+}
+
+@define RefRetain(T) {
+    let typeName = T.trim();
+    if (typeName.startsWith('struct ')) typeName = typeName.slice(7).trim();
+    return `void _${typeName}_method_Retain(${T} *p)`;
+}
+
+@define RefRelease(T) {
+    let typeName = T.trim();
+    if (typeName.startsWith('struct ')) typeName = typeName.slice(7).trim();
+    return `void _${typeName}_method_Release(${T} *p)`;
+}
+
+// ----------------------------------------------------
+// Testing Code
+// ----------------------------------------------------
+
+struct Foo {
+    int id;
+};
+
+// ----------------------------------------------------
+// Intrusive Test Types
+// ----------------------------------------------------
+struct Node {
+    int value;
+    int ref_count;
+};
+
+// Intrusive Retain
+@RefRetain(struct Node) {
+    if (p) {
+        p->ref_count++;
+         // printf("Intrusive Retain: %d\n", p->ref_count);
+    }
+}
+
+// Intrusive Release
+@RefRelease(struct Node) {
+    if (p) {
+        p->ref_count--;
+        // printf("Intrusive Release: %d\n", p->ref_count);
+        if (p->ref_count == 0) {
+            // printf("Intrusive Free\n");
+            free(p);
+        }
+    }
+}
+
+// Factory
+struct Node* _Node_method_Create() {
+    struct Node* n = calloc(1, sizeof(struct Node));
+    n->ref_count = 1; // Start with 1
+    return n;
+}
+
+/* @method(struct Foo) */ void _Foo_method_Defer(struct Foo *f) {
+    if (f) printf("Defer Foo: %d\n", f->id);
+}
+
+// Custom Create method to test auto-detection
+struct Foo* _Foo_method_Create() {
+    printf("Foo Created via Method!\n");
+    struct Foo* f = malloc(sizeof(struct Foo));
+    f->id = 999; // distinctive value
+    return f;
+}
+
+int main() {
+    printf("Scope 1 Start\n");
+    {
+        // 1. Implicit Init with malloc (void*)
+        @RefPtr(struct Foo) p1 = malloc(sizeof(struct Foo));
+        p1->id = 1; // User requested elision: p->id should work/transform to p.ptr->id
+        printf("  p1 id: %d\n", p1->id);
+
+        {
+            printf("  Scope 2 Start\n");
+            // 2. Implicit Copy Init (RefPtr)
+            @RefPtr(struct Foo) p2 = p1;
+            printf("  p2 id: %d\n", p2->id); // Elision
+
+            // 3. Implicit Zero Init (Fallback if no Create, but now we have Create!)
+            // WAIT: We just added Create. So this test case behavior CHANGES.
+            // Old p3 was zero-init (id=0). New p3 should be id=999.
+            @RefPtr(struct Foo) p3;
+            printf("  p3 id: %d\n", p3->id);
+
+            // 4. Assignment (RefPtr = RefPtr)
+            p3 = p2; // p3 now shares p1/p2
+            printf("  p3 assigned from p2, id: %d\n", p3->id);
+
+            // 5. Assignment (RefPtr = malloc)
+            @RefPtr(struct Foo) p4;
+            p4 = malloc(sizeof(struct Foo));
+            p4->id = 4;
+            printf("  p4 id: %d\n", p4->id);
+
+        }
+        printf("  Scope 2 End\n");
+        // p2, p3, p4 released. p1 count should still be valid.
+    }
+    printf("Scope 1 End\n");
+
+    printf("Scope 3 Start (Intrusive)\n");
+    {
+        @RefPtr(struct Node) n1; // Use Create
+        n1->value = 10;
+        printf("  n1 value: %d\n", n1->value); // Elision
+
+        @RefPtr(struct Node) n2 = n1;
+        printf("  n2 shares n1. RefCount: %d\n", n1->ref_count); // Should be 2
+    }
+    printf("Scope 3 End\n");
+
+    return 0;
+}

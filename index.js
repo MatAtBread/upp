@@ -2,166 +2,165 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execSync, spawnSync } from 'child_process';
 import { Registry } from './src/registry.js';
-import { resolveConfig } from './src/config_loader.js';
 import { DependencyCache } from './src/dependency_cache.js';
 import { DiagnosticsManager } from './src/diagnostics.js';
 import { parseArgs } from './src/cli.js';
+import { resolveConfig } from './src/config_loader.js';
 
-const options = parseArgs(process.argv.slice(2));
+const command = parseArgs(process.argv.slice(2));
 
-if (options.isHelp) {
-    console.log("Usage: upp [options] <file.c>...");
-    console.log("Options:");
-    console.log("  -o <file>   Specify output file (only valid with single input)");
-    console.log("  -w, --write Auto-generate output files");
-    console.log("  -r, --run   Transpile, compile and run the input file(s)");
-    console.log("  -I <path>   Add include path");
-    process.exit(0);
-}
-
-const cache = new DependencyCache();
-
-try {
-    for (const absolutePath of options.inputFiles)
-    {
-    const dirName = path.dirname(absolutePath);
-    const baseName = path.basename(absolutePath);
-    const ext = path.extname(baseName).slice(1);
-    const fileNameWithoutExt = path.parse(baseName).name;
-
-    // 1. Resolve Configuration
-    const config = resolveConfig(absolutePath);
-    config.cache = cache;
-    config.write = options.writeMode;
-    config.diagnostics = new DiagnosticsManager(config);
-    const langConfig = (config.lang && config.lang[ext]) || {};
-
-    /**
-     * Executes a shell command with variable interpolation.
-     * @param {string} cmd - The command string with ${VAR} placeholders.
-     * @param {Object<string, string>} vars - Map of variable names to values.
-     * @returns {string} The standard output of the command.
-     */
-    function runCommand(cmd, vars) {
-        let finalCmd = cmd;
-        for (const [key, value] of Object.entries(vars)) {
-            finalCmd = finalCmd.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), value);
-        }
-        try {
-            return execSync(finalCmd, { cwd: dirName, encoding: 'utf8' });
-        } catch (err) {
-            console.error(`Command failed: ${finalCmd}`);
-            console.error(err.message);
-            throw err;
-        }
-    }
-
-    const vars = {
-        'INPUT': absolutePath,
-        'BASENAME': fileNameWithoutExt,
-        'FILENAME': baseName
-    };
-
-    // 2. Resolve Initial Source
-    let initialSource;
-    if (langConfig['pre-upp']) {
-        initialSource = runCommand(langConfig['pre-upp'], vars);
-    } else {
-        initialSource = fs.readFileSync(absolutePath, 'utf8');
-    }
-
-    // 3. Initialize Registry & Macros
-    const cliIncludePaths = options.includePaths;
-    const configIncludePaths = config.includePaths || [];
-    // CLI paths take precedence.
-    // Also include the directory of the input file itself (implicitly).
-    config.includePaths = [...new Set([dirName, ...cliIncludePaths, ...configIncludePaths])];
-    const registry = new Registry(config);
-    registry.registerSource(initialSource, absolutePath);
-
-    // 4. Transformation Stage
-    const processedSource = registry.process();
-
-    // 5. Run Stage
-    if (options.runMode) {
-        const tempBaseName = `.temp_${fileNameWithoutExt}_${Math.random().toString(36).slice(2, 8)}`;
-        const tempPath = path.join(dirName, `${tempBaseName}.${ext}`);
-        const exePath = path.join(dirName, tempBaseName + (process.platform === 'win32' ? '.exe' : '.out'));
-
-        fs.writeFileSync(tempPath, processedSource);
-
-        const runVars = {
-            ...vars,
-            'OUTPUT': tempPath,
-            'FILENAME': tempBaseName,
-            'BASENAME': `${tempBaseName}.${ext}`
-        };
-
-        try {
-            if (langConfig['compile']) {
-                runCommand(langConfig['compile'], runVars);
-            }
-            if (langConfig['run']) {
-                const output = runCommand(langConfig['run'], runVars);
-                if (output) process.stdout.write(output);
-            }
-        } finally {
-            if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-            // Cleanup potential executables
-            [".exe", ".out", ""].forEach(ext => {
-                const p = path.join(dirName, tempBaseName + ext);
-                if (fs.existsSync(p) && p !== tempPath) fs.unlinkSync(p);
-            });
-        }
-        continue; // Skip normal output stages
-    }
-
-    // 6. Post-upp Stage
-    if (langConfig['post-upp']) {
-        const outputPath = path.join(dirName, `upp.${baseName}`);
-        fs.writeFileSync(outputPath, processedSource);
-
-        const postVars = {
-            ...vars,
-            'OUTPUT': outputPath,
-            'OUTPUT_BASENAME': fileNameWithoutExt
-        };
-
-        runCommand(langConfig['post-upp'], postVars);
-    } else {
-        if (options.outputFile) {
-            fs.writeFileSync(options.outputFile, processedSource);
-        } else if (config.write) {
-            // Auto-generate output filename: remove .upp suffix if present, otherwise append .out?
-            // The plan says "remove .upp extension".
-            // If file is "foo.c.upp" -> "foo.c".
-            // If file is "foo.c" -> ... maybe don't overwrite? default to same behavior?
-            // Let's assume input files MUST be .upp to be auto-written, or we replace the extension.
-            // Safe logic: if ends in .upp, strip it. If not, error or warn?
-            // For now, let's verify pattern.
-            // Auto-generate output filename: remove .upp suffix if present
-            // .cup -> .c, .hup -> .h
-            let outPath;
-            if (absolutePath.endsWith('.hup')) {
-                outPath = absolutePath.slice(0, -2); // .hup -> .h
-            } else if (absolutePath.endsWith('.cup')) {
-                outPath = absolutePath.slice(0, -2); // .cup -> .c
-            } else if (absolutePath.endsWith('.upp')) {
-                outPath = absolutePath.slice(0, -4);
-            } else {
-                console.warn(`Warning: Input file ${baseName} does not end in .upp/.cup/.hup. Appending .out`);
-                outPath = absolutePath + ".out";
-            }
-            fs.writeFileSync(outPath, processedSource);
-            // console.log(`Generated: ${path.relative(process.cwd(), outPath)}`);
-        } else {
-            console.log(`/* upp ${path.relative(process.cwd(), absolutePath)} */\n`);
-            console.log(processedSource);
-        }
-    }
-    }
-} catch (err) {
+if (!command.isUppCommand) {
+    console.error("Usage: upp <compiler_command>");
+    console.error("Example: upp gcc -c main.c -o main.o");
     process.exit(1);
 }
+
+// Global state across transpilations
+const cache = new DependencyCache();
+let extraDeps = []; // Collected from -M flags during preprocessing
+
+function preprocess(filePath, extraFlags = []) {
+    // We add -x c to force C processing even for .hup files
+    // We use -E -P to get clean output
+    const flags = [...extraFlags, '-E', '-P', '-x', 'c'].join(' ');
+    try {
+        const cmd = `${command.compiler} ${flags} "${filePath}"`;
+        return execSync(cmd, { encoding: 'utf8' });
+    } catch (e) {
+        // GCC stderr is already printed
+        process.exit(1);
+    }
+}
+
+for (const source of command.sources) {
+    extraDeps = []; // Reset for each source
+    if (fs.existsSync(source.absCupFile)) {
+        try {
+            // Run Pre-processor on main input with Main Dep Flags
+            const preProcessed = preprocess(source.cupFile, command.depFlags);
+
+            // Resolve config (Search up tree for upp.json, supports extends and UPP fallback)
+            const loadedConfig = resolveConfig(source.absCupFile);
+
+            // Include Paths: source dir + config (already resolved) + CLI
+            const resolvedConfigIncludes = loadedConfig.includePaths || [];
+            if (loadedConfig.includePaths) resolvedConfigIncludes.push(...loadedConfig.includePaths);
+
+            // Final Include Paths (prioritize config)
+            const finalIncludePaths = [
+                path.dirname(source.absCupFile), // Implicit sibling lookup
+                ...resolvedConfigIncludes,
+                ...(command.includePaths || [])
+            ];
+
+            // Initialize Registry
+            const config = {
+                 cache,
+                 includePaths: finalIncludePaths,
+                 diagnostics: new DiagnosticsManager({}),
+                 preprocess: (file) => {
+                     // Same preprocess logic as before...
+                     if (command.depFlags.length > 0) {
+                         const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
+                         const flags = ['-MD', '-MF', tempD];
+                         try {
+                             const out = preprocess(file, flags);
+                             if (fs.existsSync(tempD)) {
+                                 const content = fs.readFileSync(tempD, 'utf8');
+                                 const match = content.match(/^[^:]+:(.*)/s);
+                                 if (match) { extraDeps.push(match[1]); }
+                                 fs.unlinkSync(tempD);
+                             }
+                             return out;
+                         } catch (e) {
+                             if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
+                             throw e;
+                         }
+                     }
+                     return preprocess(file);
+                 }
+            };
+            const registry = new Registry(config);
+
+            // Core Loading (from config.core)
+            const coreFiles = loadedConfig.core || [];
+
+            for (const coreFile of coreFiles) {
+                // Find file in include paths
+                let foundPath = null;
+                for (const inc of finalIncludePaths) {
+                    const p = path.join(inc, coreFile);
+                    if (fs.existsSync(p)) {
+                        foundPath = p;
+                        break;
+                    }
+                }
+
+                if (foundPath) {
+                   registry.loadDependency(foundPath);
+                } else {
+                    console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
+                }
+            }
+
+            // Process Macros
+            registry.registerSource(preProcessed, source.absCupFile);
+            const output = registry.process();
+
+            // Write output to the .c file
+            fs.writeFileSync(source.absCFile, output);
+
+            // Dependency Tracking Logic
+            if (command.depFlags.length > 0) {
+                 let dFile = command.depOutputFile;
+                 if (!dFile) {
+                     const parsed = path.parse(source.cupFile);
+                     dFile = path.join(parsed.dir, parsed.name + '.d');
+                 }
+
+                 if (dFile && fs.existsSync(dFile)) {
+                     const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
+                     const transitive = extraDeps.join('');
+
+                     const content = fs.readFileSync(dFile, 'utf8');
+                     const targetMatch = content.match(/^([^:]+):/);
+                     if (targetMatch) {
+                         const target = targetMatch[1].trim();
+                         fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
+                     }
+                 }
+            }
+
+            // Add resolved include paths to the FINAL compiler command so it can find generated headers
+            if (!command.additionalIncludes) command.additionalIncludes = [];
+            for (const inc of resolvedConfigIncludes) {
+                command.additionalIncludes.push(inc);
+            }
+
+        } catch (e) {
+            console.error(`[upp] Error processing ${source.cupFile}:`);
+            console.error(e.message);
+            process.exit(1);
+        }
+    }
+}
+
+// Final Step: Invoke the real compiler
+// We need to swap all .cup entries in the original command with their .c counterparts
+const finalArgs = command.fullCommand.slice(1).map(arg => {
+    const source = command.sources.find(s => s.cupFile === arg || s.absCupFile === path.resolve(arg));
+    if (source) return source.cFile;
+    return arg;
+});
+
+// Append additional include paths from config
+if (command.additionalIncludes) {
+    for (const inc of command.additionalIncludes) {
+        finalArgs.push('-I', inc);
+    }
+}
+
+const run = spawnSync(command.compiler, finalArgs, { stdio: 'inherit' });
+process.exit(run.status);

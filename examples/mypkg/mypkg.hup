@@ -1,0 +1,5 @@
+@include(package.hup)
+@package(mypkg)
+
+#define TEST 123
+extern const char *thing;

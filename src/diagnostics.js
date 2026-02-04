@@ -5,7 +5,8 @@
  */
 export const DiagnosticCodes = {
     MACRO_REDEFINITION: 'UPP001',
-    MISSING_INCLUDE: 'UPP002'
+    MISSING_INCLUDE: 'UPP002',
+    SYNTAX_ERROR: 'UPP003'
 };
 
 /**
@@ -46,6 +47,32 @@ export class DiagnosticsManager {
                  console.warn(' '.repeat(Math.max(0, col - 1)) + '\x1b[33m^\x1b[0m');
             }
         }
+    }
+
+    /**
+     * Reports an error and optionally exits.
+     * @param {string} code - The diagnostic code.
+     * @param {string} message - The error message.
+     * @param {string} filePath - File where error occurred.
+     * @param {number} [line=0] - Line number (1-indexed).
+     * @param {number} [col=0] - Column number (1-indexed).
+     * @param {string} [sourceCode=null] - Optional source code.
+     * @param {boolean} [fatal=true] - Whether to exit the process.
+     */
+    reportError(code, message, filePath, line = 0, col = 0, sourceCode = null, fatal = true) {
+        const loc = line > 0 ? `:${line}:${col}` : '';
+        console.error(`\x1b[31m${filePath}${loc}: error: [${code}] ${message}\x1b[0m`);
+
+        if (sourceCode && line > 0) {
+            const lines = sourceCode.split('\n');
+            const lineContent = lines[line - 1];
+            if (lineContent !== undefined) {
+                 console.error(lineContent);
+                 console.error(' '.repeat(Math.max(0, col - 1)) + '\x1b[31m^\x1b[0m');
+            }
+        }
+
+        if (fatal) process.exit(1);
     }
 
     /**

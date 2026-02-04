@@ -1,12 +1,10 @@
-/* upp examples/type_refs_test.c */
 
 
-/* @rename_type(RealPoint) */ 
 typedef struct PointAlias {
     int x;
     int y;
 } PointAlias;
-/* @rename_type(PointTag) */ 
+
 struct PointTagDef {
     int x;
 };
@@ -17,4 +15,3 @@ int main() {
     p2.x = 20;
     return 0;
 }
-

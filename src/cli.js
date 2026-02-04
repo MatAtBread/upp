@@ -1,109 +1,84 @@
 import path from 'path';
+import fs from 'fs';
 
 /**
- * @typedef {Object} CliOptions
- * @property {string[]} inputFiles - List of absolute paths to input files.
- * @property {string|null} outputFile - Absolute path to output file (if -o specified).
- * @property {string[]} includePaths - List of absolute include paths.
- * @property {boolean} writeMode - Whether -w/--write was specified.
- * @property {boolean} runMode - Whether --run was specified.
- * @property {boolean} isHelp - Whether --help was specified.
+ * @typedef {Object} CompilerCommand
+ * @property {string[]} fullCommand - The full compiler command args.
+ * @property {string} compiler - The compiler executable (e.g. 'gcc').
+ * @property {Array<{cFile: string, cupFile: string}>} sources - Pairs of .c and .cup files found.
+ * @property {boolean} isUppCommand - Whether this is a valid upp wrapper invocation.
  */
 
 /**
- * Parses command line arguments for the upp tool.
+ * Parses command line arguments for the upp compiler wrapper.
+ * Expects args to be [compiler, ...compiler_args]
  * @param {string[]} args - Raw arguments from process.argv.slice(2).
- * @returns {CliOptions} The parsed command line options.
+ * @returns {CompilerCommand} The parsed command info.
  */
 export function parseArgs(args) {
-    if (!args.length || args.includes('-?') || args.includes('--help')) {
-        return {
-            inputFiles: [],
-            outputFile: null,
-            includePaths: [],
-            writeMode: false,
-            runMode: false,
-            isHelp: true
-        };
+    if (!args.length) {
+        return { isUppCommand: false, fullCommand: [], compiler: '', sources: [], includePaths: [] };
     }
 
-    const mutableArgs = [...args];
-    let outputFile = null;
-    const includePaths = [process.cwd()];
-    let writeMode = false;
-    let runMode = false;
+    const compiler = args[0];
+    const sources = [];
+    const includePaths = [];
+    const depFlags = [];
+    let depOutputFile = null;
 
-    // Parse -o (Output File)
-    const outputFileIdx = mutableArgs.indexOf('-o');
-    if (outputFileIdx !== -1) {
-        if (outputFileIdx + 1 < mutableArgs.length) {
-            outputFile = mutableArgs[outputFileIdx + 1];
-            mutableArgs.splice(outputFileIdx, 2);
-        } else {
-             // If -o is last without arg, maybe just ignore or error?
-             // Current logic in index.js would take undefined.
-             // Let's safe-guard.
-             mutableArgs.splice(outputFileIdx, 1);
+    // Simple heuristic: Find arguments ending in .c
+    // Robust parsing of GCC flags is hard, but .c files are usually distinct.
+    // We assume any argument ending in .c that exists (or is intended to exist) is a source.
+
+    for (let i = 1; i < args.length; i++) {
+        const arg = args[i];
+
+        // Source detection
+        if (arg.endsWith('.c')) {
+            const absC = path.resolve(arg);
+            const absCup = absC + 'up'; // .c -> .cup
+            sources.push({
+                cFile: arg,
+                absCFile: absC,
+                cupFile: arg + 'up',
+                absCupFile: absCup
+            });
+        }
+
+        // Include paths
+        if (arg.startsWith('-I')) {
+             if (arg.length > 2) {
+                 includePaths.push(path.resolve(arg.slice(2)));
+             } else if (i + 1 < args.length) {
+                 includePaths.push(path.resolve(args[i+1]));
+                 // We don't advance i here to avoid messing up other checks,
+                 // but strictly we should.
+                 // Given the simple loop, we just re-process next arg as start of -I? No.
+                 // Ideally we skip. But 'sources' check is specific.
+             }
+        }
+
+        // Dependency Flags
+        if (arg === '-MD' || arg === '-MMD') {
+            depFlags.push(arg);
+        } else if (arg === '-MF' || arg === '-MT' || arg === '-MQ') {
+            depFlags.push(arg);
+             if (i + 1 < args.length) {
+                 const val = args[i+1];
+                 depFlags.push(val);
+                 if (arg === '-MF') depOutputFile = val;
+             }
         }
     }
-
-    // Parse -w / --write (Write Mode)
-    const wIdx = mutableArgs.indexOf('-w');
-    if (wIdx !== -1) {
-        writeMode = true;
-        mutableArgs.splice(wIdx, 1);
-    }
-    const writeIdx = mutableArgs.indexOf('--write');
-    if (writeIdx !== -1) {
-        writeMode = true;
-        mutableArgs.splice(writeIdx, 1);
-    }
-
-    // Parse --run / -r (Run Mode)
-    const runIdx = mutableArgs.indexOf('--run');
-    const rIdx = mutableArgs.indexOf('-r');
-    if (runIdx !== -1 || rIdx !== -1) {
-        runMode = true;
-        if (runIdx !== -1) mutableArgs.splice(runIdx, 1);
-        else mutableArgs.splice(rIdx, 1);
-    }
-
-    // Parse -I (Include Paths)
-    let includeIdx;
-    while ((includeIdx = mutableArgs.indexOf('-I')) !== -1) {
-        if (includeIdx + 1 < mutableArgs.length) {
-            includePaths.push(path.resolve(mutableArgs[includeIdx + 1]));
-            mutableArgs.splice(includeIdx, 2);
-        } else {
-            mutableArgs.splice(includeIdx, 1);
-        }
-    }
-
-    // What remains are input files
-    // Validate: Cannot specify -o with multiple input files
-    if (mutableArgs.length > 1 && outputFile) {
-        console.error("Error: Cannot specify -o with multiple input files.");
-        process.exit(1);
-    }
-
-    // Absolute paths for inputs? index.js does path.resolve() in the loop.
-    // Let's leave them as passed strings, but JSDoc says "absolute paths".
-    // index.js loop does: const absolutePath = path.resolve(filePath);
-    // Let's resolve them here for consistency with JSDoc.
-    // Wait, index.js loop iterates over args.
-
-    // Actually, `index.js` logic was:
-    // for (const filePath of args) { const absolutePath = path.resolve(filePath); ... }
-    // So distinct handling. Let's return the strings passed by user (relative or absolute)
-    // BUT the JSDoc says absolute. Let's make them absolute here.
-    const inputFiles = mutableArgs.map(f => path.resolve(f));
 
     return {
-        inputFiles,
-        outputFile,
+        isUppCommand: true,
+        fullCommand: args,
+        compiler,
+        sources,
         includePaths,
-        writeMode,
-        runMode,
-        isHelp: false
+        depFlags,
+        depOutputFile
     };
 }
+

@@ -1,6 +1,4 @@
-/* upp examples/async.c */
-
-
+#include "async.h"
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
 extern void *malloc(unsigned long n);
@@ -11,11 +9,10 @@ void os_start(void (*fn)()) {
     fn();
     puts("Finished");
 }
-/* @async  */ void afn() {
+void afn() {
     printf("World\n");
 }
 int main() {
-    /* afn() */ os_start(afn);
+    os_start(afn);
     return 0;
 }
-

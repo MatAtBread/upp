@@ -1,10 +1,8 @@
-/* upp examples/forward.c */
-
 
 void foo();
 void bar();
-
-/* @forward */ ;
+#include "forward.h"
+;
 void foo() {
     printf("Foo calls bar\n");
     bar();
@@ -16,4 +14,3 @@ int main() {
     foo();
     return 0;
 }
-

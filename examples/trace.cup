@@ -1,0 +1,27 @@
+#include <stdio.h>
+
+@define trace() {
+    const fnNode = upp.consume(); // Read the next item in the AST and remove it from the tree
+    const { returnType, name, params } = upp.getFunctionSignature(fnNode);
+    const body = fnNode.childForFieldName('body');
+
+    if (body) {
+        return upp.code`${returnType} ${name}${params} {
+    fputs("Entering ${name}\\n", stderr);
+    ${body.children.slice(1, -1).map(c => c.text).join('\n\t')}
+}`;
+    }
+}
+
+@trace int my_function(int x) {
+    int g = 1;
+    for (int i=0; i < x; i++) {
+        g = g * i;
+    }
+    return g;
+}
+
+int main() {
+    printf("magic number %d\n", my_function(1));
+    return 0;
+}

@@ -1,5 +1,3 @@
-/* upp examples/refptr.c */
-
 
 
 struct Foo;
@@ -108,12 +106,12 @@ struct Node {
     int value;
     int ref_count;
 };
-/* @RefRetain(struct Node) */ void _Node_method_Retain(struct Node *p) {
+void _Node_method_Retain(struct Node *p) {
     if (p) {
         p->ref_count++;
     }
 }
-/* @RefRelease(struct Node) */ void _Node_method_Release(struct Node *p) {
+void _Node_method_Release(struct Node *p) {
     if (p) {
         p->ref_count--;
         if (p->ref_count == 0) {
@@ -138,34 +136,33 @@ struct Foo* _Foo_method_Create() {
 int main() {
     printf("Scope 1 Start\n");
     {
-        /* @RefPtr(struct Foo) */ RefPtr_Foo p1 = /* malloc(sizeof(struct Foo)) */ _Generic((malloc(sizeof(struct Foo))), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(malloc(sizeof(struct Foo)));
-        /* p1 */ p1.ptr->id = 1;
-        printf("  p1 id: %d\n", /* p1 */ p1.ptr->id);
+        RefPtr_Foo p1 = _Generic((malloc(sizeof(struct Foo))), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(malloc(sizeof(struct Foo)));
+        p1.ptr->id = 1;
+        printf("  p1 id: %d\n", p1.ptr->id);
         {
             printf("  Scope 2 Start\n");
-            /* @RefPtr(struct Foo) */ RefPtr_Foo p2 = /* p1 */ _Generic((p1), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(p1);
-            printf("  p2 id: %d\n", /* p2 */ p2.ptr->id);
-            /* @RefPtr(struct Foo) */ RefPtr_Foo /* p3 */ p3 = _Generic((_Foo_method_Create()), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(_Foo_method_Create());
-            printf("  p3 id: %d\n", /* p3 */ p3.ptr->id);
-            /* p3 = p2 */ _Generic((p2), struct Foo*: _assign_wrap_Foo, void*: _assign_wrap_Foo, RefPtr_Foo: _assign_copy_Foo)(&p3, p2);
-            printf("  p3 assigned from p2, id: %d\n", /* p3 */ p3.ptr->id);
-            /* @RefPtr(struct Foo) */ RefPtr_Foo /* p4 */ p4 = _Generic((_Foo_method_Create()), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(_Foo_method_Create());
-            /* p4 = malloc(sizeof(struct Foo)) */ _Generic((malloc(sizeof(struct Foo))), struct Foo*: _assign_wrap_Foo, void*: _assign_wrap_Foo, RefPtr_Foo: _assign_copy_Foo)(&p4, malloc(sizeof(struct Foo)));
-            /* p4 */ p4.ptr->id = 4;
-            printf("  p4 id: %d\n", /* p4 */ p4.ptr->id);
+            RefPtr_Foo p2 = _Generic((p1), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(p1);
+            printf("  p2 id: %d\n", p2.ptr->id);
+            RefPtr_Foo p3 = _Generic((_Foo_method_Create()), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(_Foo_method_Create());
+            printf("  p3 id: %d\n", p3.ptr->id);
+            _Generic((p2), struct Foo*: _assign_wrap_Foo, void*: _assign_wrap_Foo, RefPtr_Foo: _assign_copy_Foo)(&p3, p2);
+            printf("  p3 assigned from p2, id: %d\n", p3.ptr->id);
+            RefPtr_Foo p4 = _Generic((_Foo_method_Create()), struct Foo*: _wrap_Foo, void*: _wrap_Foo, RefPtr_Foo: _copy_Foo)(_Foo_method_Create());
+            _Generic((malloc(sizeof(struct Foo))), struct Foo*: _assign_wrap_Foo, void*: _assign_wrap_Foo, RefPtr_Foo: _assign_copy_Foo)(&p4, malloc(sizeof(struct Foo)));
+            p4.ptr->id = 4;
+            printf("  p4 id: %d\n", p4.ptr->id);
         _release_Foo(p2); _release_Foo(p3); _release_Foo(p4); }
         printf("  Scope 2 End\n");
     _release_Foo(p1); }
     printf("Scope 1 End\n");
     printf("Scope 3 Start (Intrusive)\n");
     {
-        /* @RefPtr(struct Node) */ RefPtr_Node /* n1 */ n1 = _Generic((_Node_method_Create()), struct Node*: _wrap_Node, void*: _wrap_Node, RefPtr_Node: _copy_Node)(_Node_method_Create());
-        /* n1 */ n1.ptr->value = 10;
-        printf("  n1 value: %d\n", /* n1 */ n1.ptr->value);
-        /* @RefPtr(struct Node) */ RefPtr_Node n2 = /* n1 */ _Generic((n1), struct Node*: _wrap_Node, void*: _wrap_Node, RefPtr_Node: _copy_Node)(n1);
-        printf("  n2 shares n1. RefCount: %d\n", /* n1 */ n1.ptr->ref_count);
+        RefPtr_Node n1 = _Generic((_Node_method_Create()), struct Node*: _wrap_Node, void*: _wrap_Node, RefPtr_Node: _copy_Node)(_Node_method_Create());
+        n1.ptr->value = 10;
+        printf("  n1 value: %d\n", n1.ptr->value);
+        RefPtr_Node n2 = _Generic((n1), struct Node*: _wrap_Node, void*: _wrap_Node, RefPtr_Node: _copy_Node)(n1);
+        printf("  n2 shares n1. RefCount: %d\n", n1.ptr->ref_count);
     _release_Node(n1); _release_Node(n2); }
     printf("Scope 3 End\n");
     return 0;
 }
-

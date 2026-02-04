@@ -1,0 +1,44 @@
+struct Test {
+    int x;
+};
+
+@define TestMacro() {
+    // This transformer will intentionally visit nodes multiple times
+    upp.registerTransform((root, helpers) => {
+        // C Fragment Pattern for Automatic Avoidance
+        const pattern = 'int $x = $y;';
+
+        // Pass 1: Visit all int declarations
+        helpers.matchReplaceAll(root, pattern, (captures) => {
+             // Just visit, don't replace
+             return null;
+        });
+
+        // Pass 2: Try to visit them again with SAME pattern
+        // This should trigger "Avoided"
+        helpers.matchReplaceAll(root, pattern, (captures) => {
+             return null;
+        });
+
+        // Pass 3: Manual Double Visit (using S-expression query for iteration)
+        const queryPattern = '(declaration type: (primitive_type) declarator: (init_declarator)) @decl';
+        const decls = helpers.query(queryPattern, root);
+        for (const m of decls) {
+             const key = "ManualKey";
+             // First visit: allowed
+             const r1 = helpers.visit(m.captures.decl);
+             // Second visit: avoided
+             const r2 = helpers.visit(m.captures.decl);
+        }
+    });
+    return "";
+}
+
+// Invoke the macro
+@TestMacro()
+
+int main() {
+    int a = 1;
+    int b = 2;
+    return 0;
+}

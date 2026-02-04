@@ -1,0 +1,18 @@
+@define include(file) {
+    // 1. Load the dependency so its macros (like @package) execute
+    // Since this runs in the context of the file using @include, 'upp.loadDependency'
+    // will trigger the loading of 'file'.
+    // The 'file' argument here is expected to be a string literal, e.g. "pkg.hup"
+    // But macro args are passed as values. If it's a bare word, it's a string in JS land.
+
+    upp.loadDependency(file);
+
+    // 2. Resolve the output filename for the #include
+    // We assume standard convention: file.hup -> file.h
+    let headerName = file;
+    if (headerName.endsWith('.hup')) headerName = headerName.slice(0, -4) + '.h';
+    else if (headerName.endsWith('.cup')) headerName = headerName.slice(0, -4) + '.h'; // Unlikely to include .cup, but possible
+
+    // 3. Replace the @include(...) with #include "..."
+    return `#include "${headerName}"`;
+}

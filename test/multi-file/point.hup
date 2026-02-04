@@ -1,4 +1,4 @@
-#include "../../std/method.hup"
+@include (method.hup)
 
 typedef struct Point {
     int x;

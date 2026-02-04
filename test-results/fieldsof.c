@@ -1,11 +1,9 @@
-/* upp examples/fieldsof.c */
-
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
-
+#include "fieldsof.h"
 struct Base {
     int x;
     int y;
@@ -16,8 +14,7 @@ typedef struct {
 } GeoCoord;
 struct Derived {
     int z;
-    /* @fieldsof(struct Base);
-    @fieldsof(GeoCoord); */ int x;
+    int x;
     int y;
     
     float lat;
@@ -34,4 +31,3 @@ int main() {
     printf("Derived: x=%d, y=%d, z=%d, lat=%.1f, lon=%.1f\n", d.x, d.y, d.z, d.lat, d.lon);
     return 0;
 }
-

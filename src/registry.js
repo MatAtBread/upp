@@ -15,9 +15,18 @@ class Registry {
     /**
      * @param {Object} [config={}] - Configuration object.
      */
-    constructor(config = {}) {
+    /**
+     * @param {Object} [config={}] - Configuration object.
+     * @param {import('./dependency_cache.js').DependencyCache} [config.cache] - Shared dependency cache.
+     * @param {string[]} [config.includePaths] - List of include paths.
+     * @param {function(string): string} [config.preprocess] - Callback to preprocess a file (e.g. run cpp).
+     * @param {Registry|null} [parentRegistry=null] - The parent registry that spawned this instance.
+     */
+    constructor(config = {}, parentRegistry = null) {
         /** @type {Object} */
         this.config = config;
+        /** @type {Registry|null} */
+        this.parentRegistry = parentRegistry;
         /** @type {Map<string, Object>} */
         this.macros = new Map();
         /** @type {Array<Object>} */
@@ -30,12 +39,14 @@ class Registry {
         this.cache = config.cache || null;
         /** @type {DiagnosticsManager} */
         this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
+        this.statsEnabled = !!config.stats;
         /** @type {Array<function>} */
         this.transforms = [];
         /** @type {Map<string, import('tree-sitter').Query>} */
         this.queryCache = new Map();
         /** @type {Object} */
         this.language = C;
+
         // Handle ESM/CJS interop for language modules
         if (this.language && this.language.default) {
             this.language = this.language.default;
@@ -51,6 +62,26 @@ class Registry {
         this.idCounter = 0;
         /** @type {Set<string>} */
         this.loadedDependencies = new Set();
+        /** @type {Map<any, Set<number>>} */
+        this.visitedNodes = new Map();
+
+        // on-screen usage
+        // Statistics
+        this.uid = Math.random().toString(36).slice(2, 6);
+        this.stats = { visitsAvoided: 0, visitsAllowed: 0 };
+        // if (parentRegistry) console.log(`Registry ${this.uid} initialized with parentRegistry ${parentRegistry.uid}`);
+        // else console.log(`Registry ${this.uid} initialized WITHOUT parentRegistry`);
+    }
+
+    /**
+     * Retrieves a macro definition, checking parent registries if needed.
+     * @param {string} name - The macro name.
+     * @returns {Object|undefined} The macro definition.
+     */
+    getMacro(name) {
+        if (this.macros.has(name)) return this.macros.get(name);
+        if (this.parentRegistry) return this.parentRegistry.getMacro(name);
+        return undefined;
     }
 
     /**
@@ -59,11 +90,17 @@ class Registry {
      * @param {string} source - Source code to parse.
      * @returns {import('tree-sitter').Tree} Tree-sitter tree.
      */
-    _parse(source) {
+    _parse(source, oldTree) {
+        // ALWAYS create a fresh parser instance to avoid "NodeClass is not a constructor"
+        // errors which occur when a shared parser is reused (e.g. in recursive macro loading).
+        // This ensures strict isolation of Tree objects.
+        const parser = new Parser();
+        parser.setLanguage(this.language);
+
         if (typeof source !== 'string') {
-            return this.parser.parse("");
+            return parser.parse("");
         }
-        return this.parser.parse(source);
+        return parser.parse(source); // Force full parse, ignore oldTree
     }
 
     /**
@@ -89,6 +126,22 @@ class Registry {
      */
 
     scanMacros(source, originPath = 'unknown') {
+        // Validation: Check for definitions missing parentheses
+        const badSyntaxRegex = /@define(?:@\w+)?\s+(\w+)\s*\{/g;
+        let badMatch;
+        while ((badMatch = badSyntaxRegex.exec(source)) !== null) {
+             const name = badMatch[1];
+             const { line, col } = DiagnosticsManager.getLineCol(source, badMatch.index);
+             this.diagnostics.reportError(
+                 DiagnosticCodes.SYNTAX_ERROR,
+                 `Macro definition for '@${name}' is missing parentheses. Use '@define ${name}() { ... }'.`,
+                 originPath,
+                 line,
+                 col,
+                 source
+             );
+        }
+
         const found = new Map();
         const regex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let match;
@@ -105,24 +158,24 @@ class Registry {
                 // We have access to this.macros.
                 if (this.macros.has(name)) {
                      const existing = this.macros.get(name);
-                     // Allow redefinition if content is identical? OR always warn?
-                     // User said: "@xxx" from foo.h and "@xxx" from bar.h are distinct.
-                     // But if they share the name, the last one wins in the registry.
-                     // Warn about collision.
-                     // Distinct files defining same macro -> Collision.
-                     // Same file defining same macro twice -> Collision.
-                     // If existing.origin !== originPath, it's definitely a cross-file redefinition.
 
                      // Helper message
                      const existingLoc = existing.origin ? ` (previously known from ${existing.origin})` : '';
-                     this.diagnostics.reportWarning(
-                         DiagnosticCodes.MACRO_REDEFINITION,
-                         `Macro @${name} redefined${existingLoc}`,
-                         originPath,
-                         line,
-                         col,
-                         source
-                     );
+
+                     // User Option 3: "macro re-definitions from the same position in the same file should not be considered UPP001 errors"
+                     // This happens when the same header is included multiple times via different paths or contexts.
+                     if (existing.origin === originPath && existing.startIndex === match.index) {
+                         // Identical definition (same file, same position). Silent ignore.
+                     } else {
+                         this.diagnostics.reportWarning(
+                             DiagnosticCodes.MACRO_REDEFINITION,
+                             `Macro @${name} redefined${existingLoc}`,
+                             originPath,
+                             line,
+                             col,
+                             source
+                         );
+                     }
                 }
 
                 found.set(name, {
@@ -200,13 +253,13 @@ class Registry {
         const seenIndices = new Set();
 
         const walk = (node) => {
-            if (node.type === 'comment') return;
+            if (node.type.includes('comment')) return;
             if (node.type === 'ERROR') {
                 const nodeText = node.text.trim();
                 if (nodeText === '@' || nodeText.startsWith('@')) {
                     if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex, source)) {
                         const invocation = this.absorbInvocation(source, node.startIndex);
-                        if (invocation && this.macros.has(invocation.name)) {
+                        if (invocation && this.getMacro(invocation.name)) {
                             invocations.push({
                                 ...invocation,
                                 invocationNode: node
@@ -270,6 +323,7 @@ class Registry {
      * @returns {string} The transformed source code.
      */
     process() {
+        // console.log(`Process started for registry ${this.uid}`);
         this.allTrees = [];
         let iterations = 0;
         const maxIterations = 100;
@@ -279,16 +333,17 @@ class Registry {
              this.sourceCode = "";
         }
 
-        // Pre-process includes
-        this.processIncludes();
+        // Pre-processing handled externally
+        // this.processIncludes();
 
         while (iterations < maxIterations) {
+            this.visitedNodes = new Map(); // Reset visited for new pass
             const cleanSource = this.maskDefinitions(this.sourceCode);
             if (typeof cleanSource !== 'string') {
                  console.error("CRITICAL: maskDefinitions returned non-string. Type:", typeof cleanSource);
                  break;
             }
-            this.mainTree = this._parse(cleanSource);
+            this.mainTree = this._parse(cleanSource, this.mainTree);
             this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
 
             if (this.invocations.length === 0) {
@@ -312,8 +367,9 @@ class Registry {
             }
 
             this.helpers.replacements = [];
-            this.helpers.replacements = [];
+            // console.log(`Calling evaluateMacros on ${this.uid}`);
             this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true, this.filePath);
+            // console.log(`Returned from evaluateMacros on ${this.uid}`);
 
             // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
 
@@ -325,6 +381,10 @@ class Registry {
             this.applyChanges(this.invocations);
             this.cleanTree = null;
             iterations++;
+        }
+
+        if (this.statsEnabled && (this.stats.visitsAvoided > 0 || this.stats.visitsAllowed > 0)) {
+            console.error(`[Stats] Recursion Avoidance: Allowed=${this.stats.visitsAllowed}, Avoided=${this.stats.visitsAvoided}`);
         }
 
         return this.finishProcessing();
@@ -381,6 +441,9 @@ class Registry {
      * @param {string} [filePath='unknown'] - File path for error reporting.
      */
     evaluateMacros(invocations, source, helpers, isGlobalPass = false, filePath = 'unknown') {
+        const oldCleanTree = this.cleanTree;
+        const oldMainTree = this.mainTree;
+
         // 1. Re-scan for strippable definitions in the CURRENT sourceCode
         const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         const definitionsToStrip = [];
@@ -395,12 +458,29 @@ class Registry {
             }
         }
 
-        // 2. Clear source of macros and definitions to find clean target nodes
+        // 2. Clear source of ALL macro invocations and definitions to find clean target nodes.
+        // We mask even unknown macros to ensure tree-sitter generates a valid C AST.
         let cleanSource = source;
-        const allStrippable = [
-            ...definitionsToStrip,
-            ...invocations.map(i => ({ start: i.startIndex, end: i.endIndex }))
-        ];
+        const allStrippable = [...definitionsToStrip];
+
+        // Find all @ invocations
+        const macroRegex = /@(\w+)/g;
+        let mMatch;
+        while ((mMatch = macroRegex.exec(source)) !== null) {
+            const inv = this.absorbInvocation(source, mMatch.index);
+            if (inv) {
+                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
+                macroRegex.lastIndex = inv.endIndex;
+            }
+        }
+
+        // Also add known invocations if they were missed (unlikely but safe)
+        for (const inv of invocations) {
+            if (!allStrippable.some(s => s.start === inv.startIndex)) {
+                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
+            }
+        }
+
         allStrippable.sort((a, b) => b.start - a.start);
 
         for (const range of allStrippable) {
@@ -420,13 +500,23 @@ class Registry {
         helpers.currentInvocations = invocations;
 
         for (const invocation of invocations) {
+            // console.log(`Evaluating @${invocation.name} in registry ${this.uid}. Context: ${source.substring(Math.max(0, invocation.startIndex - 20), Math.min(source.length, invocation.endIndex + 20))}`);
             if (invocation.skipped) continue;
-            const macro = this.macros.get(invocation.name);
+            const macro = this.getMacro(invocation.name);
             if (!macro) continue;
 
             const lastParam = macro.params[macro.params.length - 1];
             const hasRestParam = lastParam && lastParam.startsWith('...');
             const expectedArgs = macro.params.length;
+
+            // Recursion avoidance for macros:
+            // Use macro name as key. Check invocationNode.
+            if (this.visit(invocation.name, invocation.invocationNode)) {
+                 // New visit, proceed
+            } else {
+                 // Already visited this node for this macro
+                 continue;
+            }
 
             const macroFn = new Function('upp', 'console', ...macro.params, macro.body);
 
@@ -483,6 +573,12 @@ class Registry {
                 }
                 process.exit(1);
             }
+        }
+
+        // Restore context if this was a sub-evaluation
+        if (!isGlobalPass) {
+            this.cleanTree = oldCleanTree;
+            this.mainTree = oldMainTree;
         }
     }
 
@@ -560,6 +656,51 @@ class Registry {
                     const comment = `/* ${commentText} */ `;
                     finalContent = comment + finalContent;
                 }
+
+                if (this.mainTree) {
+                    const startPos = DiagnosticsManager.getLineCol(this.sourceCode, change.start);
+                    const oldEndPos = DiagnosticsManager.getLineCol(this.sourceCode, change.end);
+
+                    // 0-indexed conversion
+                    startPos.line--; startPos.col--;
+                    oldEndPos.line--; oldEndPos.col--;
+
+                    // Calculate new end position
+                    // We need to count lines in finalContent to determine row delta
+                    // And chars in last line to determine col delta
+                    let newLines = 0;
+                    let lastLineLen = 0;
+                    for (let i = 0; i < finalContent.length; i++) {
+                        if (finalContent[i] === '\n') {
+                            newLines++;
+                            lastLineLen = 0;
+                        } else {
+                            lastLineLen++;
+                        }
+                    }
+
+                    const newEndRow = startPos.line + newLines;
+                    const newEndCol = newLines === 0 ? startPos.col + lastLineLen : lastLineLen;
+
+                    const edit = {
+                        startIndex: change.start,
+                        oldEndIndex: change.end,
+                        newEndIndex: change.start + finalContent.length,
+                        startPosition: { row: startPos.line, column: startPos.col },
+                        oldEndPosition: { row: oldEndPos.line, column: oldEndPos.col },
+                        newEndPosition: { row: newEndRow, column: newEndCol }
+                    };
+
+                    //console.error("Applying edit:", JSON.stringify(edit, null, 2));
+                    try {
+                        this.mainTree.edit(edit);
+                    } catch (e) {
+                        // If incremental update fails, discard the old tree to force a clean re-parse
+                        // This prevents crashes due to state desync while maintaining robustness
+                        this.mainTree = null;
+                    }
+                }
+
                 output = output.slice(0, change.start) + finalContent + output.slice(change.end);
                 lastStart = change.start;
             }
@@ -672,21 +813,7 @@ class Registry {
         return q;
     }
 
-    /**
-     * Scans source code for include directives.
-     * @param {string} source - Source code to scan.
-     * @returns {Array<string>} List of imported paths.
-     */
-    scanIncludes(source) {
-        // Regex matches .upp, .hup, .cup
-        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
-        const includes = [];
-        let match;
-        while ((match = includeRegex.exec(source)) !== null) {
-            includes.push(match[1]);
-        }
-        return includes;
-    }
+
 
     /**
      * run registered transforms on the tree
@@ -695,8 +822,11 @@ class Registry {
      */
     applyTransforms(tree, helpers) {
         helpers.root = tree.rootNode || tree;
+        const rootNode = tree.rootNode || tree;
         for (const transform of this.transforms) {
-            transform(tree.rootNode || tree, helpers);
+            // Set current transform key for recursion avoidance
+            helpers.transformKey = transform;
+            transform(rootNode, helpers);
         }
     }
 
@@ -723,6 +853,8 @@ class Registry {
                 (declaration (pointer_declarator (identifier) @id))
                 (parameter_declaration (identifier) @id)
                 (parameter_declaration (pointer_declarator (identifier) @id))
+                (function_definition (function_declarator (identifier) @id))
+                (function_definition (pointer_declarator (function_declarator (identifier) @id)))
             `).matches(this.mainTree.rootNode);
 
             for (const m of matches) {
@@ -730,7 +862,7 @@ class Registry {
                 if (idNode.text === name && idNode.startIndex <= node.startIndex) {
                     // Return the parent declaration/parameter
                     let p = this.helpers.parent(idNode);
-                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration') {
+                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration' && p.type !== 'function_definition') {
                         p = this.helpers.parent(p);
                     }
                     def = p || idNode;
@@ -738,7 +870,7 @@ class Registry {
             }
         } catch (e) {
             console.error(`DEBUG: getDefinition query failed for node ${node.type} (${node.text}): ${e.message}`);
-            throw e;
+            // throw e; // Suppress crash to allow build to continue
         }
         return def;
     }
@@ -791,61 +923,40 @@ class Registry {
         }
         return refs;
     }
+
     /**
-     * Scans for #include "foo.upp" directives, loads macros, and rewrites to "foo".
+     * Mark a node as visited to avoid infinite recursion.
+     * @param {any} key - The namespace key (transform function or macro name).
+     * @param {import('tree-sitter').SyntaxNode} node - The node to visit.
+     * @returns {boolean} True if new visit, False if already visited.
      */
-    processIncludes() {
-        const includeRegex = /^\s*#\s*include\s*"([^"]+\.(?:upp|hup|cup))"/gm;
-        let match;
-        const replacements = [];
-
-        while ((match = includeRegex.exec(this.sourceCode)) !== null) {
-            const fullMatch = match[0];
-            const importPath = match[1];
-            const start = match.index;
-            const end = start + fullMatch.length;
-
-            // Resolve and load
-            const resolvedPath = this.resolveInclude(importPath);
-            if (resolvedPath) {
-                this.loadDependency(resolvedPath);
-
-                // Rewrite: remove .upp from the import path in the source
-                // The importPath is group 1. We want to replace the whole line or just the path?
-                // Replacing the path inside the quotes is safest.
-                // Reconstruct the line without .upp
-                const ext = path.extname(importPath);
-                // remove .upp or .hup/.cup extension if present?
-                // Logic: .hup -> .h, .cup -> .c, .upp -> remove (basename)
-                let newPath;
-                if (importPath.endsWith('.hup')) newPath = importPath.slice(0, -2); // .hup -> .h
-                else if (importPath.endsWith('.cup')) newPath = importPath.slice(0, -2); // .cup -> .c
-                else if (importPath.endsWith('.upp')) newPath = importPath.slice(0, -4); // .upp -> remove
-                else newPath = importPath; // fallback
-
-                const replacement = fullMatch.replace(importPath, newPath);
-
-                replacements.push({ start, end, replacement });
-            } else {
-                // Determine line/col for warning
-                const { line, col } = DiagnosticsManager.getLineCol(this.sourceCode, start);
-                this.diagnostics.reportWarning(
-                    DiagnosticCodes.MISSING_INCLUDE,
-                    `Could not resolve include: ${importPath}`,
-                    this.filePath,
-                    line,
-                    col,
-                    this.sourceCode
-                );
-            }
+    visit(key, node) {
+        if (!node) return false;
+        if (!this.visitedNodes.has(key)) {
+            this.visitedNodes.set(key, new Set());
         }
-
-        // Apply replacements in reverse
-        for (let i = replacements.length - 1; i >= 0; i--) {
-            const r = replacements[i];
-            this.sourceCode = this.sourceCode.slice(0, r.start) + r.replacement + this.sourceCode.slice(r.end);
+        const set = this.visitedNodes.get(key);
+        if (set.has(node.id)) {
+            this.stats.visitsAvoided++;
+            return false;
         }
+        this.stats.visitsAllowed++;
+        set.add(node.id);
+        return true;
     }
+
+    /**
+     * Check if a node has been visited.
+     * @param {any} key - The namespace key.
+     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
+     * @returns {boolean} True if visited.
+     */
+    isVisited(key, node) {
+        if (!node) return false;
+        if (!this.visitedNodes.has(key)) return false;
+        return this.visitedNodes.get(key).has(node.id);
+    }
+
 
     /**
      * Resolves an include path using the configured include paths.
@@ -868,10 +979,12 @@ class Registry {
     }
 
     /**
-     * Loads a dependency file and extracts macros.
+     * Loads a dependency file, pre-processes it, and extracts macros.
+     * Also recursively compiles .hup files to .h files for C compiler compatibility.
      * @param {string} filePath - Absolute path to the dependency.
      */
     loadDependency(filePath) {
+        // console.log(`loadDependency called on registry ${this.uid} for ${filePath}`);
         if (this.loadedDependencies.has(filePath)) return;
         this.loadedDependencies.add(filePath);
 
@@ -883,44 +996,29 @@ class Registry {
                     this.macros.set(name, macro);
                 }
             }
-            // Populate recursive includes from cache if available
-            if (cached.includes) {
-                for (const inc of cached.includes) {
-                    const resolved = this.resolveInclude(inc);
-                    if (resolved) this.loadDependency(resolved);
-                }
-                return;
-            }
+            // Even if cached, we might need to regenerate the .h file if it's missing?
+            // Or assume cache implies file exists?
+            // Safer to check existence and regenerate if missing, but for now specific flow overrides cache?
+            // Let's assume strict build: if calling loadDependency, usually we process.
+            // But strict caching might skip this.
+            // We'll proceed to loading macros from cache, but check if .h generation is needed.
+            // Usually cache is valid only if file hasn't changed.
+            // But output .h might be deleted?
+            // Let's regenerate .h always if it's a .hup file, to be safe.
         }
 
         try {
-            const source = fs.readFileSync(filePath, 'utf8');
-
-            // If -w is enabled, we need to generate the output for this dependency too.
-            // This is "recursive compilation".
-            if (this.config.write) {
-                // Determine output path: remove .upp extension
-                let outPath = null;
-                if (filePath.endsWith('.hup')) {
-                    outPath = filePath.slice(0, -2);
-                } else if (filePath.endsWith('.cup')) {
-                    outPath = filePath.slice(0, -2);
-                } else if (filePath.endsWith('.upp')) {
-                    outPath = filePath.slice(0, -4);
+            // Use pre-processor if configured (for .hup files)
+            let source;
+            if (this.config.preprocess) {
+                try {
+                    source = this.config.preprocess(filePath);
+                } catch (e) {
+                    console.error(`Preprocessing failed for ${filePath}: ${e.message}`);
+                    source = fs.readFileSync(filePath, 'utf8'); // Fallback?
                 }
-
-                if (outPath) {
-                    // Avoid infinite recursion or double writing?
-                    // The cache check above handles "loading" recursion.
-                    // But if we are here, it wasn't cached, so we write it once.
-                    // We need a fresh registry for the dependency to process it fully.
-                    // We share the SAME cache.
-                    const subRegistry = new Registry(this.config);
-                    subRegistry.registerSource(source, filePath);
-                    const output = subRegistry.process();
-                    fs.writeFileSync(outPath, output);
-                    // console.log(`Recursively generated: ${path.relative(process.cwd(), outPath)}`);
-                }
+            } else {
+                source = fs.readFileSync(filePath, 'utf8');
             }
 
             // Scan macros fresh
@@ -933,30 +1031,45 @@ class Registry {
                  }
             }
 
-            const includes = this.scanIncludes(source);
+            // Header Generation and Side-Effect Propagation
+            if (filePath.endsWith('.hup')) {
+                const outputPath = filePath.slice(0, -4) + '.h';
 
-            // Recursive scan for includes to load transitive macros
-            for (const subImport of includes) {
-                const resolved = this.resolveInclude(subImport);
-                if (resolved) {
-                    this.loadDependency(resolved);
+                // We need to fully expand the file to generate the .h content.
+                // We use a temporary child registry for this context.
+                const tempRegistry = new Registry(this.config, this);
+
+                // Register source and process
+                tempRegistry.registerSource(source, filePath);
+                // process() will expand macros (like @package) and strip definitions.
+                const output = tempRegistry.process();
+
+                fs.writeFileSync(outputPath, output);
+
+                // Propagate macros and transforms from tempRegistry back to 'this' registry
+                for (const [name, macro] of tempRegistry.macros) {
+                    if (!this.macros.has(name)) {
+                        this.macros.set(name, macro);
+                    }
                 }
-            }
-
-            // Evaluate top-level invocations in the dependency (for side effects like registerTransform)
-            const tree = this._parse(source);
-            const invocations = this.findInvocations(tree, source);
-            if (invocations.length > 0) {
-                 const depHelpers = new UppHelpersC(this);
-                 this.evaluateMacros(invocations, source, depHelpers, false, filePath);
-                 // We discard depHelpers.replacements because we are not generating code for the dependency here
-                 // (unless -w path above handled it, but that uses a separate registry instance).
-                 // We only want the side effects on 'this.transforms' etc.
+                for (const transform of tempRegistry.transforms) {
+                    if (!this.transforms.includes(transform)) {
+                        this.transforms.push(transform);
+                    }
+                }
+            } else {
+                 // Non-.hup files: Evaluate top-level invocations for side effects the old way
+                 const tree = this._parse(source);
+                 const invocations = this.findInvocations(tree, source);
+                 if (invocations.length > 0) {
+                      const depHelpers = new UppHelpersC(this);
+                      this.evaluateMacros(invocations, source, depHelpers, false, filePath);
+                 }
             }
 
             // Update cache
             if (this.cache) {
-                this.cache.set(filePath, { macros: fileMacros, includes });
+                this.cache.set(filePath, { macros: fileMacros, includes: [] });
             }
 
         } catch (err) {

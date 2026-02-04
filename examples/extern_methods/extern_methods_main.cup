@@ -1,0 +1,9 @@
+@include(extern_methods.hup)
+
+int main() {
+    Foo f = { .x = 1 };
+    f.increment();
+    f.print();
+    return 0;
+}
+

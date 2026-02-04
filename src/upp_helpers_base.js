@@ -1,4 +1,5 @@
 import Parser from 'tree-sitter';
+import path from 'path';
 const { Query } = Parser;
 
 /**
@@ -22,6 +23,31 @@ class UppHelpersBase {
         this.invocation = null; // Current macro invocation details
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.lastConsumedNode = null;
+    }
+
+    /**
+     * Gets the parent registry if available.
+     * @returns {import('./registry').Registry|null}
+     */
+    get parentRegistry() {
+        return this.registry.parentRegistry;
+    }
+
+    /**
+     * Gets the parent tree's root node if available.
+     * @returns {import('tree-sitter').SyntaxNode|null}
+     */
+    get parentTree() {
+        if (this.registry.parentRegistry) {
+            if (this.registry.parentRegistry.mainTree) {
+                return this.registry.parentRegistry.mainTree.rootNode;
+            } else {
+                 console.log(`DEBUG: parentRegistry exists on ${this.registry.uid} but mainTree is null`);
+            }
+        } else {
+             console.log(`DEBUG: parentRegistry is null on ${this.registry.uid}`);
+        }
+        return null;
     }
 
     /**
@@ -119,6 +145,18 @@ class UppHelpersBase {
      */
     registerTransform(transformFn) {
         this.registry.registerTransform(transformFn);
+    }
+
+    /**
+     * Registers a transformation function on the PARENT registry.
+     * @param {function(import('tree-sitter').Tree, UppHelpersBase): void} transformFn - The transformation function.
+     */
+    registerParentTransform(transformFn) {
+        if (this.registry.parentRegistry) {
+            this.registry.parentRegistry.registerTransform(transformFn);
+        } else {
+            console.warn("registerParentTransform called but no parent registry exists.");
+        }
     }
 
     /**
@@ -454,6 +492,25 @@ class UppHelpersBase {
         err.isUppError = true;
         err.node = node;
         throw err;
+    }
+
+    /**
+     * Loads a dependency file.
+     * @param {string} filePath - Path to the dependency.
+     */
+    loadDependency(filePath) {
+        // Resolve path relative to current file if not absolute
+        let resolvedPath = filePath;
+        if (!path.isAbsolute(filePath)) { // we need path module here, or assume registry handles it?
+             // Registry.resolveInclude handles path resolution logic.
+             // But we want to trigger the specific load.
+             // We can use registry.resolveInclude to find it first.
+             const resolved = this.registry.resolveInclude(filePath);
+             if (resolved) {
+                 resolvedPath = resolved;
+             }
+        }
+        this.registry.loadDependency(resolvedPath);
     }
 }
 

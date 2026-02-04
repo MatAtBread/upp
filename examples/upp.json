@@ -1,10 +1,5 @@
 {
     "comments": true,
-    "lang": {
-        "c": {
-            "pre-upp": "cc -E -P ${INPUT}",
-            "compile": "cc -o ${FILENAME}.exe ${OUTPUT}",
-            "run": "./${FILENAME}.exe"
-        }
-    }
+    "includePaths": ["${UPP}/std"],
+    "core": ["include.hup"]
 }

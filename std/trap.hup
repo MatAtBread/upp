@@ -47,7 +47,7 @@
         const typeStr = upp.getType(varIdNode);
         handlerName = upp.createUniqueIdentifier(`${varName}_trap`);
         const bodyText = trimmedArg;
-        const handlerCode = `${typeStr} ${handlerName}(${typeStr} value) ${bodyText}`;
+        const handlerCode = `${typeStr} ${handlerName}(${typeStr} value) ${bodyText}\n`;
         upp.hoist(handlerCode);
     } else {
         // Case: @trap(my_handler)

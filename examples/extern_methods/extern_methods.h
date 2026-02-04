@@ -1,9 +1,7 @@
-#include "../../std/method.hup"
-
+#include "method.h"
 struct Foo {
     int x;
 };
 typedef struct Foo Foo;
-
-extern @method(Foo) void print(Foo *f);
-@method(Foo) void increment(Foo *f);
+extern void  _Foo_method_print(Foo *f);
+void _Foo_method_increment(Foo *f); 
