@@ -1,6 +1,3 @@
-
-
-
 int y_ctx = 10;
 void test_ctx() {
     y_ctx = 20;

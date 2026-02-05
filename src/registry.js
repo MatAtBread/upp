@@ -7,6 +7,8 @@ import { reportError } from './errors.js';
 import { UppHelpersC } from './upp_helpers_c.js';
 import { DiagnosticCodes, DiagnosticsManager } from './diagnostics.js';
 
+export const RECURSION_LIMITER_ENABLED = false;
+
 /**
  * Main registry class for managing macros, parsing, and transformations.
  * @class
@@ -14,12 +16,6 @@ import { DiagnosticCodes, DiagnosticsManager } from './diagnostics.js';
 class Registry {
     /**
      * @param {Object} [config={}] - Configuration object.
-     */
-    /**
-     * @param {Object} [config={}] - Configuration object.
-     * @param {import('./dependency_cache.js').DependencyCache} [config.cache] - Shared dependency cache.
-     * @param {string[]} [config.includePaths] - List of include paths.
-     * @param {function(string): string} [config.preprocess] - Callback to preprocess a file (e.g. run cpp).
      * @param {Registry|null} [parentRegistry=null] - The parent registry that spawned this instance.
      */
     constructor(config = {}, parentRegistry = null) {
@@ -29,6 +25,12 @@ class Registry {
         this.parentRegistry = parentRegistry;
         /** @type {Map<string, Object>} */
         this.macros = new Map();
+        this.macros.set('__deferred_task', {
+            language: 'js',
+            params: ['id'],
+            body: '/* handled internally */',
+            isInternal: true
+        });
         /** @type {Array<Object>} */
         this.invocations = [];
         /** @type {string} */
@@ -65,12 +67,35 @@ class Registry {
         /** @type {Map<any, Set<number>>} */
         this.visitedNodes = new Map();
 
-        // on-screen usage
         // Statistics
         this.uid = Math.random().toString(36).slice(2, 6);
         this.stats = { visitsAvoided: 0, visitsAllowed: 0 };
-        // if (parentRegistry) console.log(`Registry ${this.uid} initialized with parentRegistry ${parentRegistry.uid}`);
-        // else console.log(`Registry ${this.uid} initialized WITHOUT parentRegistry`);
+
+        /** @type {Map<number, function>} */
+        this.deferredTasks = new Map();
+        /** @type {number} */
+        this.deferredTaskIdCounter = 0;
+    }
+
+    /**
+     * Registers a deferred task and returns its ID.
+     * @param {function} callback - The task function.
+     * @returns {number} The task ID.
+     */
+    registerDeferredTask(callback, targetNodeId = null) {
+        const id = ++this.deferredTaskIdCounter;
+
+        // If no target ID provided, default to the current tree's root
+        const actualTargetId = targetNodeId !== null ? targetNodeId : (this.allTrees.length > 0 ? this.allTrees[this.allTrees.length - 1].rootNode.id : null);
+
+        this.deferredTasks.set(id, { callback, targetNodeId: actualTargetId });
+        if (actualTargetId !== null) {
+            if (!this.scopeTasks.has(actualTargetId)) {
+                this.scopeTasks.set(actualTargetId, []);
+            }
+            this.scopeTasks.get(actualTargetId).push(id);
+        }
+        return id;
     }
 
     /**
@@ -240,38 +265,56 @@ class Registry {
     }
 
     /**
-     * Finds all macro invocations in the AST.
-     * @param {import('tree-sitter').Tree} tree - The AST to search.
-     * @param {string} source - The corresponding source code.
+     * Finds all macro invocations in the source.
+     * @param {string} source - The source code.
      * @returns {Array<Object>} List of invocation objects.
      */
-    findInvocations(tree, source) {
-        tree = tree || this.mainTree || this._parse(source || this.sourceCode);
-        source = source || this.sourceCode;
-
+    /**
+     * Finds all macro candidates in the source.
+     * @param {string} source - The source code.
+     * @returns {Array<Object>} List of invocation objects.
+     */
+    findInvocations(source) {
         const invocations = [];
-        const seenIndices = new Set();
+        let searchIndex = 0;
 
-        const walk = (node) => {
-            if (node.type.includes('comment')) return;
-            if (node.type === 'ERROR') {
-                const nodeText = node.text.trim();
-                if (nodeText === '@' || nodeText.startsWith('@')) {
-                    if (!seenIndices.has(node.startIndex) && !this.isInsideDefinition(node.startIndex, source)) {
-                        const invocation = this.absorbInvocation(source, node.startIndex);
-                        if (invocation && this.getMacro(invocation.name)) {
-                            invocations.push({
-                                ...invocation,
-                                invocationNode: node
-                            });
-                            seenIndices.add(node.startIndex);
-                        }
-                    }
-                }
+        // Pre-calculate line pointers for fast line/col lookup
+        const lines = source.split('\n');
+        const lineStartIndices = [];
+        let currentIdx = 0;
+        for (const line of lines) {
+            lineStartIndices.push(currentIdx);
+            currentIdx += line.length + 1;
+        }
+
+        const getPos = (idx) => {
+            let line = 0;
+            while (line < lineStartIndices.length - 1 && lineStartIndices[line + 1] <= idx) {
+                line++;
             }
-            for (let i = 0; i < node.childCount; i++) walk(node.child(i));
+            return { line: line + 1, col: idx - lineStartIndices[line] + 1 };
         };
-        walk(tree.rootNode);
+
+        while (searchIndex < source.length) {
+            const atIndex = source.indexOf('@', searchIndex);
+            if (atIndex === -1) break;
+
+            if (this.isInsideDefinition(atIndex, source)) {
+                searchIndex = atIndex + 1;
+                continue;
+            }
+
+            const inv = this.absorbInvocation(source, atIndex);
+            if (inv) {
+                const pos = getPos(atIndex);
+                inv.line = pos.line;
+                inv.col = pos.col;
+                invocations.push(inv);
+                searchIndex = inv.endIndex;
+            } else {
+                searchIndex = atIndex + 1;
+            }
+        }
         return invocations;
     }
 
@@ -319,88 +362,45 @@ class Registry {
     }
 
     /**
-     * Main processing loop.
+     * Main processing entry point.
      * @returns {string} The transformed source code.
      */
     process() {
-        // console.log(`Process started for registry ${this.uid}`);
+        this.deferredTasks = new Map();
+        this.scopeTasks = new Map();
+        this.deferredTaskIdCounter = 0;
+        this.visitedNodes = new Map();
         this.allTrees = [];
-        let iterations = 0;
-        const maxIterations = 100;
 
         if (typeof this.sourceCode !== 'string') {
-             console.error("CRITICAL: process() called without valid sourceCode. Type:", typeof this.sourceCode);
              this.sourceCode = "";
         }
 
-        // Pre-processing handled externally
-        // this.processIncludes();
+        // Global transformation
+        let result = this.transform(this.sourceCode, this.filePath);
 
-        while (iterations < maxIterations) {
-            this.visitedNodes = new Map(); // Reset visited for new pass
-            const cleanSource = this.maskDefinitions(this.sourceCode);
-            if (typeof cleanSource !== 'string') {
-                 console.error("CRITICAL: maskDefinitions returned non-string. Type:", typeof cleanSource);
-                 break;
-            }
-            this.mainTree = this._parse(cleanSource, this.mainTree);
-            this.invocations = this.findInvocations(this.mainTree, this.sourceCode);
+        // Apply any global transforms if registered
+        const finalTree = this._parse(result);
+        const finalHelpers = new UppHelpersC(this);
+        finalHelpers.root = finalTree.rootNode;
+        this.applyTransforms(finalTree, finalHelpers);
 
-            if (this.invocations.length === 0) {
-                this.helpers.replacements = [];
-
-                // Ensure mainTree is valid and fresh
-                if (!this.mainTree) {
-                    const cleanSource = this.maskDefinitions(this.sourceCode);
-                    this.mainTree = this._parse(cleanSource);
-                }
-
-                // console.error("DEBUG SOURCE PASS 2:\n" + this.sourceCode);
-
-                this.applyTransforms(this.mainTree, this.helpers);
-                if (this.helpers.replacements.length > 0) {
-                    this.applyChanges([]);
-                    iterations++;
-                    continue;
-                }
-                break;
-            }
-
-            this.helpers.replacements = [];
-            // console.log(`Calling evaluateMacros on ${this.uid}`);
-            this.evaluateMacros(this.invocations, this.sourceCode, this.helpers, true, this.filePath);
-            // console.log(`Returned from evaluateMacros on ${this.uid}`);
-
-            // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
-
-            // At this point, this.mainTree has been set to this.cleanTree by evaluateMacros
-            // this.mainTree is the clean tree (stripped macros).
-
-            this.applyTransforms(this.cleanTree, this.helpers);
-
-            this.applyChanges(this.invocations);
-            this.cleanTree = null;
-            iterations++;
+        if (finalHelpers.replacements.length > 0) {
+            result = this.applyReplacements(result, finalHelpers.replacements);
         }
 
-        if (this.statsEnabled && (this.stats.visitsAvoided > 0 || this.stats.visitsAllowed > 0)) {
-            console.error(`[Stats] Recursion Avoidance: Allowed=${this.stats.visitsAllowed}, Avoided=${this.stats.visitsAvoided}`);
-        }
-
-        return this.finishProcessing();
+        return this.finishProcessing(result);
     }
-
-    /**
-     * Masks macro definitions with spaces to allow valid C parsing.
-     * @param {string} source - The source code.
-     * @returns {string} Source code with macros replaced by spaces.
-     */
-    maskDefinitions(source) {
+    finishProcessing(code) {
+        let output = code;
         const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
+        const taskRegex = /@__deferred_task\(\d+\)/g;
+
+        // Remove macro definitions
         const definitionsToStrip = [];
         let dMatch;
-        while ((dMatch = defineRegex.exec(source)) !== null) {
-            const body = this.extractBody(source, dMatch.index + dMatch[0].length);
+        while ((dMatch = defineRegex.exec(output)) !== null) {
+            const body = this.extractBody(output, dMatch.index + dMatch[0].length);
             if (body !== null) {
                 definitionsToStrip.push({
                     start: dMatch.index,
@@ -408,185 +408,266 @@ class Registry {
                 });
             }
         }
-
-        let cleanSource = source;
-        // Sort reverse to replace safely? Or use slice.
-        // definitionsToStrip is in order found.
-        // Use loop logic similar to evaluateMacros.
         definitionsToStrip.sort((a, b) => b.start - a.start);
-
-        for (const range of definitionsToStrip) {
-            if (range.start >= 0 && range.end <= cleanSource.length) {
-                const text = cleanSource.slice(range.start, range.end);
-                const replacement = text.replace(/[^\r\n]/g, ' ');
-                cleanSource = cleanSource.slice(0, range.start) + replacement + cleanSource.slice(range.end);
-            }
+        for (const change of definitionsToStrip) {
+            output = output.slice(0, change.start) + output.slice(change.end);
         }
-        return cleanSource;
+
+        // Remove markers
+        output = output.replace(taskRegex, "");
+
+        return output.trim();
     }
 
-    /**
-     * Evaluates found macros and schedules replacements.
-     * @param {Array<Object>} invocations - Macros to evaluate.
-     * @param {string} source - Source code.
-     * @param {Object} helpers - Helper instance to use.
-     * @param {boolean} [isGlobalPass=false] - Whether this is the main global pass.
-     */
-    /**
-     * Evaluates found macros and schedules replacements.
-     * @param {Array<Object>} invocations - Macros to evaluate.
-     * @param {string} source - Source code.
-     * @param {Object} helpers - Helper instance to use.
-     * @param {boolean} [isGlobalPass=false] - Whether this is the main global pass.
-     * @param {string} [filePath='unknown'] - File path for error reporting.
-     */
-    evaluateMacros(invocations, source, helpers, isGlobalPass = false, filePath = 'unknown') {
-        const oldCleanTree = this.cleanTree;
-        const oldMainTree = this.mainTree;
+    transform(source, originPath = 'unknown') {
+        const { cleanSource, invocations: foundInvs } = this.prepareSource(source);
+        const tree = this._parse(cleanSource);
+        if (!tree) return source;
 
-        // 1. Re-scan for strippable definitions in the CURRENT sourceCode
-        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
-        const definitionsToStrip = [];
-        let dMatch;
-        while ((dMatch = defineRegex.exec(source)) !== null) {
-            const body = this.extractBody(source, dMatch.index + dMatch[0].length);
-            if (body !== null) {
-                definitionsToStrip.push({
-                    start: dMatch.index,
-                    end: dMatch.index + dMatch[0].length + body.length + 1
-                });
-            }
-        }
-
-        // 2. Clear source of ALL macro invocations and definitions to find clean target nodes.
-        // We mask even unknown macros to ensure tree-sitter generates a valid C AST.
-        let cleanSource = source;
-        const allStrippable = [...definitionsToStrip];
-
-        // Find all @ invocations
-        const macroRegex = /@(\w+)/g;
-        let mMatch;
-        while ((mMatch = macroRegex.exec(source)) !== null) {
-            const inv = this.absorbInvocation(source, mMatch.index);
-            if (inv) {
-                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
-                macroRegex.lastIndex = inv.endIndex;
-            }
-        }
-
-        // Also add known invocations if they were missed (unlikely but safe)
-        for (const inv of invocations) {
-            if (!allStrippable.some(s => s.start === inv.startIndex)) {
-                allStrippable.push({ start: inv.startIndex, end: inv.endIndex });
-            }
-        }
-
-        allStrippable.sort((a, b) => b.start - a.start);
-
-        for (const range of allStrippable) {
-            if (range.start >= 0 && range.end <= cleanSource.length) {
-                const text = cleanSource.slice(range.start, range.end);
-                const replacement = text.replace(/[^\r\n]/g, ' ');
-                cleanSource = cleanSource.slice(0, range.start) + replacement + cleanSource.slice(range.end);
-            }
-        }
-
-        const cleanTree = this._parse(cleanSource);
-        this.allTrees.push(cleanTree);
-
-        if (isGlobalPass) this.mainTree = cleanTree; // Anchor as global for this iteration
-        helpers.root = cleanTree.rootNode;
-        this.cleanTree = cleanTree; // For contextNode extraction in evaluateMacros
+        const helpers = new UppHelpersC(this);
+        const invocations = this.findInvocations(source);
+        helpers.root = tree.rootNode;
         helpers.currentInvocations = invocations;
 
-        for (const invocation of invocations) {
-            // console.log(`Evaluating @${invocation.name} in registry ${this.uid}. Context: ${source.substring(Math.max(0, invocation.startIndex - 20), Math.min(source.length, invocation.endIndex + 20))}`);
-            if (invocation.skipped) continue;
-            const macro = this.getMacro(invocation.name);
-            if (!macro) continue;
+        return this.transformNode(tree.rootNode, cleanSource, helpers, originPath);
+    }
 
-            const lastParam = macro.params[macro.params.length - 1];
-            const hasRestParam = lastParam && lastParam.startsWith('...');
-            const expectedArgs = macro.params.length;
+    /**
+     * Recursive node walker for transformation.
+     */
+    transformNode(node, source, helpers, originPath) {
+        if (!node) return "";
+        if (helpers.isConsumed(node)) return "";
 
-            // Recursion avoidance for macros:
-            // Use macro name as key. Check invocationNode.
-            if (this.visit(invocation.name, invocation.invocationNode)) {
-                 // New visit, proceed
-            } else {
-                 // Already visited this node for this macro
-                 continue;
+        const repl = helpers.getReplacement(node);
+        if (repl) {
+            // Apply replacement and recursively transform its content
+            return this.transform(repl.content, `replacement-of-${node.type}`);
+        }
+
+        const parts = [];
+        let cursor = node.startIndex;
+
+        // Root nodes must start at 0 to capture leading gaps/macros
+        if (node.type === 'translation_unit' || !node.parent) {
+            cursor = 0;
+        }
+
+        const processText = (text, startIdx) => {
+            let subCursor = 0;
+            const subParts = [];
+            const textEnd = startIdx + text.length;
+            const localInvs = helpers.currentInvocations.filter(inv =>
+                inv.startIndex >= startIdx && inv.startIndex < textEnd && inv.endIndex <= textEnd
+            ).sort((a,b) => a.startIndex - b.startIndex);
+
+            for (const inv of localInvs) {
+                // Late-binding check: only evaluate if it's actually registered now
+                // (e.g. might have been registered by a preceding @include)
+                if (!this.getMacro(inv.name)) {
+                    continue;
+                }
+
+                // Text before macro
+                if (inv.startIndex > startIdx + subCursor) {
+                    subParts.push(text.slice(subCursor, inv.startIndex - startIdx));
+                }
+                // Evaluate macro
+                const result = this.evaluateMacro(inv, source, helpers, originPath);
+                subParts.push(this.transform(result, `result-of-@${inv.name}`));
+
+                subCursor = inv.endIndex - startIdx;
             }
 
-            const macroFn = new Function('upp', 'console', ...macro.params, macro.body);
+            if (subCursor < text.length) {
+                subParts.push(text.slice(subCursor));
+            }
+            return subParts.join("");
+        };
 
-            try {
-                const actualCount = invocation.args.length;
-                if (hasRestParam) {
-                    if (actualCount < expectedArgs - 1) {
-                        const macroName = `@${invocation.name}`;
-                        throw {
-                            isUppError: true,
-                            node: invocation.invocationNode,
-                            message: `${macroName} expected at least ${expectedArgs - 1} arguments, but found ${actualCount}`
-                        };
-                    }
-                } else if (actualCount !== expectedArgs) {
-                    const macroName = `@${invocation.name}`;
-                    throw {
-                        isUppError: true,
-                        node: invocation.invocationNode,
-                        message: `${macroName} expected ${expectedArgs} arguments, but found ${actualCount}`
-                    };
-                }
-                let searchIndex = invocation.endIndex;
-                while (searchIndex < cleanSource.length && /\s/.test(cleanSource[searchIndex])) searchIndex++;
-                let targetNode = this.cleanTree.rootNode.namedDescendantForIndex(searchIndex);
-                if (targetNode) {
-                    while (targetNode.parent &&
-                           targetNode.parent.type !== 'translation_unit' &&
-                           targetNode.parent.startIndex === targetNode.startIndex) {
-                        targetNode = targetNode.parent;
-                    }
-                    if (targetNode.type === 'translation_unit') targetNode = null;
-                }
+        for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
 
-                helpers.contextNode = targetNode;
-                helpers.invocation = invocation;
-                helpers.invocation.hasNodeParam = false;
-                helpers.lastConsumedNode = null; // Reset for each macro
+            // Gap handling (macros often live here)
+            if (child.startIndex > cursor) {
+                const gapText = source.slice(cursor, child.startIndex);
+                parts.push(processText(gapText, cursor));
+            }
 
-                const result = macroFn(helpers, console, ...invocation.args);
-                helpers.contextNode = null;
+            // Recurse into child
+            parts.push(this.transformNode(child, source, helpers, originPath));
+            cursor = child.endIndex;
+        }
 
-                if (result !== undefined) {
-                    const content = typeof result === 'object' ? result.text : String(result);
-                    // Replaces the invocation itself
-                    invocation.replacementContent = content;
+        // Final gap
+        if (node.endIndex > cursor) {
+            const gapText = source.slice(cursor, node.endIndex);
+            parts.push(processText(gapText, cursor));
+        }
+
+        let combined = parts.join('');
+
+        // If this is a scope with deferred tasks, execute them
+        if (this.scopeTasks.has(node.id)) {
+            const tasks = this.scopeTasks.get(node.id);
+            for (const taskId of tasks) {
+                const taskInfo = this.deferredTasks.get(taskId);
+                if (taskInfo) {
+                    combined = this.executeDeferredTask(combined, taskInfo.callback, originPath);
                 }
-            } catch (err) {
-                if (err.isUppError) {
-                    this.reportError(err.node, err.message, source, filePath);
-                } else {
-                    console.error(`Evaluation error in @${invocation.name}: ${err.message}`);
-                    console.error(err.stack);
-                }
-                process.exit(1);
             }
         }
 
-        // Restore context if this was a sub-evaluation
-        if (!isGlobalPass) {
-            this.cleanTree = oldCleanTree;
-            this.mainTree = oldMainTree;
+        return combined;
+    }
+
+    /**
+     * Evaluates a single macro.
+     */
+    evaluateMacro(invocation, source, helpers, filePath) {
+        const macro = this.getMacro(invocation.name);
+        if (!macro) return "";
+
+        // Use startIndex as unique identifier for gap-macros to avoid recursion-safety collisions
+        if (RECURSION_LIMITER_ENABLED && !this.visit(invocation.name, invocation.startIndex)) {
+            return ""; // Recursion safety
+        }
+
+        const macroFn = new Function('upp', 'console', ...macro.params, macro.body);
+
+        // Setup context for evaluation
+        const oldInvocation = helpers.invocation;
+        const oldContext = helpers.contextNode;
+        const oldConsumed = helpers.lastConsumedNode;
+
+        const invocationNode = helpers.root.descendantForIndex(invocation.startIndex, invocation.endIndex);
+        let contextNode = invocationNode;
+        if (contextNode && (
+            contextNode.type === 'translation_unit' ||
+            contextNode.type === 'compound_statement' ||
+            contextNode === helpers.root
+        )) {
+             const nextNode = helpers.findNextNodeAfter(helpers.root, invocation.endIndex);
+             if (nextNode && nextNode.type !== 'translation_unit' && nextNode.type !== 'compound_statement' && nextNode.id !== helpers.root.id) {
+                 contextNode = nextNode;
+             }
+        }
+        helpers.invocation = { ...invocation, invocationNode };
+        helpers.contextNode = contextNode;
+        helpers.lastConsumedNode = null;
+
+        try {
+            const args = [...invocation.args];
+            let isTransformer = false;
+            if (macro.params.length > 0 && macro.params[0] === 'node') {
+                args.unshift(contextNode);
+                isTransformer = true;
+            }
+
+            // Validate arity
+            if (args.length !== macro.params.length) {
+                const expectedCount = isTransformer ? macro.params.length - 1 : macro.params.length;
+                const foundCount = invocation.args.length;
+                const err = new Error(`@${invocation.name} expected ${expectedCount} arguments, but found ${foundCount}`);
+                err.isUppError = true;
+                throw err;
+            }
+
+            const result = macroFn(helpers, console, ...args);
+            let output = result !== undefined ? (typeof result === 'object' ? result.text : String(result)) : "";
+            return output;
+        } catch (err) {
+            if (!err.isUppError) {
+                console.error(`Macro @${invocation.name} failed:`, err);
+                if (err.stack) console.error(err.stack);
+            }
+            this.diagnostics.reportError(
+                 0,
+                 `Macro @${invocation.name} failed: ${err.message}`,
+                 this.filePath,
+                 invocation.line || 0,
+                 invocation.col || 0,
+                 this.sourceCode
+             );
+             return "";
+        } finally {
+            helpers.invocation = oldInvocation;
+            helpers.contextNode = oldContext;
+            helpers.lastConsumedNode = oldConsumed;
         }
     }
 
     /**
-     * Reports an error to the specific file context.
-     * @param {import('tree-sitter').SyntaxNode} node - Node causing the error.
-     * @param {string} message - Error message.
+     * Executes a deferred task on transformed text.
      */
+    executeDeferredTask(combinedText, callback, originPath) {
+        const tempTree = this._parse(combinedText);
+        const tempHelpers = new UppHelpersC(this);
+        tempHelpers.root = tempTree.rootNode;
+        tempHelpers.isDeferred = true;
+
+        callback(tempTree.rootNode, tempHelpers);
+
+        if (tempHelpers.replacements.length > 0) {
+            return this.applyReplacements(combinedText, tempHelpers.replacements);
+        }
+        return combinedText;
+    }
+
+    /**
+     * Helper to apply replacements to a string.
+     */
+    applyReplacements(text, replacements) {
+        const sorted = [...replacements].sort((a, b) => b.start - a.start || b.end - a.end);
+        let result = text;
+        for (const r of sorted) {
+            result = result.slice(0, r.start) + r.content + result.slice(r.end);
+        }
+        return result;
+    }
+
+    /**
+     * Prepares source by masking definitions and marking invocations.
+     * @param {string} source - Original source.
+     * @returns {{cleanSource: string, invocations: Array<Object>}} Prepared source and found invocations.
+     */
+    prepareSource(source) {
+        let cleanSource = source;
+        const invocations = [];
+
+        // 1. Mask definitions
+        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
+        let dMatch;
+        const definitionsToStrip = [];
+        while ((dMatch = defineRegex.exec(source)) !== null) {
+            const body = this.extractBody(source, dMatch.index + dMatch[0].length);
+            if (body !== null) {
+                definitionsToStrip.push({
+                    start: dMatch.index,
+                    end: dMatch.index + dMatch[0].length + body.length + 1
+                });
+            }
+        }
+        definitionsToStrip.sort((a, b) => b.start - a.start);
+        for (const range of definitionsToStrip) {
+            const text = cleanSource.slice(range.start, range.end);
+            const replacement = text.replace(/[^\r\n]/g, ' ');
+            cleanSource = cleanSource.slice(0, range.start) + replacement + cleanSource.slice(range.end);
+        }
+
+        // 2. Find and mask invocations with spaces to maintain indices
+        const foundInvs = this.findInvocations(cleanSource);
+        const invsToMask = [...foundInvs].sort((a, b) => b.startIndex - a.startIndex);
+
+        for (const inv of invsToMask) {
+            const text = cleanSource.slice(inv.startIndex, inv.endIndex);
+            const replacement = text.replace(/[^\r\n]/g, ' ');
+            cleanSource = cleanSource.slice(0, inv.startIndex) + replacement + cleanSource.slice(inv.endIndex);
+        }
+
+        return { cleanSource, invocations: foundInvs };
+    }
+
     /**
      * Reports an error to the specific file context.
      * @param {import('tree-sitter').SyntaxNode} node - Node causing the error.
@@ -599,197 +680,13 @@ class Registry {
     }
 
     /**
-     * Applies queued replacements and macro stripping.
-     * @param {Array<Object>} currentInvocations - Invocations processed in this pass.
-     */
-    applyChanges(currentInvocations) {
-        let output = this.sourceCode;
-        const macroStripping = currentInvocations.map(i => ({
-            start: i.startIndex,
-            end: i.endIndex,
-            content: i.replacementContent !== undefined ? i.replacementContent : '',
-            original: this.sourceCode.substring(i.startIndex, i.endIndex)
-        }));
-
-        const allChanges = [...this.helpers.replacements, ...macroStripping]
-            .map(c => {
-                if (c.original === undefined) {
-                    c.original = this.sourceCode.substring(c.start, c.end);
-                }
-                return c;
-            })
-            .filter(c => !c.isLocal) // Only main tree replacements
-            .sort((a, b) => a.start - b.start || a.end - b.end);
-
-        // Group adjacent changes for cleaner comments
-        const mergedChanges = [];
-        if (allChanges.length > 0) {
-            let current = allChanges[0];
-            for (let i = 1; i < allChanges.length; i++) {
-                const next = allChanges[i];
-                const midText = this.sourceCode.substring(current.end, next.start);
-                // Merge if they are adjacent or only separated by whitespace
-                if (next.start >= current.end && midText.trim() === '') {
-                    current = {
-                        start: current.start,
-                        end: next.end,
-                        content: current.content + midText + next.content,
-                        original: current.original + midText + next.original,
-                        isLocal: false
-                    };
-                } else {
-                    mergedChanges.push(current);
-                    current = next;
-                }
-            }
-            mergedChanges.push(current);
-        }
-
-        // Apply changes in reverse order to maintain indices
-        mergedChanges.sort((a, b) => b.start - a.start);
-        let lastStart = Infinity;
-        for (const change of mergedChanges) {
-            if (change.end <= lastStart) {
-                let finalContent = change.content;
-                if (this.config.comments && change.original.trim().length > 0) {
-                    const commentText = change.original.replace(/\*\//g, '* /');
-                    const comment = `/* ${commentText} */ `;
-                    finalContent = comment + finalContent;
-                }
-
-                if (this.mainTree) {
-                    const startPos = DiagnosticsManager.getLineCol(this.sourceCode, change.start);
-                    const oldEndPos = DiagnosticsManager.getLineCol(this.sourceCode, change.end);
-
-                    // 0-indexed conversion
-                    startPos.line--; startPos.col--;
-                    oldEndPos.line--; oldEndPos.col--;
-
-                    // Calculate new end position
-                    // We need to count lines in finalContent to determine row delta
-                    // And chars in last line to determine col delta
-                    let newLines = 0;
-                    let lastLineLen = 0;
-                    for (let i = 0; i < finalContent.length; i++) {
-                        if (finalContent[i] === '\n') {
-                            newLines++;
-                            lastLineLen = 0;
-                        } else {
-                            lastLineLen++;
-                        }
-                    }
-
-                    const newEndRow = startPos.line + newLines;
-                    const newEndCol = newLines === 0 ? startPos.col + lastLineLen : lastLineLen;
-
-                    const edit = {
-                        startIndex: change.start,
-                        oldEndIndex: change.end,
-                        newEndIndex: change.start + finalContent.length,
-                        startPosition: { row: startPos.line, column: startPos.col },
-                        oldEndPosition: { row: oldEndPos.line, column: oldEndPos.col },
-                        newEndPosition: { row: newEndRow, column: newEndCol }
-                    };
-
-                    //console.error("Applying edit:", JSON.stringify(edit, null, 2));
-                    try {
-                        this.mainTree.edit(edit);
-                    } catch (e) {
-                        // If incremental update fails, discard the old tree to force a clean re-parse
-                        // This prevents crashes due to state desync while maintaining robustness
-                        this.mainTree = null;
-                    }
-                }
-
-                output = output.slice(0, change.start) + finalContent + output.slice(change.end);
-                lastStart = change.start;
-            }
-        }
-        this.sourceCode = output;
-        this.helpers.replacements = [];
-    }
-
-    /**
-     * Final clean-up pass to remove macro definitions.
-     * @returns {string} Final source code.
-     */
-    finishProcessing() {
-        let output = this.sourceCode;
-        const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
-        const definitionsToStrip = [];
-        let dMatch;
-        while ((dMatch = defineRegex.exec(output)) !== null) {
-            const body = this.extractBody(output, dMatch.index + dMatch[0].length);
-            if (body !== null) {
-                definitionsToStrip.push({
-                    start: dMatch.index,
-                    end: dMatch.index + dMatch[0].length + body.length + 1
-                });
-            }
-        }
-
-        definitionsToStrip.sort((a, b) => b.start - a.start);
-        for (const change of definitionsToStrip) {
-            output = output.slice(0, change.start) + output.slice(change.end);
-        }
-        return output;
-    }
-
-    /**
-     * Expands macros within a code snippet.
-     * @param {string} text - The bit of code to expand.
-     * @param {import('tree-sitter').SyntaxNode} contextNode - The AST node where this expansion is contextualized.
-     * @returns {string} Expanded code.
-     */
-    expand(text, contextNode) {
-        const fragmentHelpers = new UppHelpersC(this); // Assume C for now, or use dynamic helpers
-        fragmentHelpers.contextNode = contextNode;
-        fragmentHelpers.root = this.helpers.root;
-
-        const snippetParser = new Parser();
-        snippetParser.setLanguage(C);
-        let tree = snippetParser.parse(text);
-
-        // Nested macro evaluation within the fragment
-        let iterations = 0;
-        let snippetSource = text;
-        while (iterations < 5) { // Depth limit for safety
-            const invocations = this.findInvocations(tree, snippetSource);
-            if (invocations.length === 0) break;
-
-            const tempHelpers = new UppHelpersC(this);
-            tempHelpers.contextNode = contextNode;
-            this.evaluateMacros(invocations, snippetSource, tempHelpers, false, 'snippet');
-
-            // Apply changes to the snippet source
-            let output = snippetSource;
-            const changes = tempHelpers.replacements.sort((a, b) => b.start - a.start);
-            for (const c of changes) {
-                output = output.slice(0, c.start) + c.content + output.slice(c.end);
-            }
-            snippetSource = output;
-            tree = snippetParser.parse(snippetSource);
-            iterations++;
-        }
-
-        this.applyTransforms(tree, fragmentHelpers);
-
-        let output = snippetSource;
-        const allLocal = fragmentHelpers.replacements.filter(c => c.isLocal).sort((a, b) => b.start - a.start);
-        for (const change of allLocal) {
-            output = output.slice(0, change.start) + change.content + output.slice(change.end);
-        }
-        return output;
-    }
-
-    /**
      * Checks if a range overlaps with any invocation.
      * @param {number} start - Start index.
      * @param {number} end - End index.
      * @returns {boolean} True if overlapping.
      */
     isInsideInvocation(start, end) {
-        return this.invocations.some(inv => (start < inv.endIndex && end > inv.startIndex));
+        return (this.invocations || []).some(inv => (start < inv.endIndex && end > inv.startIndex));
     }
 
     /**
@@ -813,8 +710,6 @@ class Registry {
         return q;
     }
 
-
-
     /**
      * run registered transforms on the tree
      * @param {import('tree-sitter').Tree} tree - The AST.
@@ -831,48 +726,100 @@ class Registry {
     }
 
     /**
+     * Resolves a symbol (variable, type, or tag) in a scope-aware manner.
+     * @param {string} name - The symbol name.
+     * @param {import('tree-sitter').SyntaxNode} contextNode - The point of reference.
+     * @param {Object} [options] - Resolution options.
+     * @param {boolean} [options.variable=true] - Search in variable/typedef namespace.
+     * @param {boolean} [options.tag=true] - Search in struct/union/enum tag namespace.
+     * @returns {import('tree-sitter').SyntaxNode|null} The definition node.
+     */
+    resolveSymbol(name, contextNode, options = { variable: true, tag: true }) {
+        if (!name || !contextNode) return null;
+
+        const queries = [];
+        if (options.variable) {
+            queries.push(`
+                (declaration (identifier) @id)
+                (declaration (init_declarator (identifier) @id))
+                (declaration (init_declarator (pointer_declarator (identifier) @id)))
+                (declaration (pointer_declarator (identifier) @id))
+                (type_definition (type_identifier) @id)
+                (parameter_declaration (identifier) @id)
+                (parameter_declaration (pointer_declarator (identifier) @id))
+                (function_definition (function_declarator (identifier) @id))
+                (function_definition (pointer_declarator (function_declarator (identifier) @id)))
+            `);
+        }
+        if (options.tag) {
+            queries.push(`
+                (struct_specifier name: (type_identifier) @id)
+                (union_specifier name: (type_identifier) @id)
+                (enum_specifier name: (type_identifier) @id)
+            `);
+        }
+
+        const queryStr = queries.join('\n');
+
+        let scope = contextNode.parent;
+        while (scope) {
+            if (scope.type === 'compound_statement' || scope.type === 'function_definition' || scope.type === 'translation_unit' || scope.type === 'parameter_list') {
+                const matches = this.createQuery(queryStr).matches(scope);
+
+                let bestDef = null;
+                for (const m of matches) {
+                    const idNode = m.captures[0].node;
+                    if (idNode.text === name) {
+                        // Resolve to owning definition node for ownership check
+                        let p = idNode.parent;
+                        while (p && !['declaration', 'parameter_declaration', 'function_definition', 'type_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(p.type)) {
+                            p = p.parent;
+                        }
+                        const defNode = p || idNode;
+
+                        // Ensure this definition is owned DIRECTLY by our current scope
+                        let checkP = defNode.parent;
+                        while (checkP && !['compound_statement', 'function_definition', 'translation_unit', 'parameter_list'].includes(checkP.type)) {
+                            checkP = checkP.parent;
+                        }
+
+                        const isOwned = (checkP && checkP.id === scope.id) ||
+                                        (scope.type === 'function_definition' && checkP && checkP.type === 'parameter_list');
+
+                        if (isOwned) {
+                            // Defined before or at use (for local variables)
+                            if (scope.type === 'compound_statement' || scope.type === 'parameter_list') {
+                                if (idNode.startIndex <= contextNode.startIndex) {
+                                    if (!bestDef || idNode.startIndex > bestDef.startIndex) {
+                                        bestDef = defNode;
+                                    }
+                                }
+                            } else {
+                                // Globals/parameters are valid anywhere in scope
+                                bestDef = defNode;
+                            }
+                        }
+                    }
+                }
+
+                if (bestDef) return bestDef;
+            }
+            scope = scope.parent;
+        }
+        return null;
+    }
+
+    /**
      * Finds the definition node for an identifier.
      * @param {import('tree-sitter').SyntaxNode} node - The identifier node.
      * @returns {import('tree-sitter').SyntaxNode|null} The definition node.
      */
     getDefinition(node) {
-        if (!node || node.type !== 'identifier') return null;
-        if (!this.mainTree) {
-            console.error("DEBUG: getDefinition called but mainTree is null");
-            return null;
+        if (!node) return null;
+        if (node.type === 'identifier' || node.type === 'type_identifier') {
+            return this.resolveSymbol(node.text, node);
         }
-        const name = node.text;
-        let def = null;
-
-        // Search for declarations/parameters with this name
-        try {
-            const matches = this.createQuery(`
-                (declaration (identifier) @id)
-                (declaration (init_declarator (identifier) @id))
-                (declaration (init_declarator (pointer_declarator (identifier) @id)))
-                (declaration (pointer_declarator (identifier) @id))
-                (parameter_declaration (identifier) @id)
-                (parameter_declaration (pointer_declarator (identifier) @id))
-                (function_definition (function_declarator (identifier) @id))
-                (function_definition (pointer_declarator (function_declarator (identifier) @id)))
-            `).matches(this.mainTree.rootNode);
-
-            for (const m of matches) {
-                const idNode = m.captures[0].node;
-                if (idNode.text === name && idNode.startIndex <= node.startIndex) {
-                    // Return the parent declaration/parameter
-                    let p = this.helpers.parent(idNode);
-                    while (p && p.type !== 'declaration' && p.type !== 'parameter_declaration' && p.type !== 'function_definition') {
-                        p = this.helpers.parent(p);
-                    }
-                    def = p || idNode;
-                }
-            }
-        } catch (e) {
-            console.error(`DEBUG: getDefinition query failed for node ${node.type} (${node.text}): ${e.message}`);
-            // throw e; // Suppress crash to allow build to continue
-        }
-        return def;
+        return null;
     }
 
     /**
@@ -880,198 +827,151 @@ class Registry {
      * @param {import('tree-sitter').SyntaxNode} defNode - The definition node.
      * @returns {Array<import('tree-sitter').SyntaxNode>} List of identifier nodes.
      */
-    findReferences(defNode) {
-        if (!defNode) return [];
-        if (!this.mainTree) {
-            console.error("DEBUG: findReferences called but mainTree is null");
-            return [];
+    findReferences(node) {
+        if (!node) return [];
+
+        let defNode = node;
+        // If passed an identifier, resolve its definition first
+        if (node.type === 'identifier') {
+            defNode = this.getDefinition(node);
         }
+
+        if (!defNode) return [];
 
         let name = "";
         try {
             if (defNode.type === 'identifier') {
                 name = defNode.text;
             } else {
-                // Find the identifier inside the declaration
                 const q = this.createQuery('(identifier) @id');
                 const matches = q.matches(defNode);
+                // The first identifier in a declaration is the name
                 if (matches.length > 0) name = matches[0].captures[0].node.text;
             }
-        } catch (e) {
-            console.error(`DEBUG: findReferences init query failed on node type ${defNode.type}: ${e.message}`);
-            console.error(`DEBUG: node tree exists: ${!!defNode.tree}`);
-            throw e;
-        }
+        } catch (e) { return []; }
 
         if (!name) return [];
+
+        // Identify search scope: the enclosing scope of the definition
+        let scopeNode = defNode.tree.rootNode;
+        let p = defNode.parent;
+        while (p) {
+            if (p.type === 'compound_statement' || p.type === 'function_definition' || p.type === 'translation_unit' || p.type === 'parameter_list') {
+                scopeNode = p;
+                break;
+            }
+            p = p.parent;
+        }
 
         const refs = [];
         try {
             const q = this.createQuery('[(identifier) (field_identifier)] @id');
-            const matches = q.matches(this.mainTree.rootNode);
+            const matches = q.matches(scopeNode);
             for (const m of matches) {
                 const idNode = m.captures[0].node;
                 if (idNode.text === name) {
-                    refs.push(idNode);
+                    const resolvedDef = this.getDefinition(idNode);
+                    if (resolvedDef && defNode && resolvedDef.id === defNode.id) {
+                        refs.push(idNode);
+                    }
                 }
             }
-        } catch (e) {
-            console.error(`DEBUG: findReferences main query failed for name ${name}: ${e.message}`);
-            console.error(`DEBUG: mainTree exists: ${!!this.mainTree}`);
-            console.error(`DEBUG: mainTree.rootNode exists: ${!!(this.mainTree && this.mainTree.rootNode)}`);
-            throw e;
-        }
+        } catch (e) { }
         return refs;
     }
 
+
     /**
-     * Mark a node as visited to avoid infinite recursion.
+     * Mark a node or ID as visited to avoid infinite recursion.
      * @param {any} key - The namespace key (transform function or macro name).
-     * @param {import('tree-sitter').SyntaxNode} node - The node to visit.
+     * @param {any} target - The node or unique ID (like startIndex) to visit.
      * @returns {boolean} True if new visit, False if already visited.
      */
-    visit(key, node) {
-        if (!node) return false;
+    visit(key, target) {
+        if (!RECURSION_LIMITER_ENABLED) return true;
+        if (!target && target !== 0) return false;
         if (!this.visitedNodes.has(key)) {
             this.visitedNodes.set(key, new Set());
         }
         const set = this.visitedNodes.get(key);
-        if (set.has(node.id)) {
+        const id = (typeof target === 'object' && target.id !== undefined) ? target.id : target;
+
+        if (set.has(id)) {
             this.stats.visitsAvoided++;
             return false;
         }
         this.stats.visitsAllowed++;
-        set.add(node.id);
+        set.add(id);
         return true;
     }
 
     /**
-     * Check if a node has been visited.
+     * Check if visited.
      * @param {any} key - The namespace key.
-     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
+     * @param {any} target - The node or ID.
      * @returns {boolean} True if visited.
      */
-    isVisited(key, node) {
-        if (!node) return false;
+    isVisited(key, target) {
+        if (!target && target !== 0) return false;
         if (!this.visitedNodes.has(key)) return false;
-        return this.visitedNodes.get(key).has(node.id);
+        const set = this.visitedNodes.get(key);
+        const id = (typeof target === 'object' && target.id !== undefined) ? target.id : target;
+        return set.has(id);
     }
 
 
     /**
-     * Resolves an include path using the configured include paths.
-     * @param {string} importPath - The path from the #include directive.
-     * @returns {string|null} The absolute path if found, or null.
+     * Resolves an include path.
      */
     resolveInclude(importPath) {
         if (path.isAbsolute(importPath)) {
              return fs.existsSync(importPath) ? importPath : null;
         }
-
         const includePaths = this.config.includePaths || [process.cwd()];
         for (const searchPath of includePaths) {
             const candidate = path.resolve(searchPath, importPath);
-            if (fs.existsSync(candidate)) {
-                return candidate;
-            }
+            if (fs.existsSync(candidate)) return candidate;
         }
         return null;
     }
 
     /**
-     * Loads a dependency file, pre-processes it, and extracts macros.
-     * Also recursively compiles .hup files to .h files for C compiler compatibility.
-     * @param {string} filePath - Absolute path to the dependency.
+     * Loads a dependency file.
      */
     loadDependency(filePath) {
-        // console.log(`loadDependency called on registry ${this.uid} for ${filePath}`);
         if (this.loadedDependencies.has(filePath)) return;
         this.loadedDependencies.add(filePath);
 
-        // Check cache first
-        if (this.cache && this.cache.has(filePath)) {
-            const cached = this.cache.get(filePath);
-            for (const [name, macro] of cached.macros) {
-                if (!this.macros.has(name)) {
-                    this.macros.set(name, macro);
-                }
-            }
-            // Even if cached, we might need to regenerate the .h file if it's missing?
-            // Or assume cache implies file exists?
-            // Safer to check existence and regenerate if missing, but for now specific flow overrides cache?
-            // Let's assume strict build: if calling loadDependency, usually we process.
-            // But strict caching might skip this.
-            // We'll proceed to loading macros from cache, but check if .h generation is needed.
-            // Usually cache is valid only if file hasn't changed.
-            // But output .h might be deleted?
-            // Let's regenerate .h always if it's a .hup file, to be safe.
-        }
-
         try {
-            // Use pre-processor if configured (for .hup files)
             let source;
             if (this.config.preprocess) {
-                try {
-                    source = this.config.preprocess(filePath);
-                } catch (e) {
-                    console.error(`Preprocessing failed for ${filePath}: ${e.message}`);
-                    source = fs.readFileSync(filePath, 'utf8'); // Fallback?
-                }
+                source = this.config.preprocess(filePath);
             } else {
                 source = fs.readFileSync(filePath, 'utf8');
             }
 
-            // Scan macros fresh
             const fileMacros = this.scanMacros(source, filePath);
-
-            // Update current registry
             for (const [name, macro] of fileMacros) {
-                 if (!this.macros.has(name)) {
-                     this.macros.set(name, macro);
-                 }
+                 if (!this.macros.has(name)) this.macros.set(name, macro);
             }
 
-            // Header Generation and Side-Effect Propagation
             if (filePath.endsWith('.hup')) {
                 const outputPath = filePath.slice(0, -4) + '.h';
-
-                // We need to fully expand the file to generate the .h content.
-                // We use a temporary child registry for this context.
                 const tempRegistry = new Registry(this.config, this);
-
-                // Register source and process
                 tempRegistry.registerSource(source, filePath);
-                // process() will expand macros (like @package) and strip definitions.
                 const output = tempRegistry.process();
-
                 fs.writeFileSync(outputPath, output);
 
-                // Propagate macros and transforms from tempRegistry back to 'this' registry
                 for (const [name, macro] of tempRegistry.macros) {
-                    if (!this.macros.has(name)) {
-                        this.macros.set(name, macro);
-                    }
+                    if (!this.macros.has(name)) this.macros.set(name, macro);
                 }
                 for (const transform of tempRegistry.transforms) {
-                    if (!this.transforms.includes(transform)) {
-                        this.transforms.push(transform);
-                    }
+                    if (!this.transforms.includes(transform)) this.transforms.push(transform);
                 }
             } else {
-                 // Non-.hup files: Evaluate top-level invocations for side effects the old way
-                 const tree = this._parse(source);
-                 const invocations = this.findInvocations(tree, source);
-                 if (invocations.length > 0) {
-                      const depHelpers = new UppHelpersC(this);
-                      this.evaluateMacros(invocations, source, depHelpers, false, filePath);
-                 }
+                 // Side effects from top-level macros in headers
+                 this.transform(source, filePath);
             }
-
-            // Update cache
-            if (this.cache) {
-                this.cache.set(filePath, { macros: fileMacros, includes: [] });
-            }
-
         } catch (err) {
             console.error(`Failed to load dependency ${filePath}: ${err.message}`);
         }

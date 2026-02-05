@@ -2,51 +2,22 @@
 #define __UPP_STDLIB_LAMBDA_H__
 
 @define lambda() {
-    // Manual find without consume/replace to preserve node stability for processReferences
-    let fnNode = null;
-    let anchor = upp.contextNode ? upp.contextNode : (upp.invocation ? upp.invocation.invocationNode : null);
+    // Use robust consume to find the target function definition
+    const fnNode = upp.consume('function_definition', 'lambda expected function_definition');
 
-    // If anchor is the function definition itself (contextNode logic)
-    if (anchor && anchor.type === 'function_definition') {
-        fnNode = anchor;
-    } else if (anchor) {
-        fnNode = upp.nextNamedSibling(anchor);
-        while (fnNode && fnNode.type.includes('comment')) {
-            fnNode = upp.nextNamedSibling(fnNode);
-        }
+    const sig = upp.getFunctionSignature(fnNode);
+    const fnName = sig.name;
+    const returnType = sig.returnType;
+    let paramsText = sig.params;
+
+    // Handle paramsText for context insertion
+    if (paramsText.trim() === "()" || paramsText.trim() === "(void)") {
+        paramsText = "";
+    } else {
+        paramsText = ", " + paramsText.trim().slice(1, -1);
     }
 
-    if (!fnNode || fnNode.type !== 'function_definition') {
-        upp.error(anchor, "lambda expected function_definition");
-    }
-
-    const fnDecl = upp.childForFieldName(fnNode, 'declarator'); // function_declarator
-    const nameNode = upp.childForFieldName(fnDecl, 'declarator'); // function_declarator -> identifier
-    const fnName = nameNode ? nameNode.text : "lambda_unknown";
-
-    // Capture params early to avoid node invalidation issues
-    const paramListNode = upp.childForFieldName(fnDecl, 'parameters');
-    const paramsContent = paramListNode ? paramListNode.text : null;
-
-    const bodyNode = upp.childForFieldName(fnNode, 'body');
-
-    // Type extraction (fallback to 'void' if missing, usually fine)
-    const typeNode = upp.childForFieldName(fnNode, 'type');
-    let returnType = typeNode ? typeNode.text : "void";
-    if (returnType === 'lambda' || returnType === 'lambda_unknown') {
-         // Attempt to find real type (sibling of typeNode? or hardcode void)
-         // Usually it's void for lambda.
-         returnType = "void";
-    }
-
-    // Reconstruct function signature to include original parameters
-    let paramsText = "";
-    if (paramsContent && paramsContent.trim().length > 2) { // check if not empty parens ()
-         const content = paramsContent.trim().slice(1, -1).trim(); // remove ()
-         if (content.length > 0) {
-             paramsText = ", " + content;
-         }
-    }
+    const bodyNode = sig.bodyNode || (sig.node ? upp.childForFieldName(sig.node, 'body') : upp.childForFieldName(fnNode, 'body'));
 
     // 1. Identify captures
     const captureMap = new Map(); // name -> defNode
@@ -66,15 +37,16 @@
     });
 
     // 2. Generate Context Struct
-    const ctxName = upp.createUniqueIdentifier('lambda_ctx');
-
-    let structFields = "";
-    for (const [name, def] of captureMap) {
-        let typeStr = upp.getType(def);
-        structFields += `    ${typeStr} *${name};\n`;
+    const ctxName = captureMap.size > 0 ? upp.createUniqueIdentifier('lambda_ctx') : null;
+    let structDef = "";
+    if (ctxName) {
+        let structFields = "";
+        for (const [name, def] of captureMap) {
+            let typeStr = upp.getType(def);
+            structFields += `    ${typeStr} *${name};\n`;
+        }
+        structDef = `struct ${ctxName} {\n${structFields}\n};\n`;
     }
-
-    const structDef = `struct ${ctxName} {\n${structFields}\n};\n`;
 
     // 3. Generate Hoisted Implementation
     const implName = upp.createUniqueIdentifier(`${fnName}_impl`);
@@ -87,7 +59,7 @@
                  hoistReplacements.push({
                      start: node.startIndex,
                      end: node.endIndex,
-                     text: `(*ctx->${node.text})`
+                     text: ctxName ? `(*ctx->${node.text})` : node.text
                  });
             }
         }
@@ -104,105 +76,110 @@
         bodyText = bodyText.slice(0, relStart) + r.text + bodyText.slice(relEnd);
     }
 
-
-    const implCode = `\n${returnType} ${implName}(struct ${ctxName} *ctx${paramsText}) ${bodyText}\n`;
-
-    upp.hoist("\n" + structDef + implCode);
-
-    // 4. Replace Usage & Recursively Handle Aliases
-    const contextArg = `(&ctx)`;
-    const processedNodes = new Set();
-
-    function processReferences(targetDefNode, isOriginal) {
-        if (!targetDefNode || processedNodes.has(targetDefNode.id)) return;
-        processedNodes.add(targetDefNode.id);
-
-        upp.walk(upp.root, (ref) => {
-            if (ref.type !== 'identifier') return;
-
-            if (ref.text !== targetDefNode.text) {
-                 return;
-            }
-
-            if (isOriginal && isInsideFn(ref)) {
-                 return;
-            }
-
-            const refParent = upp.parent(ref);
-            if (!refParent) return;
-
-            // Usage Type 1: Function Call -> target(...)
-            if (refParent.type === 'call_expression' && upp.childForFieldName(refParent, 'function') === ref) {
-                 const call = refParent;
-                 const args = upp.childForFieldName(call, 'arguments');
-                 let newArgs = contextArg;
-                 if (upp.childCount(args) > 2) {
-                      const inner = args.text.slice(1, -1);
-                      newArgs = `(${contextArg.slice(1, -1)}, ${inner})`;
-                 }
-
-                 const replacementName = isOriginal ? implName : ref.text;
-                 upp.replace(call, `${replacementName}${newArgs}`);
-                 return;
-            }
-
-            // Usage Type 2: Alias Initialization / Declaration
-            if (refParent.type === 'init_declarator' && upp.childForFieldName(refParent, 'value') === ref) {
-                 const initDecl = refParent;
-                 const declStmt = upp.parent(initDecl);
-
-                 const decl = upp.childForFieldName(initDecl, 'declarator');
-                 let foundAlias = null;
-                 upp.walk(decl, n => {
-                     if (n.type === 'identifier' && !foundAlias) foundAlias = n;
-                 });
-                 let aliasId = foundAlias;
-
-                 if (isOriginal && aliasId && declStmt && declStmt.type === 'declaration') {
-                      let prefix = "";
-                      for(let i=0; i<upp.childCount(declStmt); i++) {
-                          const c = upp.child(declStmt, i);
-                          if (c.type === 'storage_class_specifier' || c.type === 'type_qualifier') {
-                              prefix += c.text + " ";
-                          }
-                      }
-
-                      const newDecl = `${prefix}typeof(&${implName}) ${aliasId.text} = ${implName};`;
-                      upp.replace(declStmt, newDecl);
-
-                      if (aliasId) processReferences(aliasId, false);
-                      return;
-                 } else if (aliasId) {
-                      processReferences(aliasId, false);
-                 }
-            }
-            // Usage Type 3: Assignment -> z = hello;
-            else if (refParent.type === 'assignment_expression' && upp.childForFieldName(refParent, 'right') === ref) {
-                 const left = upp.childForFieldName(refParent, 'left');
-                 let aliasId = null;
-                 if (left.type === 'identifier') aliasId = left;
-
-                 if (isOriginal) {
-                    upp.replace(ref, implName);
-                 }
-
-                 if (aliasId) {
-                     let def = upp.getDefinition(aliasId);
-                     if (def) processReferences(def, false);
-                 }
-            }
-            else if (isOriginal) {
-                upp.replace(ref, implName);
-            }
-        });
+    const ctxParam = ctxName ? `struct ${ctxName} *ctx` : "";
+    let finalParams = paramsText;
+    if (ctxParam) {
+        finalParams = ctxParam + (paramsText.startsWith(",") ? paramsText : (paramsText ? ", " + paramsText : ""));
+    } else if (paramsText.startsWith(",")) {
+        finalParams = paramsText.slice(1).trim();
     }
 
-    processReferences(nameNode, true);
+    const implCode = `\n${returnType} ${implName}(${finalParams}) ${bodyText}\n`;
+
+    const hoistCode = "\n" + structDef + implCode;
+
+    upp.atRoot((root, helpers) => {
+        // Prepend struct and impl to root
+        helpers.replace({ start: 0, end: 0 }, hoistCode);
+
+        // 4. Replace Usage & Recursively Handle Aliases
+        const contextArg = ctxName ? `(&ctx)` : "";
+        const processedNodes = new Set();
+
+        function processReferences(targetDefName, isOriginal) {
+            helpers.walk(root, (ref) => {
+                if (ref.type !== 'identifier') return;
+                if (ref.text !== targetDefName) return;
+
+                // For original name, skip inside the already removed function body
+                // (though fnNode index might be stale, we can check if it's in a range)
+                // Actually, since we are in a fresh tree, we just look for usages.
+
+                const refParent = helpers.parent(ref);
+                if (!refParent) return;
+
+                // Usage Type 1: Function Call -> target(...)
+                if (refParent.type === 'call_expression' && helpers.childForFieldName(refParent, 'function') === ref) {
+                     const call = refParent;
+                     const args = helpers.childForFieldName(call, 'arguments');
+                     let newArgs = "";
+
+                     if (contextArg) {
+                        newArgs = contextArg;
+                        if (helpers.childCount(args) > 2) {
+                            const inner = args.text.slice(1, -1);
+                            newArgs = `(${contextArg.slice(1, -1)}, ${inner})`;
+                        }
+                     } else {
+                        newArgs = args.text;
+                     }
+
+                     const replacementName = isOriginal ? implName : ref.text;
+                     helpers.replace(call, `${replacementName}${newArgs}`);
+                     return;
+                }
+
+                // Usage Type 2: Alias Initialization / Declaration
+                if (refParent.type === 'init_declarator' && helpers.childForFieldName(refParent, 'value') === ref) {
+                     const initDecl = refParent;
+                     const declStmt = helpers.parent(initDecl);
+                     const decl = helpers.childForFieldName(initDecl, 'declarator');
+                     let foundAlias = null;
+                     helpers.walk(decl, n => { if (n.type === 'identifier' && !foundAlias) foundAlias = n; });
+                     let aliasId = foundAlias;
+
+                     if (isOriginal && aliasId && declStmt && declStmt.type === 'declaration') {
+                          let prefix = "";
+                          for(let i=0; i<helpers.childCount(declStmt); i++) {
+                              const c = helpers.child(declStmt, i);
+                              if (c.type === 'storage_class_specifier' || c.type === 'type_qualifier') {
+                                  prefix += c.text + " ";
+                              }
+                          }
+                          const newDecl = `${prefix}typeof(&${implName}) ${aliasId.text} = ${implName};`;
+                          helpers.replace(declStmt, newDecl);
+                          if (aliasId) processReferences(aliasId.text, false);
+                          return;
+                     } else if (aliasId) {
+                          processReferences(aliasId.text, false);
+                     }
+                }
+                // Usage Type 3: Assignment
+                else if (refParent.type === 'assignment_expression' && helpers.childForFieldName(refParent, 'right') === ref) {
+                     const left = helpers.childForFieldName(refParent, 'left');
+                     let aliasId = null;
+                     if (left.type === 'identifier') aliasId = left;
+                     if (isOriginal) helpers.replace(ref, implName);
+                     if (aliasId) {
+                         processReferences(aliasId.text, false);
+                     }
+                }
+                else if (isOriginal) {
+                    helpers.replace(ref, implName);
+                }
+            });
+        }
+
+        processReferences(fnName, true);
+    });
 
     // 5. Replace Definition
-    const captureList = Array.from(captureMap.keys());
-    let initFields = captureList.map(name => `.${name} = &${name}`).join(', ');
-    const initCode = `struct ${ctxName} ctx = { ${initFields} };`;
+    let initCode = "";
+    if (ctxName) {
+        const captureList = Array.from(captureMap.keys());
+        let initFields = captureList.map(name => `.${name} = &${name}`).join(', ');
+        initCode = `struct ${ctxName} ctx = { ${initFields} };`;
+    }
 
     upp.replace(fnNode, "");
 

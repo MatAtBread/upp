@@ -15,6 +15,8 @@ class UppHelpersBase {
         this.registry = registry;
         /** @type {Array<Object>} */
         this.replacements = [];
+        /** @type {Map<number, Object>} */
+        this.replacementMap = new Map();
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.root = null;
         /** @type {import('tree-sitter').SyntaxNode|null} */
@@ -23,6 +25,72 @@ class UppHelpersBase {
         this.invocation = null; // Current macro invocation details
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.lastConsumedNode = null;
+        /** @type {boolean} */
+        this.isDeferred = false;
+    }
+
+    /**
+     * Wraps a node to discourage direct upwards access.
+     * @param {import('tree-sitter').SyntaxNode} node - The node to wrap.
+     * @returns {import('tree-sitter').SyntaxNode}
+     */
+    wrapNode(node) {
+        if (!node || node.__isWrapped) return node;
+        const registry = this.registry;
+        const helpers = this;
+
+        // Use a simple proxy to intercept .parent and .rootNode
+        return new Proxy(node, {
+            get(target, prop) {
+                if (prop === '__isWrapped') return true;
+                if (prop === 'parent' || prop === 'rootNode') {
+                    if (!helpers.isDeferred) {
+                         registry.diagnostics.reportWarning(
+                             0, // DiagnosticCodes.DEBUG_INFO or similar
+                             `Restricted access to node.${prop} detected in macro. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.`,
+                             registry.filePath,
+                             target.startPosition.row + 1,
+                             target.startPosition.column + 1,
+                             registry.sourceCode
+                         );
+                    }
+                }
+                const value = Reflect.get(target, prop);
+                if (typeof value === 'function') {
+                    return (...args) => {
+                        let result = value.apply(target, args);
+                        if (result && typeof result === 'object' && result.type) {
+                             return helpers.wrapNode(result);
+                        }
+                        return result;
+                    };
+                }
+                if (value && typeof value === 'object' && value.type) {
+                    return helpers.wrapNode(value);
+                }
+                return value;
+            }
+        });
+    }
+
+    /**
+     * Schedules a task to run at the root of the file after children are transformed.
+     * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
+     */
+    atRoot(callback) {
+        this.registry.registerDeferredTask(callback, this.root.id);
+    }
+
+    /**
+     * Schedules a task to run at the end of the enclosing scope.
+     * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
+     */
+    inScope(callback) {
+        const scope = this.findEnclosing(this.contextNode || (this.invocation && this.invocation.invocationNode), 'compound_statement');
+        if (!scope) {
+            return this.atRoot(callback);
+        }
+        this.registry.registerDeferredTask(callback, scope.id);
     }
 
     /**
@@ -38,14 +106,8 @@ class UppHelpersBase {
      * @returns {import('tree-sitter').SyntaxNode|null}
      */
     get parentTree() {
-        if (this.registry.parentRegistry) {
-            if (this.registry.parentRegistry.mainTree) {
-                return this.registry.parentRegistry.mainTree.rootNode;
-            } else {
-                 console.log(`DEBUG: parentRegistry exists on ${this.registry.uid} but mainTree is null`);
-            }
-        } else {
-             console.log(`DEBUG: parentRegistry is null on ${this.registry.uid}`);
+        if (this.registry.parentRegistry && this.registry.parentRegistry.mainTree) {
+            return this.registry.parentRegistry.mainTree.rootNode;
         }
         return null;
     }
@@ -125,18 +187,25 @@ class UppHelpersBase {
 
         if (isGlobal && this.registry.helpers !== this) {
             this.registry.helpers.replacements.push(replacement);
+            if (n.id !== undefined) {
+                this.registry.helpers.replacementMap.set(n.id, replacement);
+            }
         } else {
             this.replacements.push(replacement);
+            if (n.id !== undefined) {
+                this.replacementMap.set(n.id, replacement);
+            }
         }
     }
 
     /**
-     * Wraps a node (placeholder for future extensibility).
-     * @param {import('tree-sitter').SyntaxNode} node - The node to wrap.
-     * @returns {import('tree-sitter').SyntaxNode} The wrapped node.
+     * Gets a replacement for a node.
+     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
+     * @returns {Object|null} The replacement object.
      */
-    wrapNode(node) {
-        return node;
+    getReplacement(node) {
+        if (!node) return null;
+        return this.replacementMap.get(node.id) || null;
     }
 
     /**
@@ -178,16 +247,27 @@ class UppHelpersBase {
     }
 
     /**
+     * Checks if a node has been consumed by a macro.
+     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
+     * @returns {boolean} True if consumed.
+     */
+    isConsumed(node) {
+        if (!node) return false;
+        return this.registry.visitedNodes.get('consumed')?.has(node.id) || false;
+    }
+
+    /**
      * Finds the nearest enclosing node of a specific type.
      * @param {import('tree-sitter').SyntaxNode} node - The starting node.
      * @param {string} type - The node type to search for.
      * @returns {import('tree-sitter').SyntaxNode|null} The enclosing node or null.
      */
     findEnclosing(node, type) {
-        let current = node.parent;
+        if (!node) return null;
+        let current = node;
         while (current) {
             if (current.type === type) return current;
-            current = current.parent;
+            current = this.parent(current);
         }
         return null;
     }
@@ -272,10 +352,16 @@ class UppHelpersBase {
             this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode, msg);
         };
 
+
         let node = null;
         if (!this.lastConsumedNode) {
             if (this.invocation && !this.invocation.hasNodeParam) {
-                node = this.contextNode;
+                let candidate = this.contextNode;
+                if (candidate && candidate.startIndex <= this.invocation.startIndex && candidate.endIndex >= this.invocation.endIndex) {
+                    // Candidate covers the macro, so it's a parent/context, not the direct target sibling.
+                } else {
+                    node = candidate;
+                }
             }
         }
 
@@ -324,59 +410,79 @@ class UppHelpersBase {
         // Fallback to normal AST consumption
         if (!node) {
             let anchor = this.lastConsumedNode || this.contextNode;
+
             if (anchor) {
                 if (anchor.type === 'macro_invocation') {
-                     // Find valid AST node after the fake node
-                     let searchIdx = anchor.endIndex;
-                     while (searchIdx < this.registry.sourceCode.length && /\s/.test(this.registry.sourceCode[searchIdx])) searchIdx++;
+                    // Preceding macro in a gap. Search starts after its end.
+                    node = this.findNextNodeAfter(this.root || this.registry.mainTree.rootNode, anchor.endIndex);
+                } else if (anchor.startIndex <= (this.invocation ? this.invocation.startIndex : 0) &&
+                           anchor.endIndex >= (this.invocation ? this.invocation.endIndex : anchor.endIndex)) {
+                    // Anchor is a parent node (COVERS the current invocation).
+                    // We want the first child of this parent that starts AFTER the macro.
+                    let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
+                    let child = anchor.firstNamedChild;
+                    while (child && child.startIndex < searchIdx) {
+                        child = child.nextNamedSibling;
+                    }
+                    node = child;
 
-                     // Look in cleanTree
-                     let next = this.registry.cleanTree.rootNode.namedDescendantForIndex(searchIdx);
-
-                     // Ensure we didn't land "inside" something covering the anchor or previous stuff
-                     if (next && next.startIndex < anchor.endIndex) {
-                          while (next && next.startIndex < anchor.endIndex) {
-                              next = next.nextNamedSibling || next.parent;
-                          }
-                     }
-                     if (next) {
-                        // Resync context level: if next is a child of translation_unit, great.
-                        // Or if next is same level as contextNode?
-                        // Just ensure we get a block-level item if possible.
-                        while (next.parent &&
-                               next.parent.type !== 'translation_unit' &&
-                               next.parent.startIndex === next.startIndex) {
-                             next = next.parent;
-                        }
-                        node = next;
-                     }
+                    // If no child found in parent, maybe it's outside?
+                    if (!node) {
+                        node = this.findNextNodeAfter(this.root || this.registry.mainTree.rootNode, searchIdx);
+                    }
                 } else {
+                    // Anchor is a preceding sibling.
                     node = anchor.nextNamedSibling;
                     while (node && node.type.includes('comment')) {
                         node = node.nextNamedSibling;
                     }
                 }
+            } else {
+                // No anchor. fallback to searching from root using macro end index.
+                let root = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
+                if (root && this.invocation) {
+                    node = this.findNextNodeAfter(root, this.invocation.endIndex);
+                } else if (root) {
+                    node = root.namedChild(0);
+                }
             }
         }
 
-        if (!node) {
-            if (expectedTypes || validateFn) reportFailure(null);
-            return null;
-        }
+         if (!node) {
+             if (expectedTypes || validateFn) reportFailure(null);
+             return null;
+         }
 
-        // Structural drilling if type mismatch
-        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
+         // UPWARD DRILLING: If we found a sub-node (like primitive_type),
+         // drill up to find the largest node starting at the same point (like function_definition).
+         // This is important for macros that expect a "top-level" item.
+         while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
+             node = node.parent;
+         }
+
+        // Structural drilling if type mismatch or ERROR node
+        if (node && (node.type === 'ERROR' || (expectedTypes && !expectedTypes.includes(node.type)))) {
             let current = node;
-            while (current && current.namedChildCount > 0 && !expectedTypes.includes(current.type)) {
+            while (current && current.namedChildCount > 0 && (!expectedTypes || !expectedTypes.includes(current.type))) {
                 let firstChild = current.namedChild(0);
                 if (firstChild && firstChild.startIndex === current.startIndex) {
                     current = firstChild;
-                    if (expectedTypes.includes(current.type)) {
+                    if (expectedTypes && expectedTypes.includes(current.type)) {
                         node = current;
                         break;
                     }
                 } else {
                     break;
+                }
+            }
+            // If we drilled down and still have an ERROR, try to find the target among children
+            if (current && current.type === 'ERROR' && expectedTypes) {
+                for (let i=0; i < current.namedChildCount; i++) {
+                    const c = current.namedChild(i);
+                    if (expectedTypes.includes(c.type)) {
+                        node = c;
+                        break;
+                    }
                 }
             }
         }
@@ -391,6 +497,10 @@ class UppHelpersBase {
 
         this.replace(node, "");
         this.lastConsumedNode = node;
+        if (!this.registry.visitedNodes.has('consumed')) {
+            this.registry.visitedNodes.set('consumed', new Set());
+        }
+        this.registry.visitedNodes.get('consumed').add(node.id);
         return node;
     }
 
@@ -415,7 +525,10 @@ class UppHelpersBase {
      * @returns {import('tree-sitter').SyntaxNode|null} The parent node.
      */
     parent(node) {
-        try { return node ? node.parent : null; } catch (e) { return null; }
+        try {
+            const p = node ? node.parent : null;
+            return this.wrapNode(p);
+        } catch (e) { return null; }
     }
 
     /**
@@ -453,7 +566,7 @@ class UppHelpersBase {
      * @returns {import('tree-sitter').SyntaxNode|null} The child node.
      */
     childForFieldName(node, name) {
-        try { return (node && node.childForFieldName) ? node.childForFieldName(name) : null; } catch (e) { return null; }
+        try { return (node && node.childByFieldName) ? node.childByFieldName(name) : null; } catch (e) { return null; }
     }
 
     /**
@@ -512,6 +625,95 @@ class UppHelpersBase {
         }
         this.registry.loadDependency(resolvedPath);
     }
+    /**
+     * Finds the first named node after a specific index.
+     * @param {import('tree-sitter').SyntaxNode} root - The root node.
+     * @param {number} index - The index to start from.
+     * @returns {import('tree-sitter').SyntaxNode|null} The next node or null.
+     */
+    findNextNodeAfter(root, index) {
+        if (!root) return null;
+
+        let node = root.descendantForIndex(index, index);
+        // If we found a node that ends BEFORE our index, move to next sibling or parent's sibling
+        while (node && node.endIndex <= index) {
+            if (node.nextNamedSibling) {
+                node = node.nextNamedSibling;
+                break;
+            }
+            node = node.parent;
+            if (!node || node === root) break;
+        }
+
+        if (!node) return null;
+
+        // If we have a node that encompasses the index, or starts after it
+        // and it's a parent, drill down to find the first named child that starts >= index
+        while (node) {
+             let firstChild = null;
+             for (let i = 0; i < node.namedChildCount; i++) {
+                 const c = node.namedChild(i);
+                 if (c.endIndex > index) {
+                     firstChild = c;
+                     break;
+                 }
+             }
+
+             if (firstChild) {
+                 if (firstChild.startIndex <= index) {
+                     node = firstChild;
+                 } else {
+                     // Starts after index, this is our best bet at this level
+                     node = firstChild;
+                     break;
+                 }
+             } else {
+                 break;
+             }
+        }
+
+        // At this point, node is the deepest descendant starting at or after index.
+        // We actually want the WIDEST node that starts at this position.
+        // Walk up as long as the startIndex is the same.
+        if (node) {
+            while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
+                node = node.parent;
+            }
+        }
+
+        return node && node.isNamed ? node : (node ? node.nextNamedSibling : null);
+    }
+
+    /**
+     * Finds the nearest enclosing scope node.
+     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * @returns {import('tree-sitter').SyntaxNode|null} The scope node.
+     */
+    enclosingScope(node) {
+        let p = node ? node.parent : null;
+        while (p) {
+            if (p.type === 'compound_statement' || p.type === 'function_definition' || p.type === 'translation_unit' || p.type === 'parameter_list') {
+                return p;
+            }
+            p = p.parent;
+        }
+        return this.root;
+    }
+
+    /**
+     * Finds the definition for a symbol (string or node).
+     * @param {string|import('tree-sitter').SyntaxNode} target - Symbol name or identifier node.
+     * @param {Object} [options] - Resolution options.
+     * @returns {import('tree-sitter').SyntaxNode|null} The definition node.
+     */
+    findDefinition(target, options) {
+        if (!target) return null;
+        if (typeof target === 'string') {
+            return this.registry.resolveSymbol(target, this.contextNode || this.root, options);
+        }
+        return this.registry.getDefinition(target);
+    }
+
 }
 
 export { UppHelpersBase };

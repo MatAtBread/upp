@@ -54,7 +54,9 @@ async function verifySnapshot(relativePath, snapshotPath, actualOutput, label = 
     const taskLabel = label ? `(${label})` : "";
 
     // Normalize output? (Remove absolute paths to make snapshots portable)
-    const normalizedOutput = actualOutput.split(process.cwd()).join('.');
+    let normalizedOutput = actualOutput.split(process.cwd()).join('.');
+    // Also normalize /tmp/ccXXXX.o to /tmp/ccXXXX.o (masking the random part)
+    normalizedOutput = normalizedOutput.replace(/\/tmp\/cc\w+\.o/g, '/tmp/ccXXXX.o');
 
     if (!fs.existsSync(snapshotPath)) {
         if (isSuccess) {

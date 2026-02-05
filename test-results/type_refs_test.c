@@ -1,5 +1,3 @@
-
-
 typedef struct PointAlias {
     int x;
     int y;

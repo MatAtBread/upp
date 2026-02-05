@@ -1,5 +1,7 @@
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
@@ -16,10 +18,10 @@ struct Derived {
     int z;
     int x;
     int y;
-    
+    ;
     float lat;
     float lon;
-    
+    ;
 };
 int main() {
     struct Derived d;

@@ -28,52 +28,45 @@
     // 2. Resolve Target Type
     // targetStruct is like "struct Base", "Base", or "GeoCoord"
     let targetName = targetStruct.trim();
-    let isStructTag = false;
+    let options = { variable: true, tag: true };
+
     if (targetName.startsWith('struct ')) {
         targetName = targetName.substring(7).trim();
-        isStructTag = true;
+        options = { variable: false, tag: true };
     }
 
+    const def = upp.findDefinition(targetName, options);
     let structDef = null;
-    const root = upp.root;
 
-    upp.walk(root, (node) => {
-        if (structDef) return;
-
-        const isTypedef = node.type === 'type_definition' || (node.type === 'declaration' && node.text.includes('typedef'));
-
-        // Option A: struct Tag { ... }
-        if (node.type === 'struct_specifier') {
-             const nameNode = upp.childForFieldName(node, 'name');
-             if (isStructTag && nameNode && nameNode.text === targetName) {
-                 if (upp.childForFieldName(node, 'body')) structDef = node;
-             }
-             else if (!isStructTag && nameNode && nameNode.text === targetName) {
-                 if (upp.childForFieldName(node, 'body')) structDef = node;
+    if (def) {
+        if (def.type === 'struct_specifier') {
+            structDef = def;
+        } else {
+             // Search for a struct definition inside the found definition (for typedefs)
+             const matches = upp.query('(struct_specifier) @struct', def);
+             if (matches.length > 0) {
+                 structDef = matches[0].captures.struct;
              }
         }
-
-        // Option B/C: typedef struct { ... } Name;
-        if (!isStructTag && isTypedef) {
-             const typeNode = upp.childForFieldName(node, 'type');
-             if (typeNode && typeNode.type === 'struct_specifier') {
-                 const idMatches = upp.query('(type_identifier) @id', node);
-                 for (const match of idMatches) {
-                     if (match.captures.id.text === targetName) {
-                         structDef = typeNode;
-                         break;
-                     }
-                 }
-             }
-        }
-    });
+    }
 
     if (!structDef) {
         upp.error(upp.invocation.invocationNode, `Could not find definition for struct/type ${targetName}`);
         return;
     }
 
-    const fieldList = upp.childForFieldName(structDef, 'body');
+    let fieldList = upp.childForFieldName(structDef, 'body');
+    if (!fieldList) {
+        // Fallback: search for field_declaration_list among children
+        for (let i = 0; i < upp.childCount(structDef); i++) {
+            const c = upp.child(structDef, i);
+            if (c.type === 'field_declaration_list') {
+                fieldList = c;
+                break;
+            }
+        }
+    }
+
     if (!fieldList) {
         return "";
     }

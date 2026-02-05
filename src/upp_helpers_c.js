@@ -105,7 +105,7 @@ class UppHelpersC extends UppHelpersBase {
                  const key = this.transformKey + "::" + src;
 
                  if (this.transformKey) {
-                     if (!this.registry.visit(key, captures.node)) return;
+                     if (RECURSION_LIMITER_ENABLED && !this.registry.visit(key, captures.node)) return;
                  }
 
                  const replacement = callback(captures);
@@ -187,34 +187,65 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {{returnType: string, name: string, params: string}} Signature details.
      */
     getFunctionSignature(fnNode) {
-        const declarator = this.childForFieldName(fnNode, 'declarator');
-        let funcDecl = declarator;
-        while (funcDecl && funcDecl.type === 'pointer_declarator') {
-            funcDecl = this.childForFieldName(funcDecl, 'declarator');
+        if (!fnNode) return { returnType: "void", name: "unknown", params: "()" };
+
+        // 1. Find type
+        let typeNode = this.childForFieldName(fnNode, 'type');
+        if (!typeNode) {
+            // Find first child that is a type specifier or primitive
+            for (let i = 0; i < fnNode.childCount; i++) {
+                const c = fnNode.child(i);
+                if (c.type.includes('type_specifier') || c.type === 'primitive_type') {
+                    typeNode = c;
+                    break;
+                }
+            }
         }
-
-        const nameNode = funcDecl ? this.childForFieldName(funcDecl, 'declarator') : null;
-        const name = nameNode ? nameNode.text : "unknown";
-
-        const paramList = funcDecl ? this.childForFieldName(funcDecl, 'parameters') : null;
-        let params = "";
-        if (paramList) {
-             params = paramList.text;
-        }
-
-        const typeNode = this.childForFieldName(fnNode, 'type');
         const returnType = typeNode ? typeNode.text : "void";
 
-        return { returnType, name, params };
+        // 2. Find declarator
+        let declarator = this.childForFieldName(fnNode, 'declarator');
+        if (!declarator) {
+             // Heuristic: find first non-type, non-body named sibling
+             for (let i = 0; i < fnNode.childCount; i++) {
+                 const c = fnNode.child(i);
+                 if (c.isNamed && c.type !== 'compound_statement' && c !== typeNode) {
+                     declarator = c;
+                     break;
+                 }
+             }
+        }
+
+        let funcDecl = declarator;
+        while (funcDecl && (funcDecl.type === 'pointer_declarator' || funcDecl.type === 'parenthesized_declarator')) {
+            funcDecl = this.childForFieldName(funcDecl, 'declarator') ||
+                       funcDecl.namedChildren.find(c => c.type.includes('declarator'));
+        }
+
+        // 3. Find name and params from funcDecl (usually a function_declarator)
+        // function_declarator: declarator: _declarator parameters: parameter_list
+        const nameNode = funcDecl ? (this.childForFieldName(funcDecl, 'declarator') || funcDecl.namedChild(0)) : null;
+        const name = nameNode ? nameNode.text : "unknown";
+
+        const paramList = funcDecl ? (this.childForFieldName(funcDecl, 'parameters') || funcDecl.namedChildren.find(c => c.type === 'parameter_list')) : null;
+        const params = paramList ? paramList.text : "()";
+
+        // 4. Find body
+        let bodyNode = this.childForFieldName(fnNode, 'body');
+        if (!bodyNode) {
+            bodyNode = fnNode.namedChildren.find(c => c.type === 'compound_statement');
+        }
+
+        return { returnType, name, params, bodyNode, node: fnNode };
     }
 
     /**
-     * Finds the definition for a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
+     * Finds the definition for a node or name.
+     * @param {import('tree-sitter').SyntaxNode|string} target - The node or name.
      * @returns {import('tree-sitter').SyntaxNode|null} The definition.
      */
-    getDefinition(node) {
-        return this.registry.getDefinition(node);
+    getDefinition(target) {
+        return this.findDefinition(target);
     }
 
     /**

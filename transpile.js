@@ -46,7 +46,7 @@ function preprocess(filePath) {
     }
 }
 
-const preProcessed = preprocess(absCupFile);
+const preProcessed = cupFile.endsWith('.cup') || cupFile.endsWith('.hup') ? fs.readFileSync(absCupFile, 'utf8') : preprocess(absCupFile);
 
 // 3. Initialize Registry
 const config = {
