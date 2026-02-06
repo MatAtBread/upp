@@ -1,0 +1,65 @@
+[33m./examples/trace_2.cup:3:28: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                           [33m^[0m
+[33m./examples/trace_2.cup:3:28: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                           [33m^[0m
+[33m./examples/trace_2.cup:3:28: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                           [33m^[0m
+[33m./examples/trace_2.cup:3:26: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                         [33m^[0m
+[33m./examples/trace_2.cup:3:13: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+            [33m^[0m
+[33m./examples/trace_2.cup:1:24: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+                       [33m^[0m
+[33m./examples/trace_2.cup:1:1: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+[33m^[0m
+[33m./examples/trace_2.cup:1:1: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+[33m^[0m
+[33m./examples/trace_2.cup:3:60: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                                                           [33m^[0m
+[33m./examples/trace_2.cup:3:33: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                                [33m^[0m
+[33m./examples/trace_2.cup:3:28: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                           [33m^[0m
+[33m./examples/trace_2.cup:3:28: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                           [33m^[0m
+[33m./examples/trace_2.cup:3:26: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+                         [33m^[0m
+[33m./examples/trace_2.cup:3:13: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int fputs (const char *s, void *stream);
+            [33m^[0m
+[33m./examples/trace_2.cup:1:24: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+                       [33m^[0m
+[33m./examples/trace_2.cup:1:1: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+[33m^[0m
+[33m./examples/trace_2.cup:1:1: warning: [0] Restricted access to node.parent detected in macro @lambda. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+extern int puts (const char *s);
+[33m^[0m
+examples/trace_2.c: In function ‘my_function’:
+examples/trace_2.c:32:13: warning: implicit declaration of function ‘_exit_impl_0’ [-Wimplicit-function-declaration]
+   32 |             _exit_impl_0(); return -1;
+      |             ^~~~~~~~~~~~
+examples/trace_2.c: At top level:
+examples/trace_2.c:36:2: warning: data definition has no type or storage class
+   36 | }_exit();
+      |  ^~~~~
+examples/trace_2.c:36:2: warning: type defaults to ‘int’ in declaration of ‘_exit’ [-Wimplicit-int]
+examples/trace_2.c:36:2: warning: conflicting types for built-in function ‘_exit’; expected ‘void(int)’ [-Wbuiltin-declaration-mismatch]
+/usr/bin/ld: /tmp/ccXXXX.o: in function `my_function':
+trace_2.c:(.text+0x58): undefined reference to `_exit_impl_0'
+/usr/bin/ld: trace_2.c:(.text+0x75): undefined reference to `_exit_impl_0'
+collect2: error: ld returned 1 exit status

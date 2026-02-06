@@ -1,0 +1,28 @@
+struct Test {
+    int x;
+};
+                     
+                                              
+                                       
+                                                              
+                         
+           
+                                                              
+                         
+           
+                                                                                                        
+                                                        
+                                
+                                     
+                                                       
+                                                       
+         
+       
+              
+ 
+
+int main() {
+    int a = 1;
+    int b = 2;
+    return 0;
+}

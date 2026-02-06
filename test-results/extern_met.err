@@ -1,0 +1,8 @@
+examples/extern_methods/extern_methods_impl.c:8:10: fatal error: extern_methods.h: No such file or directory
+    8 | #include "extern_methods.h"
+      |          ^~~~~~~~~~~~~~~~~~
+compilation terminated.
+examples/extern_methods/extern_methods_main.c:1:10: fatal error: extern_methods.h: No such file or directory
+    1 | #include "extern_methods.h"
+      |          ^~~~~~~~~~~~~~~~~~
+compilation terminated.

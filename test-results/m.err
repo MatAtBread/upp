@@ -1,0 +1,8 @@
+examples/mypkg/main.c:8:10: fatal error: mypkg.h: No such file or directory
+    8 | #include "mypkg.h"
+      |          ^~~~~~~~~
+compilation terminated.
+examples/mypkg/mypkg.c:1:10: fatal error: mypkg.h: No such file or directory
+    1 | #include "mypkg.h"
+      |          ^~~~~~~~~
+compilation terminated.

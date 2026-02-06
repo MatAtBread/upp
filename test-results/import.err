@@ -1,0 +1,4 @@
+examples/import.c:1:10: fatal error: import.h: No such file or directory
+    1 | #include "import.h"
+      |          ^~~~~~~~~~
+compilation terminated.

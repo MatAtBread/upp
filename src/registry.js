@@ -91,41 +91,25 @@ class Registry {
         this.uid = Math.random().toString(36).slice(2, 6);
         this.stats = { visitsAvoided: 0, visitsAllowed: 0 };
 
-        /** @type {Map<number, function>} */
-        this.deferredTasks = new Map();
-        /** @type {number} */
-        this.deferredTaskIdCounter = 0;
         /** @type {string|null} */
         this.activeMacro = null;
         this.activeMacroInvocation = null;
+
+        // Marker System (for deferred transformations and code replacement)
+        /** @type {Map<string, string>} - Maps marker strings to replacement content */
+        this.markerMap = new Map();
+        /** @type {number} - Counter for generating unique marker IDs */
+        this.markerCounter = 0;
+
+        // Deferred Callback System (for nested macro scope resolution)
+        /** @type {Map<string, {callback: function, targetType: string, context: Object}>} */
+        this.deferredCallbacks = new Map();
+        /** @type {number} - Counter for generating unique deferred marker IDs */
+        this.deferredCounter = 0;
+
         this.transformDepth = 0;
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.activeTransformNode = null;
-        /** @type {Map<string, string>} */
-        this.markerMap = new Map();
-        this.markerCounter = 0;
-        this.scopeTasks = new Map();
-    }
-
-    /**
-     * Registers a deferred task and returns its ID.
-     * @param {function} callback - The task function.
-     * @returns {number} The task ID.
-     */
-    registerDeferredTask(callback, targetNodeId = null) {
-        const id = ++this.deferredTaskIdCounter;
-
-        // If no target ID provided, default to the current tree's root
-        const actualTargetId = targetNodeId !== null ? targetNodeId : (this.allTrees.length > 0 ? this.allTrees[this.allTrees.length - 1].rootNode.id : null);
-
-        this.deferredTasks.set(id, { callback, targetNodeId: actualTargetId });
-        if (actualTargetId !== null) {
-            if (!this.scopeTasks.has(actualTargetId)) {
-                this.scopeTasks.set(actualTargetId, []);
-            }
-            this.scopeTasks.get(actualTargetId).push(id);
-        }
-        return id;
     }
 
     /**
@@ -397,6 +381,7 @@ class Registry {
     }
 
     transform(source, originPath = 'unknown', parentHelpers = null) {
+        const transformId = Math.random().toString(36).substring(7);
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source);
         const tree = this._parse(cleanSource);
         if (!tree) return source;
@@ -405,16 +390,20 @@ class Registry {
             this.mainTree = tree;
             this.markerMap.clear();
             this.markerCounter = 0;
-            this.invocations = this.findInvocations(source);
+            // Use foundInvs which has wrappedStartIndex, not findInvocations(source)
+            this.invocations = foundInvs;
         }
 
         const helpers = isMain ? this.helpers : new UppHelpersC(this);
         if (parentHelpers) {
             helpers.topLevelInvocation = parentHelpers.topLevelInvocation || parentHelpers.invocation;
         }
-        const invocations = this.findInvocations(source);
+        // Use foundInvs which has wrappedStartIndex
+        // If foundInvs is empty (nested transform), inherit from parent
+        const invocationsToUse = foundInvs.length > 0 ? foundInvs : (parentHelpers?.currentInvocations || []);
         helpers.root = tree.rootNode;
-        helpers.currentInvocations = invocations;
+        helpers.currentInvocations = invocationsToUse;
+        helpers.transformId = transformId;
 
         return this.transformNode(tree.rootNode, cleanSource, helpers, originPath);
     }
@@ -423,9 +412,49 @@ class Registry {
         if (!node) return "";
         if (helpers.isConsumed(node)) return "";
 
+        if (node.type === 'comment') {
+            console.log(`[DEBUG] Found comment node: "${node.text.substring(0, 40)}"`);
+        }
+
         const oldActive = this.activeTransformNode;
         this.activeTransformNode = node;
         try {
+            // Check if this is a comment node with a macro invocation
+            if (node.type === 'comment' && node.text.startsWith('/*@') && node.text.endsWith('*/')) {
+                // Extract the macro invocation from the comment
+                const commentText = node.text.slice(2, -2); // Remove /* and */
+
+                // Parse the macro name from the comment text
+                const match = commentText.match(/^@(\w+)/);
+                if (match) {
+                    const macroName = match[1];
+                    const macro = this.getMacro(macroName);
+
+                    if (macro) {
+                        // Parse the arguments from the comment
+                        const argsMatch = commentText.match(/^@\w+\((.*)\)/);
+                        const argsText = argsMatch ? argsMatch[1] : '';
+                        const args = argsText ? argsText.split(',').map(s => s.trim()) : [];
+
+                        // Create a synthetic invocation object
+                        const invocation = {
+                            name: macroName,
+                            args: args,
+                            startIndex: node.startIndex,
+                            endIndex: node.endIndex,
+                            line: 0, // TODO: calculate from position
+                            col: 0,
+                            invocationNode: node // Pass the comment node so evaluateMacro can find next sibling
+                        };
+
+                        // Evaluate the macro
+                        const result = this.evaluateMacro(invocation, source, helpers, originPath);
+                        // Transform the result and return it (this will replace the comment)
+                        return this.transform(result, `result-of-@${macroName}`, helpers);
+                    }
+                }
+            }
+
             let repl = helpers.getReplacement(node);
             if (repl) {
                 return this.transform(repl.content, `replacement-of-${node.type}`, helpers);
@@ -491,12 +520,73 @@ class Registry {
                 return this.transform(repl.content, `deferred-replacement-of-${node.type}`, helpers);
             }
 
-            if (this.scopeTasks.has(node.id)) {
-                const tasks = this.scopeTasks.get(node.id);
-                for (const taskId of tasks) {
-                    const taskInfo = this.deferredTasks.get(taskId);
-                    if (taskInfo) {
-                        combined = this.executeDeferredTask(combined, taskInfo.callback, originPath);
+            // Process deferred callback markers - only at scope boundaries
+            if (combined.includes('__UPP_DEFERRED_') &&
+                (node.type === 'compound_statement' || node.type === 'translation_unit')) {
+                console.log(`[transformNode] Found deferred markers in SCOPE ${node.type}, combined length=${combined.length}`);
+                for (const [markerId, taskInfo] of this.deferredCallbacks.entries()) {
+                    if (combined.includes(markerId)) {
+                        console.log(`[transformNode] Processing marker ${markerId} at ${node.type}, targetType=${taskInfo.targetType}`);
+                        // Found a deferred marker - find the appropriate scope to execute at
+                        let targetNode = null;
+
+                        if (taskInfo.targetType === 'root') {
+                            // Find the translation_unit ancestor
+                            let current = node;
+                            while (current && current.type !== 'translation_unit') {
+                                current = current.parent;
+                            }
+                            targetNode = current;
+                        } else if (taskInfo.targetType === 'scope') {
+                            // Find the compound_statement ancestor
+                            let current = node;
+                            while (current && current.type !== 'compound_statement') {
+                                current = current.parent;
+                            }
+                            targetNode = current;
+                        }
+
+                        console.log(`[transformNode] targetNode: ${targetNode ? targetNode.type : 'NULL'}`);
+                        if (targetNode) {
+                            try {
+                                // Create a new helpers instance with the correct scope
+                                const scopedHelpers = new UppHelpersC(this);
+                                scopedHelpers.root = targetNode;
+                                scopedHelpers.invocation = taskInfo.context.invocation;
+                                scopedHelpers.contextNode = taskInfo.context.contextNode;
+
+                                // Execute the callback
+                                console.log(`[transformNode] Executing deferred callback for ${markerId}`);
+                                taskInfo.callback(targetNode, scopedHelpers);
+
+                                // If cleanup code was stored, insert it directly into combined string
+                                if (taskInfo.cleanupCode) {
+                                    console.log(`[transformNode] Inserting cleanup code into combined string`);
+
+                                    // Insert before all return statements
+                                    if (taskInfo.insertBeforeReturns) {
+                                        combined = combined.replace(/(\breturn\b)/g, `${taskInfo.cleanupCode} $1`);
+                                    }
+
+                                    // Insert before closing brace at end of scope
+                                    if (taskInfo.insertAtScopeEnd) {
+                                        const lastBraceIdx = combined.lastIndexOf('}');
+                                        if (lastBraceIdx !== -1) {
+                                            combined = combined.slice(0, lastBraceIdx) + taskInfo.cleanupCode + ' ' + combined.slice(lastBraceIdx);
+                                        }
+                                    }
+                                }
+
+                                // Remove the marker from output
+                                combined = combined.split(markerId).join('');
+
+                                // Remove from callbacks map
+                                this.deferredCallbacks.delete(markerId);
+                            } catch (e) {
+                                console.error(`Deferred callback execution failed for ${markerId}: ${e.message}`);
+                                console.error(e.stack);
+                            }
+                        }
                     }
                 }
             }
@@ -531,21 +621,51 @@ class Registry {
 
         let invocationNode = null;
         try {
-            invocationNode = helpers.root.descendantForIndex(invocation.startIndex, invocation.endIndex);
+            invocationNode = invocation.invocationNode || helpers.root.descendantForIndex(invocation.startIndex, invocation.endIndex);
         } catch (e) {
             console.log(`DEBUG: evaluateMacro failed to get invocationNode for @${invocation.name} at ${invocation.startIndex}`);
         }
+
         let contextNode = invocationNode;
-        if (contextNode && (
+
+        // Special handling for comment-wrapped macros
+        if (contextNode && contextNode.type === 'comment') {
+            // For comment nodes, the code to consume is the next sibling
+            contextNode = contextNode.nextSibling;
+        } else if (contextNode && (
             contextNode.type === 'translation_unit' ||
             contextNode.type === 'compound_statement' ||
             contextNode === helpers.root
         )) {
-             const nextNode = helpers.findNextNodeAfter(helpers.root, invocation.endIndex);
-             if (nextNode && nextNode.type !== 'translation_unit' && nextNode.type !== 'compound_statement' && nextNode.id !== helpers.root.id) {
+             // When in a nested context, we need to use the invocation from currentInvocations
+             // because invocation.endIndex is from the parent source, not the current tree
+             const isNestedContext = helpers.root && this.mainTree && helpers.root.id !== this.mainTree.rootNode.id;
+             let searchIndex = invocation.endIndex;
+
+             if (isNestedContext && helpers.currentInvocations) {
+                 console.log(`[contextNode] Nested context detected. Looking for invocation '${invocation.name}'`);
+                 console.log(`[contextNode] currentInvocations:`, helpers.currentInvocations.map(i => `${i.name}@${i.startIndex}-${i.endIndex}`));
+
+                 // Find the matching invocation in the current tree's invocations
+                 const currentInv = helpers.currentInvocations.find(inv =>
+                     inv.name === invocation.name && !inv.skipped
+                 );
+                 console.log(`[contextNode] Found matching invocation: ${currentInv ? 'YES' : 'NO'}`);
+                 if (currentInv) {
+                     searchIndex = currentInv.endIndex;
+                     console.log(`[contextNode] Using searchIndex=${searchIndex} from currentInv`);
+                 }
+             }
+
+             console.log(`[contextNode] Searching for nextNode after index ${searchIndex} in tree with text: ${helpers.root.text.substring(0, 100)}...`);
+             const nextNode = helpers.findNextNodeAfter(helpers.root, searchIndex);
+             console.log(`[contextNode] findNextNodeAfter returned: ${nextNode ? `${nextNode.type} [${nextNode.startIndex}-${nextNode.endIndex}]` : 'NULL'}`);
+             if (nextNode && nextNode.type !== 'translation_unit' && nextNode.id !== helpers.root.id) {
                  contextNode = nextNode;
+                 console.log(`[contextNode] Set contextNode to: ${contextNode.type}`);
              } else {
                  contextNode = (invocationNode && invocationNode.type !== 'translation_unit') ? invocationNode : null;
+                 console.log(`[contextNode] contextNode set to: ${contextNode ? contextNode.type : 'NULL'} (fallback)`);
              }
         }
         helpers.invocation = { ...invocation, invocationNode };
@@ -573,7 +693,25 @@ class Registry {
             this.activeMacro = invocation.name;
             const result = macroFn(helpers, console, ...args);
             this.activeMacro = null;
-            let output = result !== undefined ? (typeof result === 'object' ? result.text : String(result)) : "";
+
+            // Handle different return types:
+            // - tree object (has .tree property): use toString()
+            // - null: delete the node (return empty string)
+            // - undefined: no substitution (return empty string, macro modified in-place)
+            // - string: use as-is
+            let output = "";
+            if (result === null || result === undefined) {
+                output = "";
+            } else if (typeof result === 'object' && result.tree) {
+                // Tree object from upp.code
+                output = result.toString();
+            } else if (typeof result === 'object' && result.text !== undefined) {
+                // Legacy object with .text property (for backward compatibility during transition)
+                output = result.text;
+            } else {
+                // String or other primitive
+                output = String(result);
+            }
             return output;
         } catch (err) {
             if (!err.isUppError) {
@@ -597,8 +735,8 @@ class Registry {
         }
     }
 
-    executeDeferredTask(combinedText, callback, originPath) {
-        const isTU = combinedText.includes('main') && (combinedText.includes('int ') || combinedText.includes('void '));
+    executeDeferredTask(combinedText, callback, originPath, originalType) {
+        const isTU = originalType === 'translation_unit';
         // We wrap in a function IF it doesn't look like a full TU.
         // Most deferred tasks (like @defer) are in blocks.
         const wrappedSource = isTU ? combinedText : `void __upp_temp_func() {\n${combinedText}\n}`;
@@ -607,10 +745,13 @@ class Registry {
 
         let targetNode = tempTree.rootNode;
         if (!isTU) {
-            let func = tempTree.rootNode.child(0);
-            if (func && func.type === 'function_definition') {
-                targetNode = func.childForFieldName('body');
+            // Find the node that corresponds to combinedText.
+            // It starts at index 25 in the wrapped source.
+            let candidate = tempTree.rootNode.descendantForIndex(25, 25);
+            while (candidate && candidate.parent && candidate.parent.startIndex === 25 && (candidate.parent.endIndex - 25) <= combinedText.length) {
+                candidate = candidate.parent;
             }
+            targetNode = candidate;
         }
 
         tempHelpers.root = targetNode;
@@ -730,12 +871,25 @@ class Registry {
         }
 
         const foundInvs = this.findInvocations(cleanSource);
-        const invsToMask = [...foundInvs].sort((a, b) => b.startIndex - a.startIndex);
-        for (const inv of invsToMask) {
-            const text = cleanSource.slice(inv.startIndex, inv.endIndex);
-            const replacement = text.replace(/[^\r\n]/g, ' ');
-            cleanSource = cleanSource.slice(0, inv.startIndex) + replacement + cleanSource.slice(inv.endIndex);
+
+        // Instead of masking invocations with spaces, wrap them in comments
+        // This makes the source parse as valid C while preserving macro information
+        const invsToWrap = [...foundInvs].sort((a, b) => b.startIndex - a.startIndex);
+        let cumulativeOffset = 0; // Track how much we've shifted positions
+
+        for (const inv of invsToWrap) {
+            const invText = cleanSource.slice(inv.startIndex, inv.endIndex);
+            // Wrap in comment: @allocate(100) becomes /*@allocate(100)*/
+            const wrapped = `/*${invText}*/`;
+            const addedChars = wrapped.length - invText.length; // Should be 4 (/* and */)
+
+            cleanSource = cleanSource.slice(0, inv.startIndex) + wrapped + cleanSource.slice(inv.endIndex);
+
+            // The comment node will start at inv.startIndex in the wrapped source
+            inv.wrappedStartIndex = inv.startIndex;
+            inv.wrappedEndIndex = inv.startIndex + wrapped.length;
         }
+
         return { cleanSource, invocations: foundInvs };
     }
 
@@ -764,6 +918,96 @@ class Registry {
 
     registerTransform(fn) {
         this.transforms.push(fn);
+    }
+
+    /**
+     * Register a deferred task to be executed when recursion reaches the target scope/root
+     * @param {number} markerId - Unique marker ID
+     * @param {function} callback - Callback to execute with (scope/root node, helpers)
+     * @param {string} targetType - 'scope' or 'root'
+     * @param {Object} capturedContext - Context captured at registration time
+     */
+    registerDeferredTask(markerId, callback, targetType, capturedContext) {
+        this.deferredQueue.push({ markerId, callback, targetType, capturedContext });
+    }
+
+    /**
+     * Check if current node matches any queued deferred tasks and execute them
+     * @param {import('tree-sitter').SyntaxNode} node - Current node being processed
+     * @param {UppHelpersC} helpers - Helpers instance for this transformation
+     */
+    checkAndExecuteDeferredTasks(node, helpers) {
+        const nodeId = node.id;
+        const tasksToExecute = [];
+        const remainingTasks = [];
+
+        if (this.deferredQueue.length > 0) {
+            console.log(`[Queue Check] Node type=${node.type}, id=${nodeId}, queue size=${this.deferredQueue.length}`);
+        }
+
+        for (const task of this.deferredQueue) {
+            const markedNodeId = this.nodeMarkers.get(task.markerId);
+            console.log(`  [Task] marker=${task.markerId}, markedNodeId=${markedNodeId}, targetType=${task.targetType}`);
+
+            if (task.targetType === 'root') {
+                // Execute at translation_unit or root
+                if (node.type === 'translation_unit' || node.parent === null) {
+                    console.log(`    -> Executing at root`);
+                    tasksToExecute.push(task);
+                } else {
+                    remainingTasks.push(task);
+                }
+            } else if (task.targetType === 'scope') {
+                // Execute when we reach a compound_statement that contains the marked node
+                // We need to check if this node is a scope and if it contains the marked node
+                if (node.type === 'compound_statement') {
+                    // Check if the marked node is a descendant of this scope
+                    let current = this.findNodeById(node, markedNodeId);
+                    if (current) {
+                        console.log(`    -> Executing at scope (found marked node)`);
+                        tasksToExecute.push(task);
+                    } else {
+                        console.log(`    -> Not executing (marked node not found in this scope)`);
+                        remainingTasks.push(task);
+                    }
+                } else {
+                    remainingTasks.push(task);
+                }
+            }
+        }
+
+        // Execute matched tasks
+        for (const task of tasksToExecute) {
+            try {
+                // Create a new helpers instance with the correct scope
+                const scopedHelpers = new UppHelpersC(this);
+                scopedHelpers.root = node;
+                scopedHelpers.invocation = task.capturedContext.invocation;
+                scopedHelpers.contextNode = task.capturedContext.contextNode;
+
+                task.callback(node, scopedHelpers);
+            } catch (e) {
+                console.error(`Deferred task execution failed: ${e.message}`);
+            }
+        }
+
+        // Update queue
+        this.deferredQueue = remainingTasks;
+    }
+
+    /**
+     * Find a node by ID within a subtree
+     * @param {import('tree-sitter').SyntaxNode} root - Root node to search from
+     * @param {number} targetId - Node ID to find
+     * @returns {import('tree-sitter').SyntaxNode|null}
+     */
+    findNodeById(root, targetId) {
+        if (root.id === targetId) return root;
+        for (let i = 0; i < root.childCount; i++) {
+            const found = this.findNodeById(root.child(i), targetId);
+            if (found) return found;
+        }
+        return null;
     }
 
     resolveInclude(filePath) {

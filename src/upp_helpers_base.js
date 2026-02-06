@@ -29,6 +29,8 @@ class UppHelpersBase {
         this.isDeferred = false;
         /** @type {Map<number, Object>} */
         this.nodeCache = new Map();
+        /** @type {Array} */
+        this.currentInvocations = []; // List of invocations in current source
     }
 
     /**
@@ -90,22 +92,51 @@ class UppHelpersBase {
 
     /**
      * Schedules a task to run at the root of the file after children are transformed.
+     * Returns a marker string that should be included in the macro's output.
      * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
+     * @returns {string} Marker string to include in output
      */
     atRoot(callback) {
-        this.registry.registerDeferredTask(callback, this.root.id);
+        // Generate unique marker string
+        const markerId = `__UPP_DEFERRED_${this.registry.deferredCounter++}__`;
+
+        // Store callback with metadata
+        this.registry.deferredCallbacks.set(markerId, {
+            callback,
+            targetType: 'root',
+            context: {
+                invocation: this.invocation,
+                contextNode: this.contextNode
+            }
+        });
+
+        return markerId;
     }
 
     /**
      * Schedules a task to run at the end of the enclosing scope.
+     * Returns a marker string that should be included in the macro's output.
      * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
+     * @returns {string} Marker string to include in output
      */
     inScope(callback) {
-        const scope = this.findEnclosing(this.contextNode || (this.invocation && this.invocation.invocationNode), 'compound_statement');
-        if (!scope) {
-            return this.atRoot(callback);
-        }
-        this.registry.registerDeferredTask(callback, scope.id);
+        // Generate unique marker string
+        const markerId = `__UPP_DEFERRED_${this.registry.deferredCounter++}__`;
+
+        // Store callback with metadata
+        // NOTE: We don't try to find the scope here because the node might not be
+        // in the tree yet (e.g., when transforming a subtree returned by a macro).
+        // The marker processor will find the containing scope when the marker is encountered.
+        this.registry.deferredCallbacks.set(markerId, {
+            callback,
+            targetType: 'scope',
+            context: {
+                invocation: this.invocation,
+                contextNode: this.contextNode
+            }
+        });
+
+        return markerId;
     }
 
     /**
@@ -149,23 +180,35 @@ class UppHelpersBase {
      * Tagged template literal for generating code and parse trees.
      * @param {TemplateStringsArray} strings - Template strings.
      * @param {...any} values - Interpolated values.
-     * @returns {{text: string, tree: function(): import('tree-sitter').Tree}} An object containing the generated text and a lazy tree parser.
+     * @returns {{tree: import('tree-sitter').Tree, toString: function(): string}} An object containing the parsed tree and a toString method.
      */
     code(strings, ...values) {
-        const result = strings.reduce((acc, str, i) => {
+        // Build the text by interpolating values
+        const text = strings.reduce((acc, str, i) => {
             let value = values[i] !== undefined ? values[i] : '';
-            if (value && typeof value === 'object' && value.text !== undefined) {
+
+            // If value is a tree object (from another upp.code call), get its text
+            if (value && typeof value === 'object' && value.tree) {
+                value = value.toString();
+            }
+            // If value has a .text property, use that
+            else if (value && typeof value === 'object' && value.text !== undefined) {
                 value = value.text;
             }
+
             return acc + str + value;
         }, '');
 
+        // Parse immediately
+        const parser = new Parser();
+        parser.setLanguage(this.registry.language);
+        const tree = parser.parse(text);
+
+        // Return tree object with toString() for debugging
         return {
-            text: result,
-            tree: () => {
-                const parser = new Parser();
-                parser.setLanguage(this.registry.language);
-                return parser.parse(result);
+            tree,
+            toString() {
+                return tree.rootNode.text;
             }
         };
     }
@@ -406,17 +449,33 @@ class UppHelpersBase {
 
         // Check for pending macro invocations in the gap
         if (this.currentInvocations) {
-            let searchStart = this.invocation ? this.invocation.endIndex : 0;
+            // When in a nested context (this.root is not mainTree), we need to find the
+            // invocation in currentInvocations that corresponds to the current macro,
+            // because this.invocation has indices from the parent source.
+            let currentInv = this.invocation;
+            const isNestedContext = this.root && this.registry.mainTree && this.root.id !== this.registry.mainTree.rootNode.id;
+
+            if (isNestedContext && this.invocation) {
+                // Find the invocation in currentInvocations that matches the current macro name
+                const matchingInv = this.currentInvocations.find(inv =>
+                    inv.name === this.invocation.name && !inv.skipped
+                );
+                if (matchingInv) {
+                    currentInv = matchingInv;
+                }
+            }
+
+            let searchStart = currentInv ? currentInv.endIndex : 0;
             if (this.lastConsumedNode) {
                 if (this.lastConsumedNode.endIndex !== undefined) {
                     searchStart = this.lastConsumedNode.endIndex;
                 }
-            } else if (this.invocation && !this.invocation.hasNodeParam && this.contextNode) {
+            } else if (currentInv && !currentInv.hasNodeParam && this.contextNode) {
                  // Start searching after the current invocation
-                 searchStart = this.invocation.endIndex;
+                 searchStart = currentInv.endIndex;
             }
 
-            const candidates = this.currentInvocations.filter(i => i.startIndex >= searchStart && i !== this.invocation);
+            const candidates = this.currentInvocations.filter(i => i.startIndex >= searchStart && i !== currentInv);
             candidates.sort((a,b) => a.startIndex - b.startIndex);
             const nextInv = candidates[0];
 
@@ -454,7 +513,9 @@ class UppHelpersBase {
                     let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
                     let searchIdx = anchor.endIndex;
 
-                    if (this.topLevelInvocation && this.registry.mainTree) {
+                    // Only use mainTree if we don't have a local root
+                    // (this.root is set when we're transforming code from upp.code)
+                    if (!this.root && this.topLevelInvocation && this.registry.mainTree) {
                         rootForSearch = this.registry.mainTree.rootNode;
                         const isSelf = (anchor.id === this.invocation?.invocationNode?.id);
                         searchIdx = isSelf ? (this.topLevelInvocation.endIndex) : searchIdx;
@@ -473,7 +534,8 @@ class UppHelpersBase {
                     if (!node) {
                         let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
                         let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
-                        if (this.topLevelInvocation && this.registry.mainTree) {
+                        // Only use mainTree if we don't have a local root
+                        if (!this.root && this.topLevelInvocation && this.registry.mainTree) {
                             rootForSearch = this.registry.mainTree.rootNode;
                             searchIdx = this.topLevelInvocation.endIndex;
                         }
@@ -711,14 +773,16 @@ class UppHelpersBase {
         if (!root) return null;
 
         let node = root.descendantForIndex(index, index);
+        const rawRoot = root.__internal_raw_node || root;
 
         while (node && node.endIndex <= index) {
-            if (node.nextNamedSibling) {
-                node = node.nextNamedSibling;
+            const rawNode = node.__internal_raw_node || node;
+            if (rawNode.nextNamedSibling) {
+                node = rawNode.nextNamedSibling;
                 break;
             }
-            node = node.parent;
-            if (!node || node === root) break;
+            node = rawNode.parent;
+            if (!node || (node.__internal_raw_node || node) === rawRoot) break;
         }
 
         if (!node) return null;
@@ -746,9 +810,11 @@ class UppHelpersBase {
         }
 
         if (node) {
-            while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
-                node = node.parent;
+            let rawNode = node.__internal_raw_node || node;
+            while (rawNode.parent && rawNode.parent.startIndex === rawNode.startIndex && rawNode.parent.type !== 'translation_unit') {
+                rawNode = rawNode.parent;
             }
+            node = rawNode;
         }
 
         const finalNode = node && node.isNamed ? node : (node ? node.nextNamedSibling : null);

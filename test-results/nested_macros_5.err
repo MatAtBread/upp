@@ -1,0 +1,4 @@
+examples/nested_macros_5.c: In function ‘main’:
+examples/nested_macros_5.c:16:38: error: expected ‘,’ or ‘;’ before ‘expanded_inner’
+   16 |     int n = expanded_inner + 10 + 20 expanded_inner + 10;
+      |                                      ^~~~~~~~~~~~~~

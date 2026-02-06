@@ -1,0 +1,21 @@
+[33m./examples/trap.cup:14:38: warning: [0] Restricted access to node.parent detected in macro @trap. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+    @trap({ return value * 2; }) int x;
+                                     [33m^[0m
+[33m./examples/trap.cup:15:26: warning: [0] Restricted access to node.parent detected in macro @trap. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+    @trap(my_logger) int y;
+                         [33m^[0m
+[33m./examples/trap.cup:21:38: warning: [0] Restricted access to node.parent detected in macro @trap. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.[0m
+    @trap({ return value + 1; }) int z = 10;
+                                     [33m^[0m
+examples/trap.c: In function ‘main’:
+examples/trap.c:19:11: warning: implicit declaration of function ‘x_trap_0’ [-Wimplicit-function-declaration]
+   19 |     p.x = x_trap_0(10);
+      |           ^~~~~~~~
+examples/trap.c:21:13: warning: implicit declaration of function ‘z_trap_1’ [-Wimplicit-function-declaration]
+   21 |     int z = z_trap_1(10);
+      |             ^~~~~~~~
+/usr/bin/ld: /tmp/ccXXXX.o: in function `main':
+trap.c:(.text+0x44): undefined reference to `x_trap_0'
+/usr/bin/ld: trap.c:(.text+0x63): undefined reference to `z_trap_1'
+/usr/bin/ld: trap.c:(.text+0x75): undefined reference to `z_trap_1'
+collect2: error: ld returned 1 exit status

@@ -1,0 +1,16 @@
+#include "method.h"
+struct Point {
+    int x;
+    int y;
+};
+typedef struct Point Point;
+int _Point_method_distance(Point *p) {
+    return p->x * p->x + p->y * p->y;
+} 
+int main() {
+    Point p;
+    p.x = 10;
+    p.y = 20;
+    int r = _Point_method_distance(&(p));
+    return 0;
+}

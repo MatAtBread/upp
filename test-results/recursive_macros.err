@@ -1,0 +1,4 @@
+examples/recursive_macros.c: In function ‘_String_method_Defer’:
+examples/recursive_macros.c:19:6: error: ‘String’ has no member named ‘print’
+   19 |     s->print();
+      |      ^~

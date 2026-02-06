@@ -1,0 +1,12 @@
+examples/end_scope.c: In function ‘main’:
+examples/end_scope.c:20:13: error: ‘nested’ undeclared (first use in this function)
+   20 |     }{ free(nested); nested = ((void*)0); }
+      |             ^~~~~~
+examples/end_scope.c:20:13: note: each undeclared identifier is reported only once for each function it appears in
+examples/end_scope.c: At top level:
+examples/end_scope.c:24:2: error: expected identifier or ‘(’ before ‘{’ token
+   24 | }{ free(str1); str1 = ((void*)0); } { free(str2); str2 = ((void*)0); }
+      |  ^
+examples/end_scope.c:24:37: error: expected identifier or ‘(’ before ‘{’ token
+   24 | }{ free(str1); str1 = ((void*)0); } { free(str2); str2 = ((void*)0); }
+      |                                     ^

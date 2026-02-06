@@ -2,36 +2,42 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
+    console.log(`\\n=== @defer DEBUG ===`);
+    console.log(`Invocation: start=${upp.invocation.startIndex}, end=${upp.invocation.endIndex}`);
+    console.log(`lastConsumedNode: ${upp.lastConsumedNode ? upp.lastConsumedNode.type : 'null'}`);
+    console.log(`contextNode: ${upp.contextNode ? upp.contextNode.type : 'null'}`);
+    if (upp.contextNode) {
+        console.log(`  contextNode.text: ${upp.contextNode.text.substring(0, 60)}...`);
+        console.log(`  contextNode.range: [${upp.contextNode.startIndex}-${upp.contextNode.endIndex}]`);
+    }
+    console.log(`root.text: ${upp.root.text.substring(0, 100)}...`);
+    console.log(`root.id: ${upp.root.id}, mainTree.id: ${upp.registry.mainTree.rootNode.id}`);
+    console.log(`isNestedContext: ${upp.root.id !== upp.registry.mainTree.rootNode.id}`);
+
     const node = upp.consume();
     if (!node) return "";
     const deferredText = node.text;
 
-    upp.inScope((scope, helpers) => {
-        // 1. Check for forbidden flow control anywhere in the scope
-        helpers.walk(scope, (n) => {
-            if (['break_statement', 'continue_statement', 'goto_statement'].includes(n.type)) {
-                 // Note: We use helpers.error or throw.
-                 // Inside a deferred task, exceptions are caught by the registry.
-                 throw new Error(`@defer cannot be used in a scope containing ${n.type.replace('_statement', '')}`);
-            }
-        });
+    console.log(`Consumed node: type=${node.type}, range=[${node.startIndex}-${node.endIndex}]`);
+    console.log(`  text: ${deferredText.substring(0, 60)}...`);
+    console.log(`===================\\n`);
 
-        // 2. Insert before all return statements in this scope
-        helpers.walk(scope, (n) => {
-            if (n.type === 'return_statement') {
-                helpers.replace({ start: n.startIndex, end: n.startIndex }, `${deferredText} `);
-            }
-        });
+    const marker = upp.inScope((scope, helpers) => {
+        console.log(`[@defer callback] Executing for scope type=${scope.type}, deferredText length=${deferredText.length}`);
 
-        // 3. Insert before the block's closing brace, but only if the last statement isn't a return
-        const lastStmt = scope.lastNamedChild;
-        if (lastStmt && lastStmt.type !== 'return_statement') {
-            const endBrace = scope.endIndex - 1;
-            helpers.replace({ start: endBrace, end: endBrace }, `${deferredText} `);
+        // Store the cleanup code in the task info so the registry can insert it
+        const taskInfo = helpers.registry.deferredCallbacks.get(marker);
+        if (taskInfo) {
+            taskInfo.cleanupCode = deferredText;
+            taskInfo.insertBeforeReturns = true;
+            taskInfo.insertAtScopeEnd = true;
         }
+
+        console.log(`[@defer callback] Stored cleanup code for later insertion`);
     });
 
-    return "";
+    console.log(`[@defer] Returning marker: ${marker}`);
+    return marker;
 }
 
 #endif
