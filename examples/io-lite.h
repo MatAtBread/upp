@@ -7,5 +7,5 @@ extern int fputs (const char *s, void *stream);
 extern void* stderr;
 extern void *malloc(unsigned long n);
 extern void free(void *p);
-extern char *strcpy(char *dest, const char *src);#define NULL ((void*)0)
-#define NULL   ((void*)0)
+extern char *strcpy(char *dest, const char *src);
+#define NULL ((void*)0)

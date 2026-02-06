@@ -27,6 +27,8 @@ class UppHelpersBase {
         this.lastConsumedNode = null;
         /** @type {boolean} */
         this.isDeferred = false;
+        /** @type {Map<number, Object>} */
+        this.nodeCache = new Map();
     }
 
     /**
@@ -36,18 +38,26 @@ class UppHelpersBase {
      */
     wrapNode(node) {
         if (!node || node.__isWrapped) return node;
+
+        // Check cache first by ID
+        if (node.id !== undefined && this.nodeCache.has(node.id)) {
+            return this.nodeCache.get(node.id);
+        }
+
         const registry = this.registry;
         const helpers = this;
 
         // Use a simple proxy to intercept .parent and .rootNode
-        return new Proxy(node, {
+        const proxy = new Proxy(node, {
             get(target, prop) {
                 if (prop === '__isWrapped') return true;
+                if (prop === '__internal_raw_node') return target;
                 if (prop === 'parent' || prop === 'rootNode') {
                     if (!helpers.isDeferred) {
+                         const macroInfo = registry.activeMacro ? ` in macro @${registry.activeMacro}` : "";
                          registry.diagnostics.reportWarning(
-                             0, // DiagnosticCodes.DEBUG_INFO or similar
-                             `Restricted access to node.${prop} detected in macro. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.`,
+                             0,
+                             `Restricted access to node.${prop} detected${macroInfo}. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.`,
                              registry.filePath,
                              target.startPosition.row + 1,
                              target.startPosition.column + 1,
@@ -71,6 +81,11 @@ class UppHelpersBase {
                 return value;
             }
         });
+
+        if (node.id !== undefined) {
+             this.nodeCache.set(node.id, proxy);
+        }
+        return proxy;
     }
 
     /**
@@ -159,6 +174,7 @@ class UppHelpersBase {
      * Replaces a node with new content.
      * @param {import('tree-sitter').SyntaxNode|{start: number, end: number}} n - The node or range to replace.
      * @param {string|{text: string}} newContent - The new content string or object with text property.
+     * @returns {string|null} A marker string if the replacement targets an ancestor, otherwise null.
      */
     replace(n, newContent) {
         const start = n.startIndex !== undefined ? n.startIndex : n.start;
@@ -171,7 +187,7 @@ class UppHelpersBase {
             isGlobal = (this === this.registry.helpers);
         }
 
-        if (isGlobal && this.registry.isInsideInvocation(start, end)) {
+        if (this.registry.isInsideInvocation(start, end)) {
             if (!(this.invocation && this.invocation.startIndex === start && this.invocation.endIndex === end)) {
                 return;
             }
@@ -196,6 +212,23 @@ class UppHelpersBase {
                 this.replacementMap.set(n.id, replacement);
             }
         }
+
+        // Marker System: If this replacement targets a node ABOVE the current transformation context,
+        // we should return a marker so the macro can embed it if needed.
+        if (this.registry.activeTransformNode && n.id !== undefined) {
+            const active = this.registry.activeTransformNode;
+            let p = active.__internal_raw_node || active;
+            while (p) {
+                if (p.id === n.id) {
+                    const markerId = `__UPP_MARKER_${++this.registry.markerCounter}__`;
+                    this.registry.markerMap.set(markerId, replacement.content);
+                    return markerId;
+                }
+                p = p.parent;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -205,7 +238,11 @@ class UppHelpersBase {
      */
     getReplacement(node) {
         if (!node) return null;
-        return this.replacementMap.get(node.id) || null;
+        let repl = this.replacementMap.get(node.id) || null;
+        if (!repl && this.registry.helpers && this.registry.helpers !== this) {
+            repl = this.registry.helpers.getReplacement(node);
+        }
+        return repl;
     }
 
     /**
@@ -235,11 +272,12 @@ class UppHelpersBase {
      */
     walk(node, callback) {
         if (!node) return;
-        callback(node);
-        const count = node.childCount;
+        const wrapped = this.wrapNode(node);
+        callback(wrapped);
+        const count = wrapped.childCount;
         for (let i = 0; i < count; i++) {
             try {
-                this.walk(node.child(i), callback);
+                this.walk(wrapped.child(i), callback);
             } catch (e) {
                 // Ignore traversal errors for bad nodes (e.g. NodeClass constructor issues)
             }
@@ -296,14 +334,15 @@ class UppHelpersBase {
     query(pattern, node) {
         const query = new Query(this.registry.language, pattern);
         let targetNode = node || this.root;
-        if (targetNode && targetNode.rootNode) {
-            targetNode = targetNode.rootNode;
+        const raw = targetNode ? (targetNode.__internal_raw_node || targetNode) : null;
+        if (raw && raw.rootNode) {
+            targetNode = raw.rootNode;
         }
         if (!targetNode) {
             console.error("UppHelpersBase.query: targetNode is null/undefined");
             return [];
         }
-        const matches = query.matches(targetNode);
+        const matches = query.matches(targetNode.__internal_raw_node || targetNode);
 
         return matches.map(m => {
             const captures = {};
@@ -382,8 +421,6 @@ class UppHelpersBase {
             const nextInv = candidates[0];
 
             if (nextInv) {
-                // Check gap first. If gap is clean, we consume the macro,
-                // regardless of what contextNode/node thinks (it might be a surrounding node).
                 const gap = this.registry.sourceCode.slice(searchStart, nextInv.startIndex);
                 const isGapClean = !gap.trim() || (this.registry.config.comments && gap.trim().startsWith('/*'));
 
@@ -414,11 +451,18 @@ class UppHelpersBase {
             if (anchor) {
                 if (anchor.type === 'macro_invocation') {
                     // Preceding macro in a gap. Search starts after its end.
-                    node = this.findNextNodeAfter(this.root || this.registry.mainTree.rootNode, anchor.endIndex);
+                    let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
+                    let searchIdx = anchor.endIndex;
+
+                    if (this.topLevelInvocation && this.registry.mainTree) {
+                        rootForSearch = this.registry.mainTree.rootNode;
+                        const isSelf = (anchor.id === this.invocation?.invocationNode?.id);
+                        searchIdx = isSelf ? (this.topLevelInvocation.endIndex) : searchIdx;
+                    }
+                    node = this.findNextNodeAfter(rootForSearch, searchIdx);
                 } else if (anchor.startIndex <= (this.invocation ? this.invocation.startIndex : 0) &&
                            anchor.endIndex >= (this.invocation ? this.invocation.endIndex : anchor.endIndex)) {
                     // Anchor is a parent node (COVERS the current invocation).
-                    // We want the first child of this parent that starts AFTER the macro.
                     let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
                     let child = anchor.firstNamedChild;
                     while (child && child.startIndex < searchIdx) {
@@ -426,24 +470,36 @@ class UppHelpersBase {
                     }
                     node = child;
 
-                    // If no child found in parent, maybe it's outside?
                     if (!node) {
-                        node = this.findNextNodeAfter(this.root || this.registry.mainTree.rootNode, searchIdx);
+                        let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
+                        let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
+                        if (this.topLevelInvocation && this.registry.mainTree) {
+                            rootForSearch = this.registry.mainTree.rootNode;
+                            searchIdx = this.topLevelInvocation.endIndex;
+                        }
+                        node = this.findNextNodeAfter(rootForSearch, searchIdx);
                     }
                 } else {
-                    // Anchor is a preceding sibling.
                     node = anchor.nextNamedSibling;
                     while (node && node.type.includes('comment')) {
                         node = node.nextNamedSibling;
                     }
                 }
             } else {
-                // No anchor. fallback to searching from root using macro end index.
-                let root = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
-                if (root && this.invocation) {
-                    node = this.findNextNodeAfter(root, this.invocation.endIndex);
-                } else if (root) {
-                    node = root.namedChild(0);
+                let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
+                if (rootForSearch && this.invocation) {
+                    const isLocal = (this.root && rootForSearch.id === this.root.id);
+                    if (isLocal && this.topLevelInvocation && this.registry.mainTree) {
+                        node = this.findNextNodeAfter(this.registry.mainTree.rootNode, this.topLevelInvocation.endIndex);
+                    } else if (isLocal) {
+                        node = this.findNextNodeAfter(rootForSearch, this.invocation.endIndex);
+                    } else {
+                        const anchorInv = this.topLevelInvocation || this.invocation;
+                        const searchRoot = this.registry.mainTree ? this.registry.mainTree.rootNode : rootForSearch;
+                        node = this.findNextNodeAfter(searchRoot, anchorInv.endIndex);
+                    }
+                } else if (rootForSearch) {
+                    node = rootForSearch.namedChild(0);
                 }
             }
         }
@@ -453,14 +509,11 @@ class UppHelpersBase {
              return null;
          }
 
-         // UPWARD DRILLING: If we found a sub-node (like primitive_type),
-         // drill up to find the largest node starting at the same point (like function_definition).
-         // This is important for macros that expect a "top-level" item.
          while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
              node = node.parent;
          }
+        //  console.log(`DEBUG: consume after drilling: type=${node.type} text="${node.text.slice(0, 40)}${node.text.length > 40 ? '...' : ''}"`);
 
-        // Structural drilling if type mismatch or ERROR node
         if (node && (node.type === 'ERROR' || (expectedTypes && !expectedTypes.includes(node.type)))) {
             let current = node;
             while (current && current.namedChildCount > 0 && (!expectedTypes || !expectedTypes.includes(current.type))) {
@@ -475,7 +528,6 @@ class UppHelpersBase {
                     break;
                 }
             }
-            // If we drilled down and still have an ERROR, try to find the target among children
             if (current && current.type === 'ERROR' && expectedTypes) {
                 for (let i=0; i < current.namedChildCount; i++) {
                     const c = current.namedChild(i);
@@ -501,7 +553,7 @@ class UppHelpersBase {
             this.registry.visitedNodes.set('consumed', new Set());
         }
         this.registry.visitedNodes.get('consumed').add(node.id);
-        return node;
+        return this.wrapNode(node);
     }
 
     /**
@@ -512,8 +564,10 @@ class UppHelpersBase {
      */
     isDescendant(parent, node) {
         let current = node;
+        const rawParent = parent ? (parent.__internal_raw_node || parent) : null;
         while (current) {
-            if (current === parent || current.id === parent.id) return true;
+            const rawCurrent = current.__internal_raw_node || current;
+            if (rawCurrent === rawParent || rawCurrent.id === rawParent.id) return true;
             current = this.parent(current);
         }
         return false;
@@ -526,9 +580,21 @@ class UppHelpersBase {
      */
     parent(node) {
         try {
-            const p = node ? node.parent : null;
+            const raw = node ? (node.__internal_raw_node || node) : null;
+            const p = raw ? raw.parent : null;
             return this.wrapNode(p);
         } catch (e) { return null; }
+    }
+
+    /**
+     * Checks if two nodes are identical.
+     * @param {import('tree-sitter').SyntaxNode} n1 - First node.
+     * @param {import('tree-sitter').SyntaxNode} n2 - Second node.
+     * @returns {boolean} True if same node.
+     */
+    isSameNode(n1, n2) {
+        if (!n1 || !n2) return n1 === n2;
+        return n1 === n2 || n1.id === n2.id;
     }
 
     /**
@@ -566,7 +632,22 @@ class UppHelpersBase {
      * @returns {import('tree-sitter').SyntaxNode|null} The child node.
      */
     childForFieldName(node, name) {
-        try { return (node && node.childByFieldName) ? node.childByFieldName(name) : null; } catch (e) { return null; }
+        if (!node) return null;
+        try {
+            const child = node.childByFieldName ? node.childByFieldName(name) : null;
+            if (child) return child;
+
+            if (node.childCount && node.fieldNameForChild) {
+                for (let i = 0; i < node.childCount; i++) {
+                    if (node.fieldNameForChild(i) === name) {
+                        return node.child(i);
+                    }
+                }
+            }
+            return null;
+        } catch (e) {
+            return null;
+        }
     }
 
     /**
@@ -585,7 +666,6 @@ class UppHelpersBase {
      */
     parseFragment(text) {
         try {
-             // Use registry._parse which returns a Tree
              const tree = this.registry._parse(text);
              return tree.rootNode;
         } catch (e) {
@@ -612,16 +692,12 @@ class UppHelpersBase {
      * @param {string} filePath - Path to the dependency.
      */
     loadDependency(filePath) {
-        // Resolve path relative to current file if not absolute
         let resolvedPath = filePath;
-        if (!path.isAbsolute(filePath)) { // we need path module here, or assume registry handles it?
-             // Registry.resolveInclude handles path resolution logic.
-             // But we want to trigger the specific load.
-             // We can use registry.resolveInclude to find it first.
-             const resolved = this.registry.resolveInclude(filePath);
-             if (resolved) {
-                 resolvedPath = resolved;
-             }
+        if (!path.isAbsolute(filePath)) {
+            const resolved = this.registry.resolveInclude(filePath);
+            if (resolved) {
+                resolvedPath = resolved;
+            }
         }
         this.registry.loadDependency(resolvedPath);
     }
@@ -635,7 +711,7 @@ class UppHelpersBase {
         if (!root) return null;
 
         let node = root.descendantForIndex(index, index);
-        // If we found a node that ends BEFORE our index, move to next sibling or parent's sibling
+
         while (node && node.endIndex <= index) {
             if (node.nextNamedSibling) {
                 node = node.nextNamedSibling;
@@ -647,8 +723,6 @@ class UppHelpersBase {
 
         if (!node) return null;
 
-        // If we have a node that encompasses the index, or starts after it
-        // and it's a parent, drill down to find the first named child that starts >= index
         while (node) {
              let firstChild = null;
              for (let i = 0; i < node.namedChildCount; i++) {
@@ -663,7 +737,6 @@ class UppHelpersBase {
                  if (firstChild.startIndex <= index) {
                      node = firstChild;
                  } else {
-                     // Starts after index, this is our best bet at this level
                      node = firstChild;
                      break;
                  }
@@ -672,16 +745,21 @@ class UppHelpersBase {
              }
         }
 
-        // At this point, node is the deepest descendant starting at or after index.
-        // We actually want the WIDEST node that starts at this position.
-        // Walk up as long as the startIndex is the same.
         if (node) {
             while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
                 node = node.parent;
             }
         }
 
-        return node && node.isNamed ? node : (node ? node.nextNamedSibling : null);
+        const finalNode = node && node.isNamed ? node : (node ? node.nextNamedSibling : null);
+        if (finalNode && finalNode.type === 'translation_unit') {
+            //  console.log(`DEBUG: findNextNodeAfter found TU, returning null`);
+             return null;
+        }
+        if (finalNode) {
+            // console.log(`DEBUG: findNextNodeAfter result: type=${finalNode.type} range=${finalNode.startIndex}-${finalNode.endIndex}`);
+        }
+        return finalNode;
     }
 
     /**
@@ -713,7 +791,6 @@ class UppHelpersBase {
         }
         return this.registry.getDefinition(target);
     }
-
 }
 
 export { UppHelpersBase };

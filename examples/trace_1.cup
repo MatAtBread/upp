@@ -8,14 +8,14 @@
 @define trace() {
     const fnNode = upp.consume(); // Read the next item in the AST and remove it from the tree
     const { returnType, name, params } = upp.getFunctionSignature(fnNode);
-    const body = fnNode.childForFieldName('body');
+    const body = upp.childForFieldName(fnNode, 'body');
 
     if (body) {
         return upp.code
 `${returnType} ${name}${params} {
     fputs("Entering: ${name}\\n", stderr);
-    @defer { fputs("Exiting: ${name}\\n", stderr) };
-    ${body.children.slice(1, -1).map(c => c.text).join('\n\t')}
+    @defer { fputs("Exiting: ${name}\\n", stderr); };
+    ${Array.from({length: upp.childCount(body)-2}, (_, i) => upp.child(body, i+1).text).join('\n\t')}
 }`;
     }
 }

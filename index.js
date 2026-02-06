@@ -77,8 +77,16 @@ function transpileOne(sourceFile, outputCFile = null) {
     }
 }
 
-if (command.mode === 'transpile') {
+if (command.mode === 'transpile' || command.mode === 'ast') {
     try {
+        if (command.mode === 'ast') {
+            const absSource = path.resolve(command.file);
+            const preProcessed = preprocess(absSource, command.depFlags || []);
+            const registry = new Registry({ diagnostics: new DiagnosticsManager({}) });
+            const tree = registry._parse(preProcessed);
+            console.log(tree.rootNode.toString());
+            process.exit(0);
+        }
         const output = transpileOne(command.file);
         process.stdout.write(output);
         process.exit(0);

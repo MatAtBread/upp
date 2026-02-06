@@ -1,4 +1,5 @@
 import { UppHelpersBase } from './upp_helpers_base.js';
+import { RECURSION_LIMITER_ENABLED } from './registry.js';
 import Parser from 'tree-sitter';
 import { PatternMatcher } from './pattern_matcher.js';
 

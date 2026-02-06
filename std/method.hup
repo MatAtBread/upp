@@ -2,7 +2,7 @@
 #define __UPP_STDLIB_METHOD_H__
 
 @define method(targetType) {
-    const node = upp.consume();
+    const node = upp.consume(['function_definition', 'declaration']);
     // Re-parse for stability (workaround for tree-sitter instability)
     let funcDef = node;
     try {
@@ -15,15 +15,7 @@
     } catch (e) {}
 
 
-    let isExternDecl = false;
-    // node is typically the consumed node. If it's a type (void), we might be in a declaration.
-    if (node.type === 'primitive_type' || node.type === 'type_identifier' || node.type === 'struct_specifier' || node.type === 'enum_specifier') {
-        const parent = upp.parent(node);
-        if (parent && parent.type === 'declaration') {
-             isExternDecl = true;
-             funcDef = parent;
-        }
-    }
+    let isExternDecl = (node.type === 'declaration');
 
     const funcDeclarator = upp.childForFieldName(funcDef, 'declarator');
 
@@ -163,7 +155,7 @@
             });
             if (isConflict) return null;
 
-            return upp.code`${node} @defer ${varName}.Defer();`;
+            return upp.code`${node} @defer ${newName}(&${varName});`;
         };
 
         const decls = upp.query(`
@@ -198,9 +190,16 @@
             upp.replace(node.nextSibling, "");
         }
     } else {
-        const match = text.match(/^(\w+)\s*=\s*(.*);?$/);
-        name = match[1];
-        init = ' = ' + match[2].replace(/;$/, '');
+        // Use [\s\S] to match across newlines
+        const match = text.match(/^(\w+)\s*=\s*([\s\S]*);?$/);
+        if (match) {
+            name = match[1];
+            init = ' = ' + match[2].replace(/;$/, '');
+        } else {
+            // Fallback: assume it's just the name if no equals sign found
+            name = text.replace(';', '').trim();
+            init = " = {0}";
+        }
     }
 
     // Check for renamed symbol in the AST

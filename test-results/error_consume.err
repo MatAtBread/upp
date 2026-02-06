@@ -1,3 +1,0 @@
-[1m./examples/error_consume.cup:19:1: error: @test_error_missing expected compound_statement, but nothing found[0m
-@test_error_missing
-[1;31m^[0m
