@@ -487,6 +487,18 @@ class Registry {
                          continue;
                     }
 
+                    // Skip already-processed @include invocations
+                    if (inv.name === 'include') {
+                        const includeKey = `${inv.startIndex}-${inv.endIndex}-${inv.args[0]}`;
+                        if (this.processedIncludes.has(includeKey)) {
+                            console.log(`[processText] Skipping already-processed @include(${inv.args[0]})`);
+                            subCursor = inv.endIndex - startIdx;
+                            continue;
+                        }
+                        this.processedIncludes.add(includeKey);
+                        console.log(`[processText] Processing @include(${inv.args[0]}) for first time`);
+                    }
+
                     if (inv.startIndex > startIdx + subCursor) {
                         subParts.push(text.slice(subCursor, inv.startIndex - startIdx));
                     }
