@@ -410,14 +410,25 @@ class UppHelpersC extends UppHelpersBase {
 
         // Process existing nodes at root level
         return this.atRoot((root, helpers) => {
+            console.log(`[withPattern] Walking root for nodeType=${nodeType}, root.type=${root.type}, root.childCount=${root.childCount}`);
+            console.log(`[withPattern] Root text (first 200 chars): ${root.text.substring(0, 200)}`);
+            let matchCount = 0;
+            let nodeCount = 0;
             helpers.walk(root, (node) => {
-                if (node.type === nodeType && matcher(node, helpers)) {
-                    const replacement = callback(node);
-                    if (replacement !== undefined) {
-                        helpers.replace(node, replacement === null ? '' : replacement);
+                nodeCount++;
+                if (node.type === nodeType) {
+                    console.log(`[withPattern] Found ${nodeType} node: ${node.text.substring(0, 40)}`);
+                    if (matcher(node, helpers)) {
+                        matchCount++;
+                        console.log(`[withPattern] Matcher returned true for: ${node.text.substring(0, 40)}`);
+                        const replacement = callback(node);
+                        if (replacement !== undefined) {
+                            helpers.replace(node, replacement === null ? '' : replacement);
+                        }
                     }
                 }
             });
+            console.log(`[withPattern] Walk complete. Visited ${nodeCount} nodes, found ${matchCount} matches`);
         });
     }
 

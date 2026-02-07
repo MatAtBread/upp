@@ -82,6 +82,7 @@
             return foundTypedef;
         },
         (callNode) => {
+            console.log(`[method] TRANSFORMING: ${callNode.text.substring(0, 40)}`);
             // Transform: obj.method(args) -> _Type_method_method(&obj, args)
             const funcNode = callNode.childForFieldName('function');
             const objectNode = funcNode.childForFieldName('argument');

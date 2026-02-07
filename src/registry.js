@@ -537,12 +537,17 @@ class Registry {
                         let targetNode = null;
 
                         if (taskInfo.targetType === 'root') {
-                            // Find the translation_unit ancestor
-                            let current = node;
-                            while (current && current.type !== 'translation_unit') {
-                                current = current.parent;
+                            // Use the main tree's root node, not the marker's ancestor
+                            // The marker might be in an isolated tree (e.g., from macro result transformation)
+                            targetNode = this.mainTree ? this.mainTree.rootNode : null;
+                            if (!targetNode) {
+                                // Fallback: walk up to translation_unit
+                                let current = node;
+                                while (current && current.type !== 'translation_unit') {
+                                    current = current.parent;
+                                }
+                                targetNode = current;
                             }
-                            targetNode = current;
                         } else if (taskInfo.targetType === 'scope') {
                             // Find the compound_statement ancestor
                             let current = node;
