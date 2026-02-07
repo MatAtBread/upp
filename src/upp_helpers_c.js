@@ -259,6 +259,169 @@ class UppHelpersC extends UppHelpersBase {
     }
 
     /**
+     * Transforms references to a definition intelligently:
+     * - For references below the current node: applies callback immediately
+     * - For references above the current node: creates deferred markers for later transformation
+     * - Registers a transformation rule to handle dynamically generated references
+     *
+     * @param {import('tree-sitter').SyntaxNode} definitionNode - The definition node to find references for
+     * @param {function(import('tree-sitter').SyntaxNode): string|null|undefined} callback - Transformation callback.
+     *        Return: string (replace), null/"" (delete), undefined (no change)
+     * @returns {string} Marker for deferred transformations (empty if all references were below)
+     */
+    withReferences(definitionNode, callback) {
+        const references = this.findReferences(definitionNode);
+
+        // Register a transformation rule for this pattern
+        // This allows the rule to be re-evaluated on dynamically generated code
+        const rule = {
+            id: this.registry.generateRuleId(),
+            type: 'references',
+            identity: {
+                name: definitionNode.text || this.getName(definitionNode),
+                definitionNode: definitionNode
+            },
+            matcher: (node, helpers) => {
+                // Check if node is an identifier with the right name
+                if (node.type !== 'identifier') return false;
+                if (node.text !== rule.identity.name) return false;
+
+                // Find which definition this identifier refers to
+                const def = helpers.findDefinition(node);
+                if (!def) return false;
+
+                // Walk up to find the declaration node
+                let declNode = def;
+                while (declNode &&
+                       declNode.type !== 'declaration' &&
+                       declNode.type !== 'parameter_declaration' &&
+                       declNode.type !== 'function_definition') {
+                    declNode = declNode.parent;
+                }
+
+                // Compare node objects (works due to depth-first guarantees)
+                return declNode === rule.identity.definitionNode;
+            },
+            callback: callback,
+            scope: this.contextNode,
+            active: true
+        };
+
+        this.registry.registerTransformRule(rule);
+
+        // Process existing references
+        if (!references || references.length === 0) return '';
+
+        const currentPos = this.contextNode ? this.contextNode.startIndex : 0;
+        let hasAboveReferences = false;
+
+        // Process references below current position immediately
+        for (const ref of references) {
+            if (ref.startIndex >= currentPos) {
+                // Below current node - transform immediately
+                const replacement = callback(ref);
+                if (replacement !== undefined) {
+                    // null or "" deletes, string replaces, undefined skips
+                    this.replace(ref, replacement === null ? '' : replacement);
+                }
+            } else {
+                hasAboveReferences = true;
+            }
+        }
+
+        // For references above, create a deferred transformation
+        if (hasAboveReferences) {
+            return this.atRoot((root, helpers) => {
+                for (const ref of references) {
+                    if (ref.startIndex < currentPos) {
+                        const replacement = callback(ref);
+                        if (replacement !== undefined) {
+                            helpers.replace(ref, replacement === null ? '' : replacement);
+                        }
+                    }
+                }
+            });
+        }
+
+        return '';
+    }
+
+    /**
+     * Finds and transforms a definition node intelligently.
+     * Similar to withReferences but operates on the definition itself.
+     *
+     * @param {import('tree-sitter').SyntaxNode|string} target - The node or name to find definition for
+     * @param {function(import('tree-sitter').SyntaxNode): string|null|undefined} callback - Transformation callback.
+     *        Return: string (replace), null/"" (delete), undefined (no change)
+     * @returns {string} Marker for deferred transformations (empty if definition was below)
+     */
+    withDefinition(target, callback) {
+        const defNode = this.findDefinition(target);
+        if (!defNode) return '';
+
+        const currentPos = this.contextNode ? this.contextNode.startIndex : 0;
+
+        if (defNode.startIndex >= currentPos) {
+            // Below current node - transform immediately
+            const replacement = callback(defNode);
+            if (replacement !== undefined) {
+                this.replace(defNode, replacement === null ? '' : replacement);
+            }
+            return '';
+        } else {
+            // Above current node - defer transformation
+            return this.atRoot((root, helpers) => {
+                const replacement = callback(defNode);
+                if (replacement !== undefined) {
+                    helpers.replace(defNode, replacement === null ? '' : replacement);
+                }
+            });
+        }
+    }
+
+    /**
+     * Transforms nodes matching a pattern intelligently.
+     * Registers a transformation rule for re-evaluation on generated code.
+     *
+     * @param {string} nodeType - The node type to match (e.g., 'call_expression')
+     * @param {function(import('tree-sitter').SyntaxNode, Object): boolean} matcher - Custom matcher function
+     * @param {function(import('tree-sitter').SyntaxNode): string|null|undefined} callback - Transformation callback
+     * @returns {string} Marker for deferred transformations
+     */
+    withPattern(nodeType, matcher, callback) {
+        // Register a transformation rule for this pattern
+        const rule = {
+            id: this.registry.generateRuleId(),
+            type: 'pattern',
+            identity: {
+                nodeType: nodeType,
+                pattern: matcher.toString() // Store for debugging
+            },
+            matcher: (node, helpers) => {
+                if (node.type !== nodeType) return false;
+                return matcher(node, helpers);
+            },
+            callback: callback,
+            scope: this.contextNode,
+            active: true
+        };
+
+        this.registry.registerTransformRule(rule);
+
+        // Process existing nodes at root level
+        return this.atRoot((root, helpers) => {
+            helpers.walk(root, (node) => {
+                if (node.type === nodeType && matcher(node, helpers)) {
+                    const replacement = callback(node);
+                    if (replacement !== undefined) {
+                        helpers.replace(node, replacement === null ? '' : replacement);
+                    }
+                }
+            });
+        });
+    }
+
+    /**
      * Mark a node as visited.
      * @param {import('tree-sitter').SyntaxNode} node - The node.
      * @returns {boolean} True if new visit.

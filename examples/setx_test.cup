@@ -1,0 +1,13 @@
+@include(method.hup)
+
+typedef struct { int x; } Point;
+
+@method(Point) void setX(Point *p, int v) {
+    p->x = v;
+}
+
+int main() {
+    Point p = {10};
+    p.setX(20);  // This should become: _Point_method_setX(&p, 20);
+    return 0;
+}

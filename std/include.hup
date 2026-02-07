@@ -14,5 +14,8 @@
     else if (headerName.endsWith('.cup')) headerName = headerName.slice(0, -4) + '.h'; // Unlikely to include .cup, but possible
 
     // 3. Replace the @include(...) with #include "..."
-    return `#include "${headerName}"`;
+    const includeDirective = `#include "${headerName}"`;
+    console.log(`[include] Generating: "${includeDirective}" for file: ${file}`);
+    console.log(`[include] Stack trace:`, new Error().stack.split('\n').slice(1, 4).join('\n'));
+    return includeDirective;
 }

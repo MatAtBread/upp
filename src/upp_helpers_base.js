@@ -236,10 +236,12 @@ class UppHelpersBase {
             }
         }
 
+        const contentStr = typeof newContent === 'object' ? newContent.text : String(newContent);
+
         const replacement = {
             start: start,
             end: end,
-            content: typeof newContent === 'object' ? newContent.text : String(newContent),
+            content: contentStr,
             isLocal: !isGlobal,
             node: n
         };
@@ -254,6 +256,11 @@ class UppHelpersBase {
             if (n.id !== undefined) {
                 this.replacementMap.set(n.id, replacement);
             }
+        }
+
+        // Evaluate transformation rules on newly generated code
+        if (contentStr && contentStr.trim()) {
+            this.registry.evaluateRulesOnNewCode(contentStr, start);
         }
 
         // Marker System: If this replacement targets a node ABOVE the current transformation context,
