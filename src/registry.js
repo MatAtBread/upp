@@ -113,6 +113,10 @@ class Registry {
         /** @type {number} - Counter for generating unique rule IDs */
         this.ruleIdCounter = 0;
 
+        // Store @include replacements from first pass
+        /** @type {Map<string, string>} - Map of @include invocation positions to #include directives */
+        this.includeReplacements = new Map();
+
         this.transformDepth = 0;
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.activeTransformNode = null;
@@ -157,7 +161,11 @@ class Registry {
     registerSource(sourceCode, filePath) {
         this.filePath = filePath;
         this.sourceCode = sourceCode;
-        // Local macros
+
+        // First-pass: Process @include invocations (loads macros from dependencies)
+        this.scanIncludes(this.sourceCode, this.filePath);
+
+        // Second: Scan for local @define macros
         const localMacros = this.scanMacros(this.sourceCode, this.filePath);
         for (const [name, macro] of localMacros) {
             this.macros.set(name, macro);
@@ -228,6 +236,38 @@ class Registry {
         }
         return found;
     }
+
+    /**
+     * Scans source code for @include invocations, loads dependencies, and stores replacements.
+     * This is a first-pass operation that must run before depth-first transformation.
+     */
+    scanIncludes(source, originPath = 'unknown') {
+        // Match @include(file) patterns
+        const includeRegex = /@include\s*\(\s*([^)]+)\s*\)/g;
+        let match;
+
+        while ((match = includeRegex.exec(source)) !== null) {
+            const file = match[1].trim().replace(/["']/g, ''); // Remove quotes
+            const startIndex = match.index;
+            const endIndex = match.index + match[0].length;
+
+            // Load the dependency (this registers macros from the included file)
+            this.loadDependency(file);
+
+            // Generate the #include directive
+            let headerName = file;
+            if (headerName.endsWith('.hup')) headerName = headerName.slice(0, -4) + '.h';
+            else if (headerName.endsWith('.cup')) headerName = headerName.slice(0, -4) + '.h';
+            const includeDirective = `#include "${headerName}"`;
+
+            // Store the replacement
+            const key = `${startIndex}-${endIndex}`;
+            this.includeReplacements.set(key, includeDirective);
+
+            console.log(`[scanIncludes] Found @include(${file}) at ${startIndex}, will replace with: ${includeDirective}`);
+        }
+    }
+
 
     setSourceCode(code) {
         this.sourceCode = code;
@@ -485,18 +525,6 @@ class Registry {
                     const macro = this.getMacro(inv.name);
                     if (!macro) {
                          continue;
-                    }
-
-                    // Skip already-processed @include invocations
-                    if (inv.name === 'include') {
-                        const includeKey = `${inv.startIndex}-${inv.endIndex}-${inv.args[0]}`;
-                        if (this.processedIncludes.has(includeKey)) {
-                            console.log(`[processText] Skipping already-processed @include(${inv.args[0]})`);
-                            subCursor = inv.endIndex - startIdx;
-                            continue;
-                        }
-                        this.processedIncludes.add(includeKey);
-                        console.log(`[processText] Processing @include(${inv.args[0]}) for first time`);
                     }
 
                     if (inv.startIndex > startIdx + subCursor) {
@@ -833,6 +861,24 @@ class Registry {
     prepareSource(source) {
         if (source === undefined || source === null) return { cleanSource: "", invocations: [] };
         let cleanSource = String(source);
+
+        // FIRST: Apply @include replacements from first-pass (scanIncludes)
+        // This must happen BEFORE any other modifications to maintain correct positions
+        const includeKeys = Array.from(this.includeReplacements.keys())
+            .map(key => {
+                const [start, end] = key.split('-').map(Number);
+                return { start, end, key };
+            })
+            .sort((a, b) => b.start - a.start); // Process in reverse order
+
+        for (const {start, end, key} of includeKeys) {
+            const includeDirective = this.includeReplacements.get(key);
+            cleanSource = cleanSource.slice(0, start) + includeDirective + cleanSource.slice(end);
+        }
+
+        // Clear the replacements map after applying
+        this.includeReplacements.clear();
+
         const defineRegex = /@define(?:@(\w+))?\s+(\w+)\s*\(([^)]*)\)\s*\{/g;
         let dMatch;
         const definitionsToStrip = [];
@@ -894,6 +940,7 @@ class Registry {
         }
 
         const foundInvs = this.findInvocations(cleanSource);
+
 
         // Instead of masking invocations with spaces, wrap them in comments
         // This makes the source parse as valid C while preserving macro information
