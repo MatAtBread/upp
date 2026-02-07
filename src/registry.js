@@ -107,6 +107,12 @@ class Registry {
         /** @type {number} - Counter for generating unique deferred marker IDs */
         this.deferredCounter = 0;
 
+        // Transformation Rule Tracking (for composable macros)
+        /** @type {Array<Object>} - Active transformation rules */
+        this.transformRules = [];
+        /** @type {number} - Counter for generating unique rule IDs */
+        this.ruleIdCounter = 0;
+
         this.transformDepth = 0;
         /** @type {import('tree-sitter').SyntaxNode|null} */
         this.activeTransformNode = null;
@@ -1147,6 +1153,60 @@ class Registry {
             console.error(`findReferences query failed: ${e.message}`);
         }
         return results;
+    }
+
+    // Transformation Rule Tracking Methods
+
+    /**
+     * Generate a unique ID for a transformation rule
+     * @returns {string} Unique rule ID
+     */
+    generateRuleId() {
+        return `rule_${this.ruleIdCounter++}`;
+    }
+
+    /**
+     * Register a transformation rule for re-evaluation on generated code
+     * @param {Object} rule - Rule object with id, type, identity, matcher, callback, scope, active
+     */
+    registerTransformRule(rule) {
+        this.transformRules.push(rule);
+    }
+
+    /**
+     * Evaluate registered transformation rules against newly generated code
+     * @param {string} newCode - The newly generated code to check
+     * @param {number} startPos - Starting position of the new code
+     */
+    evaluateRulesOnNewCode(newCode, startPos) {
+        // Simplified regex-based matching for now
+        // TODO: Improve to use AST matching when new code is integrated into main tree
+        for (const rule of this.transformRules) {
+            if (!rule.active) continue;
+
+            if (rule.type === 'references' || rule.type === 'pattern') {
+                const name = rule.identity.name || rule.identity.nodeType;
+                if (name) {
+                    const regex = new RegExp(`\\b${name}\\b`, 'g');
+                    if (regex.test(newCode)) {
+                        console.log(`[Rule ${rule.id}] Found potential match for "${name}" in generated code`);
+                        // TODO: Apply transformation when AST matching is available
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Deactivate transformation rules for a given scope
+     * @param {import('tree-sitter').SyntaxNode} scope - The scope node
+     */
+    deactivateRulesForScope(scope) {
+        for (const rule of this.transformRules) {
+            if (rule.scope === scope) {
+                rule.active = false;
+            }
+        }
     }
 }
 
