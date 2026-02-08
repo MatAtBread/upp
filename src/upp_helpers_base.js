@@ -1,428 +1,211 @@
-import Parser from 'tree-sitter';
+import Parser, { SyntaxNode, Query } from 'tree-sitter';
 import path from 'path';
-const { Query } = Parser;
+import fs from 'fs';
+import Marker from './marker.js';
 
 /**
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
 class UppHelpersBase {
-    /**
-     * @param {import('./registry').Registry} registry - The registry instance.
-     */
     constructor(registry) {
-        /** @type {import('./registry').Registry} */
         this.registry = registry;
-        /** @type {Array<Object>} */
-        this.replacements = [];
-        /** @type {Map<number, Object>} */
-        this.replacementMap = new Map();
-        /** @type {import('tree-sitter').SyntaxNode|null} */
         this.root = null;
-        /** @type {import('tree-sitter').SyntaxNode|null} */
         this.contextNode = null;
-        /** @type {Object|null} */
-        this.invocation = null; // Current macro invocation details
-        /** @type {import('tree-sitter').SyntaxNode|null} */
+        this.invocation = null;
         this.lastConsumedNode = null;
-        /** @type {boolean} */
         this.isDeferred = false;
-        /** @type {Map<number, Object>} */
         this.nodeCache = new Map();
-        /** @type {Array} */
-        this.currentInvocations = []; // List of invocations in current source
+        this.currentInvocations = [];
+        this.consumedIds = new Set();
+        this.context = null; // Back-reference to the local transform context
     }
 
-    /**
-     * Wraps a node to discourage direct upwards access.
-     * @param {import('tree-sitter').SyntaxNode} node - The node to wrap.
-     * @returns {import('tree-sitter').SyntaxNode}
-     */
-    wrapNode(node) {
-        if (!node || node.__isWrapped) return node;
+    atRoot(callback) {
+        const root = this.findRoot();
+        if (!root) return "";
+        return this.withNode(root, callback);
+    }
 
-        // Check cache first by ID
-        if (node.id !== undefined && this.nodeCache.has(node.id)) {
-            return this.nodeCache.get(node.id);
+    inScope(callback) {
+        const scope = this.findScope();
+        if (!scope) return "";
+        return this.withNode(scope, callback);
+    }
+
+    replace(n, newContent) {
+        const contentStr = typeof newContent === 'object' ? newContent.text : String(newContent);
+        const isRoot = n.type === 'translation_unit' || n.parent === null;
+
+        const startMarker = n.__marker_bound ? n.__marker_bound : new Marker(this.context.tree, n.startIndex);
+        const endMarker = new Marker(this.context.tree, n.endIndex);
+
+        if (this.registry.isExecutingDeferred) {
+            const len = endMarker.offset - startMarker.offset;
+            if (isRoot) {
+                this.registry.applyRootSplice(this.context, contentStr);
+            } else {
+                this.registry.applySplice(this.context, startMarker.offset, len, contentStr);
+            }
+            if (!n.__marker_bound) startMarker.destroy();
+            endMarker.destroy();
+            return "";
         }
 
-        const registry = this.registry;
+        const marker = new Marker(this.context.tree, startMarker.offset, {
+            callback: (target, helpers) => {
+                const len = endMarker.offset - startMarker.offset;
+                if (isRoot) {
+                    helpers.registry.applyRootSplice(helpers.context, contentStr);
+                } else {
+                    helpers.registry.applySplice(helpers.context, startMarker.offset, len, contentStr);
+                }
+                if (!n.__marker_bound) startMarker.destroy();
+                endMarker.destroy();
+            },
+            targetType: isRoot ? 'root' : 'node',
+            nodeType: n.type,
+            nodeLength: n.endIndex - n.startIndex,
+            helpers: this
+        });
+        this.registry.deferredMarkers.push(marker);
+        return "";
+    }
+
+    query(queryString, node = null) {
+        const target = node ? (node.__internal_raw_node || node) : this.root;
+        const query = new Query(this.registry.language, queryString);
+        const matches = query.matches(target);
+
+        return matches.map(m => {
+            const captures = {};
+            for (const c of m.captures) {
+                captures[c.name] = this.wrapNode(c.node);
+            }
+            return captures;
+        });
+    }
+
+    findRoot() {
+        return this.context.tree ? this.wrapNode(this.context.tree.rootNode) : this.root;
+    }
+
+    findParent(node) {
+        return this.parent(node);
+    }
+
+    findScope(node) {
+        return this.enclosingScope(node || this.contextNode);
+    }
+
+    withNode(node, callback) {
+        if (!node) return "";
+
+        const isDescendant = this.registry.activeTransformNode && this.isDescendant(this.registry.activeTransformNode, node);
+        const isMarkerAware = !!node.__marker_bound;
+
+        if (isDescendant || this.registry.isExecutingDeferred || isMarkerAware) {
+            const wrapped = this.wrapNode(node, this.registry.isExecutingDeferred);
+            const result = callback(wrapped, this);
+            if (result !== undefined) {
+                const start = node.__marker_bound ? node.__marker_bound.offset : node.startIndex;
+                const end = node.endIndex;
+                const len = node.__marker_bound ? 0 : (end - start);
+
+                this.registry.applySplice(this.context, start, len, result === null ? "" : String(result));
+            }
+            return "";
+        }
+
+        const preservedText = node.text;
+        const marker = new Marker(this.context.tree, node.startIndex, {
+            callback: (target, helpers) => {
+                const wrapped = helpers.wrapNode(target, true, preservedText);
+                const result = callback(wrapped, helpers);
+                if (result !== undefined) {
+                    helpers.replace(target, result === null ? "" : String(result));
+                }
+            },
+            targetType: 'node',
+            nodeType: node.type,
+            nodeLength: node.endIndex - node.startIndex,
+            helpers: this
+        });
+        this.registry.deferredMarkers.push(marker);
+        return preservedText;
+    }
+
+    wrapNode(node, lateBound = false, sourceOverride = null, treeOverride = null) {
+        if (!node || node.__isWrapped) return node;
         const helpers = this;
 
-        // Use a simple proxy to intercept .parent and .rootNode
+        const treeSource = sourceOverride || (node.tree && node.tree.sourceText) || helpers.context.source;
+        const currentTree = treeOverride || node.tree || helpers.context.tree;
+        const capturedText = lateBound ? null : treeSource.slice(node.startIndex, node.endIndex);
+
         const proxy = new Proxy(node, {
             get(target, prop) {
                 if (prop === '__isWrapped') return true;
                 if (prop === '__internal_raw_node') return target;
-                if (prop === 'parent' || prop === 'rootNode') {
-                    if (!helpers.isDeferred) {
-                         const macroInfo = registry.activeMacro ? ` in macro @${registry.activeMacro}` : "";
-                         registry.diagnostics.reportWarning(
-                             0,
-                             `Restricted access to node.${prop} detected${macroInfo}. Direct upwards AST access is discouraged. Use 'upp.inScope' or 'upp.atRoot' for robust transformations.`,
-                             registry.filePath,
-                             target.startPosition.row + 1,
-                             target.startPosition.column + 1,
-                             registry.sourceCode
-                         );
+                if (prop === '__isLateBound') return lateBound;
+                if (prop === '__sourceOverride') return treeSource;
+                if (prop === '__treeOverride') return currentTree;
+                if (prop === 'startIndex') {
+                    if (lateBound && target.__marker_bound) return target.__marker_bound.offset;
+                    return target.startIndex;
+                }
+                if (prop === 'endIndex') {
+                    if (lateBound && target.__marker_bound_end) return target.__marker_bound_end.offset;
+                    return target.endIndex;
+                }
+                if (prop === 'text') {
+                    if (lateBound) {
+                        return helpers.context.source.slice(helpers.getLiveOffset(target, 'start'), helpers.getLiveOffset(target, 'end'));
                     }
+                    return capturedText;
+                }
+                if (prop === 'childForFieldName') {
+                    return (fieldName) => {
+                        const child = target.childForFieldName(fieldName);
+                        return child ? helpers.wrapNode(child, lateBound, treeSource, currentTree) : null;
+                    };
                 }
                 const value = Reflect.get(target, prop);
                 if (typeof value === 'function') {
                     return (...args) => {
                         let result = value.apply(target, args);
                         if (result && typeof result === 'object' && result.type) {
-                             return helpers.wrapNode(result);
+                             return helpers.wrapNode(result, lateBound, treeSource);
                         }
                         return result;
                     };
                 }
                 if (value && typeof value === 'object' && value.type) {
-                    return helpers.wrapNode(value);
+                    return helpers.wrapNode(value, lateBound, treeSource);
                 }
                 return value;
             }
         });
-
-        if (node.id !== undefined) {
-             this.nodeCache.set(node.id, proxy);
-        }
         return proxy;
     }
 
-    /**
-     * Schedules a task to run at the root of the file after children are transformed.
-     * Returns a marker string that should be included in the macro's output.
-     * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
-     * @returns {string} Marker string to include in output
-     */
-    atRoot(callback) {
-        // Generate unique marker string
-        const markerId = `__UPP_DEFERRED_${this.registry.deferredCounter++}__`;
-
-        // Store callback with metadata
-        this.registry.deferredCallbacks.set(markerId, {
-            callback,
-            targetType: 'root',
-            context: {
-                invocation: this.invocation,
-                contextNode: this.contextNode
-            }
-        });
-
-        return markerId;
-    }
-
-    /**
-     * Schedules a task to run at the end of the enclosing scope.
-     * Returns a marker string that should be included in the macro's output.
-     * @param {function(import('tree-sitter').SyntaxNode, UppHelpersBase): void} callback - The task function.
-     * @returns {string} Marker string to include in output
-     */
-    inScope(callback) {
-        // Generate unique marker string
-        const markerId = `__UPP_DEFERRED_${this.registry.deferredCounter++}__`;
-
-        // Store callback with metadata
-        // NOTE: We don't try to find the scope here because the node might not be
-        // in the tree yet (e.g., when transforming a subtree returned by a macro).
-        // The marker processor will find the containing scope when the marker is encountered.
-        this.registry.deferredCallbacks.set(markerId, {
-            callback,
-            targetType: 'scope',
-            context: {
-                invocation: this.invocation,
-                contextNode: this.contextNode
-            }
-        });
-
-        return markerId;
-    }
-
-    /**
-     * Gets the parent registry if available.
-     * @returns {import('./registry').Registry|null}
-     */
-    get parentRegistry() {
-        return this.registry.parentRegistry;
-    }
-
-    /**
-     * Gets the parent tree's root node if available.
-     * @returns {import('tree-sitter').SyntaxNode|null}
-     */
-    get parentTree() {
-        if (this.registry.parentRegistry && this.registry.parentRegistry.mainTree) {
-            return this.registry.parentRegistry.mainTree.rootNode;
-        }
-        return null;
-    }
-
-    /**
-     * Debugs a node by printing its type and text.
-     * @param {import('tree-sitter').SyntaxNode} node - The tree-sitter node to debug.
-     */
-    debug(node) {
-        console.log(`Debug Node: type=${node.type}, text="${node.text.slice(0, 50)}${node.text.length > 50 ? '...' : ''}"`);
-    }
-
-    /**
-     * Creates a unique identifier with the given prefix.
-     * @param {string} [prefix='v'] - The prefix for the identifier.
-     * @returns {string} A unique identifier.
-     */
-    createUniqueIdentifier(prefix = 'v') {
-        const id = this.registry.idCounter++;
-        return `${prefix}_${id}`;
-    }
-
-    /**
-     * Tagged template literal for generating code and parse trees.
-     * @param {TemplateStringsArray} strings - Template strings.
-     * @param {...any} values - Interpolated values.
-     * @returns {{tree: import('tree-sitter').Tree, toString: function(): string}} An object containing the parsed tree and a toString method.
-     */
-    code(strings, ...values) {
-        // Build the text by interpolating values
-        const text = strings.reduce((acc, str, i) => {
-            let value = values[i] !== undefined ? values[i] : '';
-
-            // If value is a tree object (from another upp.code call), get its text
-            if (value && typeof value === 'object' && value.tree) {
-                value = value.toString();
-            }
-            // If value has a .text property, use that
-            else if (value && typeof value === 'object' && value.text !== undefined) {
-                value = value.text;
-            }
-
-            return acc + str + value;
-        }, '');
-
-        // Parse immediately
-        const parser = new Parser();
-        parser.setLanguage(this.registry.language);
-        const tree = parser.parse(text);
-
-        // Return tree object with toString() for debugging
-        return {
-            tree,
-            toString() {
-                return tree.rootNode.text;
-            }
-        };
-    }
-
-    /**
-     * Replaces a node with new content.
-     * @param {import('tree-sitter').SyntaxNode|{start: number, end: number}} n - The node or range to replace.
-     * @param {string|{text: string}} newContent - The new content string or object with text property.
-     * @returns {string|null} A marker string if the replacement targets an ancestor, otherwise null.
-     */
-    replace(n, newContent) {
-        const start = n.startIndex !== undefined ? n.startIndex : n.start;
-        const end = n.endIndex !== undefined ? n.endIndex : n.end;
-
-        let isGlobal = false;
-        if (n.tree) {
-            isGlobal = this.registry.mainTree && (n.tree === this.registry.mainTree);
-        } else {
-            isGlobal = (this === this.registry.helpers);
-        }
-
-        if (this.registry.isInsideInvocation(start, end)) {
-            if (!(this.invocation && this.invocation.startIndex === start && this.invocation.endIndex === end)) {
-                return;
-            }
-        }
-
-        const contentStr = typeof newContent === 'object' ? newContent.text : String(newContent);
-
-        const replacement = {
-            start: start,
-            end: end,
-            content: contentStr,
-            isLocal: !isGlobal,
-            node: n
-        };
-
-        if (isGlobal && this.registry.helpers !== this) {
-            this.registry.helpers.replacements.push(replacement);
-            if (n.id !== undefined) {
-                this.registry.helpers.replacementMap.set(n.id, replacement);
-            }
-        } else {
-            this.replacements.push(replacement);
-            if (n.id !== undefined) {
-                this.replacementMap.set(n.id, replacement);
-            }
-        }
-
-        // Evaluate transformation rules on newly generated code
-        if (contentStr && contentStr.trim()) {
-            this.registry.evaluateRulesOnNewCode(contentStr, start);
-        }
-
-        // Marker System: If this replacement targets a node ABOVE the current transformation context,
-        // we should return a marker so the macro can embed it if needed.
-        if (this.registry.activeTransformNode && n.id !== undefined) {
-            const active = this.registry.activeTransformNode;
-            let p = active.__internal_raw_node || active;
-            while (p) {
-                if (p.id === n.id) {
-                    const markerId = `__UPP_MARKER_${++this.registry.markerCounter}__`;
-                    this.registry.markerMap.set(markerId, replacement.content);
-                    return markerId;
-                }
-                p = p.parent;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Gets a replacement for a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
-     * @returns {Object|null} The replacement object.
-     */
-    getReplacement(node) {
-        if (!node) return null;
-        let repl = this.replacementMap.get(node.id) || null;
-        if (!repl && this.registry.helpers && this.registry.helpers !== this) {
-            repl = this.registry.helpers.getReplacement(node);
-        }
-        return repl;
-    }
-
-    /**
-     * Registers a global transformation function.
-     * @param {function(import('tree-sitter').Tree, UppHelpersBase): void} transformFn - The transformation function.
-     */
-    registerTransform(transformFn) {
-        this.registry.registerTransform(transformFn);
-    }
-
-    /**
-     * Registers a transformation function on the PARENT registry.
-     * @param {function(import('tree-sitter').Tree, UppHelpersBase): void} transformFn - The transformation function.
-     */
-    registerParentTransform(transformFn) {
-        if (this.registry.parentRegistry) {
-            this.registry.parentRegistry.registerTransform(transformFn);
-        } else {
-            console.warn("registerParentTransform called but no parent registry exists.");
-        }
-    }
-
-    /**
-     * Recursively walks the tree calling the callback for each node.
-     * @param {import('tree-sitter').SyntaxNode} node - The starting node.
-     * @param {function(import('tree-sitter').SyntaxNode): void} callback - The callback function.
-     */
-    walk(node, callback) {
-        if (!node) return;
-        const wrapped = this.wrapNode(node);
-        callback(wrapped);
-        const count = wrapped.childCount;
-        for (let i = 0; i < count; i++) {
-            try {
-                this.walk(wrapped.child(i), callback);
-            } catch (e) {
-                // Ignore traversal errors for bad nodes (e.g. NodeClass constructor issues)
-            }
-        }
-    }
-
-    /**
-     * Checks if a node has been consumed by a macro.
-     * @param {import('tree-sitter').SyntaxNode} node - The node to check.
-     * @returns {boolean} True if consumed.
-     */
     isConsumed(node) {
         if (!node) return false;
-        return this.registry.visitedNodes.get('consumed')?.has(node.id) || false;
+        return this.consumedIds.has(node.id);
     }
 
-    /**
-     * Finds the nearest enclosing node of a specific type.
-     * @param {import('tree-sitter').SyntaxNode} node - The starting node.
-     * @param {string} type - The node type to search for.
-     * @returns {import('tree-sitter').SyntaxNode|null} The enclosing node or null.
-     */
-    findEnclosing(node, type) {
-        if (!node) return null;
-        let current = node;
-        while (current) {
-            if (current.type === type) return current;
-            current = this.parent(current);
-        }
-        return null;
+    loadDependency(file) {
+        this.registry.loadDependency(file, this.context.originPath);
     }
 
-    /**
-     * Returns all subsequent named siblings of a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The reference node.
-     * @returns {Array<import('tree-sitter').SyntaxNode>} List of sibling nodes.
-     */
-    nextSiblings(node) {
-        const siblings = [];
-        let current = node.nextNamedSibling;
-        while (current) {
-            siblings.push(current);
-            current = current.nextNamedSibling;
-        }
-        return siblings;
-    }
-
-    /**
-     * Executes a tree-sitter query.
-     * @param {string} pattern - The S-expression query pattern.
-     * @param {import('tree-sitter').SyntaxNode} [node] - The scope node for the query.
-     * @returns {Array<{pattern: number, captures: Object<string, import('tree-sitter').SyntaxNode>}>} Query matches with named captures.
-     */
-    query(pattern, node) {
-        const query = new Query(this.registry.language, pattern);
-        let targetNode = node || this.root;
-        const raw = targetNode ? (targetNode.__internal_raw_node || targetNode) : null;
-        if (raw && raw.rootNode) {
-            targetNode = raw.rootNode;
-        }
-        if (!targetNode) {
-            console.error("UppHelpersBase.query: targetNode is null/undefined");
-            return [];
-        }
-        const matches = query.matches(targetNode.__internal_raw_node || targetNode);
-
-        return matches.map(m => {
-            const captures = {};
-            for (const c of m.captures) {
-                captures[c.name] = c.node;
-            }
-            return {
-                pattern: m.pattern,
-                captures: captures
-            };
-        });
-    }
-
-    /**
-     * Consumes the next available node, optionally validating its type.
-     * Automatically marks the consumed node for deletion.
-     * @param {string|string[]|{type: string|string[], message: string, validate: function(import('tree-sitter').SyntaxNode): boolean}} [expectedTypeOrOptions] - Expected type(s) or validation options.
-     * @param {string} [errorMessage] - Custom error message if validation fails.
-     * @returns {import('tree-sitter').SyntaxNode|null} The consumed node.
-     */
     consume(expectedTypeOrOptions, errorMessage) {
         let expectedTypes = null;
         let internalErrorMessage = errorMessage;
         let validateFn = null;
 
-        if (typeof expectedTypeOrOptions === 'string') {
-            expectedTypes = [expectedTypeOrOptions];
-        } else if (Array.isArray(expectedTypeOrOptions)) {
-            expectedTypes = expectedTypeOrOptions;
-        } else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
+        if (typeof expectedTypeOrOptions === 'string') expectedTypes = [expectedTypeOrOptions];
+        else if (Array.isArray(expectedTypeOrOptions)) expectedTypes = expectedTypeOrOptions;
+        else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
             expectedTypes = Array.isArray(expectedTypeOrOptions.type) ? expectedTypeOrOptions.type : (expectedTypeOrOptions.type ? [expectedTypeOrOptions.type] : null);
             internalErrorMessage = expectedTypeOrOptions.message || errorMessage;
             validateFn = expectedTypeOrOptions.validate;
@@ -431,438 +214,177 @@ class UppHelpersBase {
         const reportFailure = (foundNode) => {
             const macroName = this.invocation ? `@${this.invocation.name}` : "macro";
             let msg = internalErrorMessage;
-
             if (!msg) {
                 const expectedStr = expectedTypes ? expectedTypes.join(' or ') : 'an additional code block';
                 const foundStr = foundNode ? `found ${foundNode.type}` : 'nothing found';
                 msg = `${macroName} expected ${expectedStr}, but ${foundStr}`;
             }
-
             this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode, msg);
         };
 
-
         let node = null;
-        if (!this.lastConsumedNode) {
-            if (this.invocation && !this.invocation.hasNodeParam) {
-                let candidate = this.contextNode;
-                if (candidate && candidate.startIndex <= this.invocation.startIndex && candidate.endIndex >= this.invocation.endIndex) {
-                    // Candidate covers the macro, so it's a parent/context, not the direct target sibling.
-                } else {
-                    node = candidate;
-                }
+        let anchor = this.lastConsumedNode || this.contextNode;
+        if (anchor) {
+            let rootForSearch = this.context.tree.rootNode;
+            let searchIdx = anchor.endIndex;
+
+            if (this.invocation && (anchor.id === this.invocation.id || anchor.type === 'macro_invocation')) {
+                 searchIdx = anchor.endIndex;
+            } else if (this.invocation && anchor.startIndex <= this.invocation.startIndex && anchor.endIndex >= this.invocation.endIndex) {
+                 searchIdx = this.invocation.endIndex;
             }
+
+            node = this.findNextNodeAfter(rootForSearch, searchIdx);
+        } else if (this.invocation) {
+            let rootForSearch = this.context.tree.rootNode;
+            node = this.findNextNodeAfter(rootForSearch, (this.topLevelInvocation || this.invocation).endIndex);
         }
 
-        // Check for pending macro invocations in the gap
-        if (this.currentInvocations) {
-            // When in a nested context (this.root is not mainTree), we need to find the
-            // invocation in currentInvocations that corresponds to the current macro,
-            // because this.invocation has indices from the parent source.
-            let currentInv = this.invocation;
-            const isNestedContext = this.root && this.registry.mainTree && this.root.id !== this.registry.mainTree.rootNode.id;
-
-            if (isNestedContext && this.invocation) {
-                // Find the invocation in currentInvocations that matches the current macro name
-                const matchingInv = this.currentInvocations.find(inv =>
-                    inv.name === this.invocation.name && !inv.skipped
-                );
-                if (matchingInv) {
-                    currentInv = matchingInv;
-                }
-            }
-
-            let searchStart = currentInv ? currentInv.endIndex : 0;
-            if (this.lastConsumedNode) {
-                if (this.lastConsumedNode.endIndex !== undefined) {
-                    searchStart = this.lastConsumedNode.endIndex;
-                }
-            } else if (currentInv && !currentInv.hasNodeParam && this.contextNode) {
-                 // Start searching after the current invocation
-                 searchStart = currentInv.endIndex;
-            }
-
-            const candidates = this.currentInvocations.filter(i => i.startIndex >= searchStart && i !== currentInv);
-            candidates.sort((a,b) => a.startIndex - b.startIndex);
-            const nextInv = candidates[0];
-
-            if (nextInv) {
-                const gap = this.registry.sourceCode.slice(searchStart, nextInv.startIndex);
-                const isGapClean = !gap.trim() || (this.registry.config.comments && gap.trim().startsWith('/*'));
-
-                if (isGapClean) {
-                     this.replace({start: nextInv.startIndex, end: nextInv.endIndex}, "");
-                     nextInv.skipped = true;
-
-                     const text = this.registry.sourceCode.slice(nextInv.startIndex, nextInv.endIndex);
-                     const fakeNode = {
-                         type: 'macro_invocation',
-                         text: text,
-                         startIndex: nextInv.startIndex,
-                         endIndex: nextInv.endIndex,
-                         childCount: 0,
-                         namedChildCount: 0,
-                         toString: () => text
-                     };
-                     this.lastConsumedNode = fakeNode;
-                     return fakeNode;
-                }
-            }
-        }
-
-        // Fallback to normal AST consumption
-        if (!node) {
-            let anchor = this.lastConsumedNode || this.contextNode;
-
-            if (anchor) {
-                if (anchor.type === 'macro_invocation') {
-                    // Preceding macro in a gap. Search starts after its end.
-                    let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
-                    let searchIdx = anchor.endIndex;
-
-                    // Only use mainTree if we don't have a local root
-                    // (this.root is set when we're transforming code from upp.code)
-                    if (!this.root && this.topLevelInvocation && this.registry.mainTree) {
-                        rootForSearch = this.registry.mainTree.rootNode;
-                        const isSelf = (anchor.id === this.invocation?.invocationNode?.id);
-                        searchIdx = isSelf ? (this.topLevelInvocation.endIndex) : searchIdx;
-                    }
-                    node = this.findNextNodeAfter(rootForSearch, searchIdx);
-                } else if (anchor.startIndex <= (this.invocation ? this.invocation.startIndex : 0) &&
-                           anchor.endIndex >= (this.invocation ? this.invocation.endIndex : anchor.endIndex)) {
-                    // Anchor is a parent node (COVERS the current invocation).
-                    let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
-                    let child = anchor.firstNamedChild;
-                    while (child && child.startIndex < searchIdx) {
-                        child = child.nextNamedSibling;
-                    }
-                    node = child;
-
-                    if (!node) {
-                        let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
-                        let searchIdx = this.invocation ? this.invocation.endIndex : anchor.startIndex;
-                        // Only use mainTree if we don't have a local root
-                        if (!this.root && this.topLevelInvocation && this.registry.mainTree) {
-                            rootForSearch = this.registry.mainTree.rootNode;
-                            searchIdx = this.topLevelInvocation.endIndex;
-                        }
-                        node = this.findNextNodeAfter(rootForSearch, searchIdx);
-                    }
-                } else {
-                    node = anchor.nextNamedSibling;
-                    while (node && node.type.includes('comment')) {
-                        node = node.nextNamedSibling;
-                    }
-                }
-            } else {
-                let rootForSearch = this.root || (this.registry.mainTree ? this.registry.mainTree.rootNode : null);
-                if (rootForSearch && this.invocation) {
-                    const isLocal = (this.root && rootForSearch.id === this.root.id);
-                    if (isLocal && this.topLevelInvocation && this.registry.mainTree) {
-                        node = this.findNextNodeAfter(this.registry.mainTree.rootNode, this.topLevelInvocation.endIndex);
-                    } else if (isLocal) {
-                        node = this.findNextNodeAfter(rootForSearch, this.invocation.endIndex);
-                    } else {
-                        const anchorInv = this.topLevelInvocation || this.invocation;
-                        const searchRoot = this.registry.mainTree ? this.registry.mainTree.rootNode : rootForSearch;
-                        node = this.findNextNodeAfter(searchRoot, anchorInv.endIndex);
-                    }
-                } else if (rootForSearch) {
-                    node = rootForSearch.namedChild(0);
-                }
-            }
-        }
-
-         if (!node) {
-             if (expectedTypes || validateFn) reportFailure(null);
-             return null;
-         }
-
-         while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') {
-             node = node.parent;
-         }
-        //  console.log(`DEBUG: consume after drilling: type=${node.type} text="${node.text.slice(0, 40)}${node.text.length > 40 ? '...' : ''}"`);
-
-        if (node && (node.type === 'ERROR' || (expectedTypes && !expectedTypes.includes(node.type)))) {
-            let current = node;
-            while (current && current.namedChildCount > 0 && (!expectedTypes || !expectedTypes.includes(current.type))) {
-                let firstChild = current.namedChild(0);
-                if (firstChild && firstChild.startIndex === current.startIndex) {
-                    current = firstChild;
-                    if (expectedTypes && expectedTypes.includes(current.type)) {
-                        node = current;
-                        break;
-                    }
-                } else {
+        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
+            // Found a sibling but it doesn't match. Are we nested?
+            let p = this.contextNode ? (this.contextNode.__internal_raw_node || this.contextNode) : null;
+            while (p) {
+                if (expectedTypes.includes(p.type)) {
+                    node = p;
                     break;
                 }
+                p = p.parent;
             }
-            if (current && current.type === 'ERROR' && expectedTypes) {
-                for (let i=0; i < current.namedChildCount; i++) {
-                    const c = current.namedChild(i);
-                    if (expectedTypes.includes(c.type)) {
-                        node = c;
-                        break;
-                    }
+        }
+
+        if (!node) {
+            // Traditional nested check if nothing was found after anchor
+            let p = this.contextNode ? (this.contextNode.__internal_raw_node || this.contextNode) : null;
+            while (p) {
+                if (expectedTypes && expectedTypes.includes(p.type)) {
+                    node = p;
+                    break;
                 }
+                p = p.parent;
+            }
+
+            if (!node) {
+                if (expectedTypes || validateFn) reportFailure(null);
+                return null;
             }
         }
 
-        if (expectedTypes && !expectedTypes.includes(node.type)) {
-            reportFailure(node);
-        }
+        while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') node = node.parent;
+        if (expectedTypes && !expectedTypes.includes(node.type)) reportFailure(node);
+        if (validateFn && !validateFn(node)) reportFailure(node);
 
-        if (validateFn && !validateFn(node)) {
-            reportFailure(node);
-        }
+        // Capture markers BEFORE deletion so they track the correct spot
+        const marker = new Marker(this.context.tree, node.startIndex);
+        const markerEnd = new Marker(this.context.tree, node.endIndex);
+        node.__marker_bound = marker;
+        node.__marker_bound_end = markerEnd;
 
-        this.replace(node, "");
+        const wrapped = this.wrapNode(node, true);
+        const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
+
+        // Perform immediate deletion (unless we're hoisting, in which case the macro result will replace the range)
+        if (!isHoisted) {
+            this.replace(node, "");
+        }
+        this.consumedIds.add(node.id);
+
         this.lastConsumedNode = node;
-        if (!this.registry.visitedNodes.has('consumed')) {
-            this.registry.visitedNodes.set('consumed', new Set());
-        }
-        this.registry.visitedNodes.get('consumed').add(node.id);
-        return this.wrapNode(node);
+        return wrapped;
     }
 
-    /**
-     * Checks if a node is a descendant of a parent.
-     * @param {import('tree-sitter').SyntaxNode} parent - The parent node.
-     * @param {import('tree-sitter').SyntaxNode} node - The potential descendant.
-     * @returns {boolean} True if node is a descendant.
-     */
     isDescendant(parent, node) {
         let current = node;
         const rawParent = parent ? (parent.__internal_raw_node || parent) : null;
         while (current) {
             const rawCurrent = current.__internal_raw_node || current;
-            if (rawCurrent === rawParent || rawCurrent.id === rawParent.id) return true;
-            current = this.parent(current);
+            if (rawCurrent === rawParent) return true;
+            current = rawCurrent.parent;
         }
         return false;
     }
 
-    /**
-     * Gets the parent node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The parent node.
-     */
+    walk(node, callback) {
+        if (!node) return;
+        callback(node);
+        const rawNode = node.__internal_raw_node || node;
+        const lateBound = !!node.__isLateBound; // We might need to track this
+        const sourceOverride = node.__sourceOverride; // And this
+
+        for (let i = 0; i < rawNode.childCount; i++) {
+            this.walk(this.wrapNode(rawNode.child(i), lateBound, sourceOverride), callback);
+        }
+    }
+
+    getLiveOffset(node, type = 'start') {
+        const raw = node.__internal_raw_node || node;
+        if (type === 'start') {
+            return raw.__marker_bound ? raw.__marker_bound.offset : raw.startIndex;
+        } else {
+            return raw.__marker_bound_end ? raw.__marker_bound_end.offset : raw.endIndex;
+        }
+    }
+
     parent(node) {
+        try { return this.wrapNode(node ? (node.__internal_raw_node || node).parent : null); }
+        catch (e) { return null; }
+    }
+
+    childForFieldName(node, fieldName) {
+        if (!node) return null;
+        const rawNode = node.__internal_raw_node || node;
         try {
-            const raw = node ? (node.__internal_raw_node || node) : null;
-            const p = raw ? raw.parent : null;
-            return this.wrapNode(p);
+            const child = rawNode.childForFieldName(fieldName);
+            return child ? this.wrapNode(child) : null;
         } catch (e) { return null; }
     }
 
-    /**
-     * Checks if two nodes are identical.
-     * @param {import('tree-sitter').SyntaxNode} n1 - First node.
-     * @param {import('tree-sitter').SyntaxNode} n2 - Second node.
-     * @returns {boolean} True if same node.
-     */
-    isSameNode(n1, n2) {
-        if (!n1 || !n2) return n1 === n2;
-        return n1 === n2 || n1.id === n2.id;
-    }
-
-    /**
-     * Gets the next named sibling.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The sibling node.
-     */
-    nextNamedSibling(node) {
-        try { return node ? node.nextNamedSibling : null; } catch (e) { return null; }
-    }
-
-    /**
-     * Gets a child node by index.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @param {number} index - The child index.
-     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
-     */
-    child(node, index) {
-        try { return node ? node.child(index) : null; } catch (e) { return null; }
-    }
-
-    /**
-     * Gets the number of children.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @returns {number} The child count.
-     */
-    childCount(node) {
-        try { return node ? node.childCount : 0; } catch (e) { return 0; }
-    }
-
-    /**
-     * Gets a child node by field name.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @param {string} name - The field name.
-     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
-     */
-    childForFieldName(node, name) {
-        if (!node) return null;
-        try {
-            const child = node.childByFieldName ? node.childByFieldName(name) : null;
-            if (child) return child;
-
-            if (node.childCount && node.fieldNameForChild) {
-                for (let i = 0; i < node.childCount; i++) {
-                    if (node.fieldNameForChild(i) === name) {
-                        return node.child(i);
-                    }
-                }
-            }
-            return null;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    /**
-     * Gets the last named child.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The last named child.
-     */
-    lastNamedChild(node) {
-        try { return node ? node.lastNamedChild : null; } catch (e) { return null; }
-    }
-
-    /**
-     * Parses a code fragment into a fresh AST.
-     * @param {string} text - The source code fragment.
-     * @returns {import('tree-sitter').SyntaxNode} The root node of the fresh tree.
-     */
-    parseFragment(text) {
-        try {
-             const tree = this.registry._parse(text);
-             return tree.rootNode;
-        } catch (e) {
-             console.error(`Fragment parse failed: ${e.message}`);
-             return null;
-        }
-    }
-
-    /**
-     * Throws a UPP-specific error associated with a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node where the error occurred.
-     * @param {string} message - The error message.
-     * @throws {Error} The associated error.
-     */
-    error(node, message) {
-        const err = new Error(message);
-        err.isUppError = true;
-        err.node = node;
-        throw err;
-    }
-
-    /**
-     * Loads a dependency file.
-     * @param {string} filePath - Path to the dependency.
-     */
-    loadDependency(filePath) {
-        let resolvedPath = filePath;
-        if (!path.isAbsolute(filePath)) {
-            const resolved = this.registry.resolveInclude(filePath);
-            if (resolved) {
-                resolvedPath = resolved;
-            }
-        }
-        this.registry.loadDependency(resolvedPath);
-    }
-    /**
-     * Finds the first named node after a specific index.
-     * @param {import('tree-sitter').SyntaxNode} root - The root node.
-     * @param {number} index - The index to start from.
-     * @returns {import('tree-sitter').SyntaxNode|null} The next node or null.
-     */
     findNextNodeAfter(root, index) {
         if (!root) return null;
-
         let node = root.descendantForIndex(index, index);
         const rawRoot = root.__internal_raw_node || root;
 
         while (node && node.endIndex <= index) {
             const rawNode = node.__internal_raw_node || node;
-            if (rawNode.nextNamedSibling) {
-                node = rawNode.nextNamedSibling;
-                break;
-            }
+            if (rawNode.nextNamedSibling) { node = rawNode.nextNamedSibling; break; }
             node = rawNode.parent;
             if (!node || (node.__internal_raw_node || node) === rawRoot) break;
         }
-
         if (!node) return null;
 
-        while (node) {
-             let firstChild = null;
+        while (node && node.startIndex < index) {
+             let nextChild = null;
              for (let i = 0; i < node.namedChildCount; i++) {
                  const c = node.namedChild(i);
-                 if (c.endIndex > index) {
-                     firstChild = c;
-                     break;
-                 }
+                 if (c.endIndex > index) { nextChild = c; break; }
              }
-
-             if (firstChild) {
-                 if (firstChild.startIndex <= index) {
-                     node = firstChild;
-                 } else {
-                     node = firstChild;
-                     break;
-                 }
-             } else {
-                 break;
-             }
+             if (nextChild) node = nextChild;
+             else break;
         }
 
-        if (node) {
-            let rawNode = node.__internal_raw_node || node;
-            while (rawNode.parent && rawNode.parent.startIndex === rawNode.startIndex && rawNode.parent.type !== 'translation_unit') {
-                rawNode = rawNode.parent;
-            }
-            node = rawNode;
+        let current = node;
+        while (current.parent && current.parent.startIndex >= index && current.parent.type !== 'translation_unit') {
+            current = current.parent;
         }
+        node = current;
 
         const finalNode = node && node.isNamed ? node : (node ? node.nextNamedSibling : null);
-        if (finalNode && finalNode.type === 'translation_unit') {
-            //  console.log(`DEBUG: findNextNodeAfter found TU, returning null`);
-             return null;
-        }
-        if (finalNode) {
-            // console.log(`DEBUG: findNextNodeAfter result: type=${finalNode.type} range=${finalNode.startIndex}-${finalNode.endIndex}`);
-        }
-        return finalNode;
+        return (finalNode && finalNode.type !== 'translation_unit') ? finalNode : null;
     }
 
-    /**
-     * Finds the nearest enclosing scope node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The scope node.
-     */
     enclosingScope(node) {
-        let p = node ? node.parent : null;
+        let p = node ? (node.__internal_raw_node || node).parent : null;
         while (p) {
-            if (p.type === 'compound_statement' || p.type === 'function_definition' || p.type === 'translation_unit' || p.type === 'parameter_list') {
-                return p;
-            }
+            if (['compound_statement', 'function_definition', 'translation_unit'].includes(p.type)) return this.wrapNode(p);
             p = p.parent;
         }
-        return this.root;
+        return this.findRoot();
     }
 
-    /**
-     * Finds the definition for a symbol (string or node).
-     * @param {string|import('tree-sitter').SyntaxNode} target - Symbol name or identifier node.
-     * @param {Object} [options] - Resolution options.
-     * @returns {import('tree-sitter').SyntaxNode|null} The definition node.
-     */
-    findDefinition(target, options) {
-        if (!target) return null;
-        if (typeof target === 'string') {
-            return this.registry.resolveSymbol(target, this.contextNode || this.root, options);
-        }
-        return this.registry.getDefinition(target);
+    error(node, message) {
+        const err = new Error(message);
+        err.isUppError = true;
+        err.node = node;
+        throw err;
     }
 }
 

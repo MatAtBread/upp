@@ -118,6 +118,19 @@ int* ptr = /*@allocate(100, int)*/;
 
 **Goal:** Process the AST depth-first, evaluating macros and applying transformations
 
+We do this depth first. This means that when transforming a node, the node and any subtrees will have already been transformed, but is itself mutable: a transformation can change the node and any subtree. On the other hand, the ancestors are immutabl and may change macros invocations.
+
+The fundamental rules are:
+* If a node contains no macro invocations, it is returned unchanged.
+* Tree sitter nodes are indices into the source text, and the source text is the source of truth.
+* A transformation can change the current node and any sub-nodes. It can call upp.helpers.find*() to find other nodes to examine. If it needs to change an ancestor node, it must do so by calling upp.helpers.with*(), which queues the current node and target node together for later processing when we recurse back up to the target node.
+* The current node and subtrees are mutable, and can be changed to a string, and via tree-sitter parsed into a new tree (invalidating all sub-nodes).
+* All source modifications must be done through a central source modification API (eg static `SourceMarker.splice(....)`). This updates all source offsets, sizes and markers, and can warn when a marker has been invalidated.
+* `SourceMarker` is a core system type which wraps a start/end pair of indices preventing inadvertant arithmetic and ensuring that source modifications are tracked correctly.
+* Transformations themselves can return source containing further macro invocations. This is handled by recursively calling `transform()` on the returned source. The exceptions are it is NOT possible to define new macros by returning @define or @include directives (which are parsed before the DFT), and consequently these are pre-defined and implemented directly in phase 1.
+
+The upp.helpers API is restricted as far as possible to read (findXxx) and write (withXxx) operations. Writes to subtrees are done by returning a new node (or string) from the transformation function. Writes are deferred (until the node is the target of the recursion) unless within the current subtree (in which case they are applied immediately).
+
 ### Step 2.1: `transform()` - Entry Point
 
 ```javascript

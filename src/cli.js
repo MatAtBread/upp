@@ -16,7 +16,11 @@ import fs from 'fs';
  * @returns {CompilerCommand} The parsed command info.
  */
 export function parseArgs(args) {
-    if (args[0] === '--transpile' || args[0] === '-T' || args[0] === '--ast') {
+    if (args.length === 0) {
+        return { isUppCommand: false };
+    }
+
+    if (args[0] === '--transpile' || args[0] === '--translate' || args[0] === '-T' || args[0] === '--ast') {
         const file = args[1];
         if (!file) {
             console.error(`Error: ${args[0]} requires a file argument.`);

@@ -66,8 +66,7 @@ function transpileOne(sourceFile, outputCFile = null) {
         if (foundPath) registry.loadDependency(foundPath);
     }
 
-    registry.registerSource(preProcessed, absSource);
-    const output = registry.process();
+    const output = registry.transform(preProcessed, absSource);
 
     if (outputCFile) {
         fs.writeFileSync(outputCFile, output);
@@ -167,9 +166,8 @@ for (const source of command.sources) {
                 }
             }
 
-            // Process Macros
-            registry.registerSource(preProcessed, source.absCupFile);
-            const output = registry.process();
+            // Process
+            const output = registry.transform(preProcessed, source.absCupFile);
 
             // Write output to the .c file
             fs.writeFileSync(source.absCFile, output);

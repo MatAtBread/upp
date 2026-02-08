@@ -1,11 +1,10 @@
-#ifndef __UPP_STDLIB_METHOD_H__
-#define __UPP_STDLIB_METHOD_H__
-
 @define method(targetType) {
     const node = upp.consume(['function_definition', 'declaration']);
     if (!node) return "";
+    console.log(`[method] Consumed node: ${node.type} text="${node.text.slice(0, 40)}"`);
 
     const funcDeclarator = upp.childForFieldName(node, 'declarator');
+    console.log(`[method] funcDeclarator: ${funcDeclarator ? funcDeclarator.type : 'null'} text="${funcDeclarator ? funcDeclarator.text : ''}" range=[${funcDeclarator ? funcDeclarator.startIndex : 0}, ${funcDeclarator ? funcDeclarator.endIndex : 0}]`);
 
     // Handle pointer declarators
     let funcDecl = funcDeclarator;
@@ -14,16 +13,10 @@
     }
 
     const funcIdentifier = upp.childForFieldName(funcDecl, 'declarator');
+    console.log(`[method] funcIdentifier: ${funcIdentifier ? funcIdentifier.type : 'null'} text="${funcIdentifier ? funcIdentifier.text : ''}"`);
     if (!funcIdentifier) return node.text;
 
     const originalName = funcIdentifier.text;
-
-    // Prevent infinite recursion
-    if (originalName.startsWith('_') && originalName.includes('_method_')) {
-        return node.text;
-    }
-
-    // Clean target type (remove 'struct ' prefix if present)
     let cleanTarget = targetType.trim();
     if (cleanTarget.startsWith('struct ')) {
         cleanTarget = cleanTarget.slice(7).trim();
@@ -32,79 +25,64 @@
     // Generate new name: _Point_method_getX
     const newName = `_${cleanTarget}_method_${originalName}`;
 
-    // Rename the function
-    let functionText = node.text;
     const idStart = funcIdentifier.startIndex - node.startIndex;
     const idEnd = funcIdentifier.endIndex - node.startIndex;
+
+    // Rename the function
+    let functionText = node.text;
     functionText = functionText.slice(0, idStart) + newName + functionText.slice(idEnd);
+
+    // Strip the macro invocation itself from the text to avoid double-comments or recursive expansion
+    functionText = functionText.replace(/\/\*@method\([^)]*\)\*\//g, '');
 
     // Use withPattern to transform method calls
     const marker = upp.withPattern('call_expression',
         (callNode, helpers) => {
             // Check if this is a field_expression call (obj.method() or obj->method())
-            const funcNode = callNode.childForFieldName('function');
+            const funcNode = helpers.childForFieldName(callNode, 'function');
             if (!funcNode || funcNode.type !== 'field_expression') return false;
 
-            const objectNode = funcNode.childForFieldName('argument');
-            const methodNode = funcNode.childForFieldName('field');
+            const objectNode = helpers.childForFieldName(funcNode, 'argument');
+            const methodNode = helpers.childForFieldName(funcNode, 'field');
 
             // Check if method name matches
-            if (!objectNode || !methodNode || methodNode.text !== originalName) return false;
+            if (!objectNode || !methodNode) return false;
+
+            console.log(`[method.hup matcher] checking call: ${objectNode.text}.${methodNode.text}`);
+            if (methodNode.text !== originalName) return false;
 
             // Get the object's type
             const objDef = helpers.getDefinition(objectNode);
+            console.log(`[method.hup matcher] objDef: ${objDef ? objDef.type : 'null'} text="${objDef ? objDef.text : ''}"`);
             if (!objDef) return false;
 
             let objType = helpers.getType(objDef);
+            console.log(`[method.hup matcher] objType: ${objType}`);
             let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
 
             // Check if type matches (direct or via typedef)
             if (cleanObjType === cleanTarget) {
+                console.log(`[method.hup matcher] MATCH!`);
                 return true;
             }
-
-            // Try to resolve typedef
-            let foundTypedef = false;
-            helpers.walk(helpers.root, (n) => {
-                if (n.type === 'type_definition') {
-                    const typeNode = n.childForFieldName('type');
-                    const declaratorNode = n.childForFieldName('declarator');
-                    if (typeNode && declaratorNode) {
-                        const underlyingType = typeNode.text.replace(/struct /g, '').trim();
-                        const typedefName = declaratorNode.text.trim();
-                        if (typedefName === cleanObjType && underlyingType === cleanTarget) {
-                            foundTypedef = true;
-                        }
-                    }
-                }
-            });
-
-            return foundTypedef;
+            return false;
         },
-        (callNode) => {
-            console.log(`[method] TRANSFORMING: ${callNode.text.substring(0, 40)}`);
-            // Transform: obj.method(args) -> _Type_method_method(&obj, args)
-            const funcNode = callNode.childForFieldName('function');
-            const objectNode = funcNode.childForFieldName('argument');
-            const argsNode = callNode.childForFieldName('arguments');
+        (callNode, helpers) => {
+            const funcNode = helpers.childForFieldName(callNode, 'function');
+            const targetNode = helpers.childForFieldName(funcNode, 'argument');
+            const argsNode = helpers.childForFieldName(callNode, 'arguments');
 
-            let argsText = '';
-            if (argsNode && argsNode.namedChildCount > 0) {
-                const argsInner = argsNode.text.slice(1, -1).trim();
-                argsText = argsInner ? `, ${argsInner}` : '';
+            // Transform f.print() into _Foo_method_print(&f)
+            let argsText = argsNode ? argsNode.text : "()";
+            if (argsText === "()") {
+                argsText = `(&${targetNode.text})`;
+            } else {
+                argsText = `(&${targetNode.text}, ${argsText.slice(1)}`;
             }
 
-            // Get operator (. or ->)
-            const opNode = funcNode.child(1);
-            const operator = opNode ? opNode.text : '.';
-
-            const addrPrefix = operator === '.' ? '&' : '';
-            return `${newName}(${addrPrefix}${objectNode.text}${argsText})`;
+            return `${newName}${argsText}`;
         }
     );
 
-    // Return the renamed function + marker
-    return functionText + ' ' + marker;
+    return functionText;
 }
-
-#endif

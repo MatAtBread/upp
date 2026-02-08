@@ -74,8 +74,7 @@ for (const coreFile of coreFiles) {
 }
 
 // 5. Transpile
-registry.registerSource(preProcessed, absCupFile);
-const output = registry.process();
+const output = registry.transform(preProcessed, absCupFile);
 
 // 6. Report
 console.log("========================================");

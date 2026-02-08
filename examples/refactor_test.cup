@@ -1,0 +1,12 @@
+@define Test(x) {
+    upp.atRoot((root) => {
+        upp.replace(root, `// Added at root\n` + root.text);
+    });
+    return `int ${x} = 10;`;
+}
+
+@Test(myVar)
+
+void main() {
+    @Test(localVal)
+}

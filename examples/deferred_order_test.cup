@@ -1,0 +1,25 @@
+@define Test() {
+    // 1. Find the enclosing function (ancestor)
+    const scope = upp.findScope();
+
+    // 2. Transform the ancestor (deferred)
+    upp.withNode(scope, (node, helpers) => {
+        return `// Start of function\n${node.text}`;
+    });
+
+    // 3. Transform a sub-node (immediate)
+    // Let's consume the next node and transform it
+    const next = upp.consume('declaration');
+    if (next) {
+        upp.withNode(next, (node, helpers) => {
+            return `/* Immediate transformation */ ${node.text}`;
+        });
+    }
+
+    return "// Macro expanded";
+}
+
+void main() {
+    @Test()
+    int x = 10;
+}

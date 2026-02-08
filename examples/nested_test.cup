@@ -1,0 +1,11 @@
+@define Inner(val) {
+    upp.replace(upp.contextNode, `(${val} * 2)`);
+}
+
+@define Outer(a, b) {
+    upp.replace(upp.contextNode, `int result = @Inner(${a}) + @Inner(${b});`);
+}
+
+void main() {
+    @Outer(5, 10)
+}

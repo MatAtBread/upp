@@ -250,6 +250,54 @@ class UppHelpersC extends UppHelpersBase {
     }
 
     /**
+     * Finds the definition for a node or name.
+     * @param {import('tree-sitter').SyntaxNode|string} target - The node or name.
+     * @returns {import('tree-sitter').SyntaxNode|null} The definition.
+     */
+    findDefinition(target) {
+        const name = typeof target === 'string' ? target : target.text;
+        if (!name) return null;
+
+        let current = (typeof target === 'object' && target.__internal_raw_node) ? target.__internal_raw_node.parent : null;
+        if (!current && this.contextNode) current = this.contextNode.__internal_raw_node || this.contextNode;
+        if (!current) current = this.context.tree.rootNode;
+
+        while (current) {
+            // Find declarations in this scope
+            const queryStr = `
+                (declaration
+                    declarator: (_) @name)
+                (parameter_declaration
+                    declarator: (_) @name)
+                (function_definition
+                    declarator: (function_declarator declarator: (_) @name))
+                (type_definition
+                    declarator: (_) @name)
+            `;
+            const matches = this.query(queryStr, current);
+
+            for (const match of matches) {
+                // The @name capture might be the actual identifier or a recursive declarator
+                let n = match.name;
+                while (n && n.type !== 'identifier' && n.type !== 'type_identifier') {
+                    n = this.childForFieldName(n, 'declarator') || n.namedChildren.find(c => c.type === 'identifier' || c.type === 'type_identifier' || c.type.endsWith('_declarator'));
+                    if (n && (n.type === 'identifier' || n.type === 'type_identifier')) break;
+                    // If we find another declarator, keep going
+                }
+
+                if (n && n.text === name) {
+                    return n;
+                }
+            }
+
+            if (current.type === 'translation_unit') break;
+            current = current.parent;
+        }
+
+        return null;
+    }
+
+    /**
      * Finds references to a definition.
      * @param {import('tree-sitter').SyntaxNode} node - The definition node.
      * @returns {Array<import('tree-sitter').SyntaxNode>} The references.
@@ -393,10 +441,7 @@ class UppHelpersC extends UppHelpersBase {
         const rule = {
             id: this.registry.generateRuleId(),
             type: 'pattern',
-            identity: {
-                nodeType: nodeType,
-                pattern: matcher.toString() // Store for debugging
-            },
+            nodeType: nodeType,
             matcher: (node, helpers) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers);
@@ -429,6 +474,38 @@ class UppHelpersC extends UppHelpersBase {
                 }
             });
             console.log(`[withPattern] Walk complete. Visited ${nodeCount} nodes, found ${matchCount} matches`);
+        });
+    }
+
+    /**
+     * Transforms nodes matching an S-expression query.
+     * @param {import('tree-sitter').SyntaxNode} scope - The search scope.
+     * @param {string} queryString - The S-expression query.
+     * @param {function(import('tree-sitter').SyntaxNode, UppHelpersC): (string|null|undefined)} callback - Transformation callback.
+     */
+    withQuery(scope, queryString, callback) {
+        const matches = this.query(queryString, scope);
+        for (const match of matches) {
+            // Usually we want to transform the main capture or all caps?
+            // Query matches return named captures. If there's only one, use it.
+            const captureNames = Object.keys(match.captures);
+            if (captureNames.length > 0) {
+                this.withNode(match.captures[captureNames[0]], (node, helpers) => callback(node, helpers));
+            }
+        }
+    }
+
+    /**
+     * Transforms nodes matching a source fragment pattern.
+     * @param {import('tree-sitter').SyntaxNode} scope - The search scope.
+     * @param {string} pattern - The source fragment pattern.
+     * @param {function(Object, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
+     */
+    withMatch(scope, pattern, callback) {
+        this.matchAll(scope, pattern, (captures) => {
+            if (captures && captures.node) {
+                this.withNode(captures.node, (node, helpers) => callback(captures, helpers));
+            }
         });
     }
 
