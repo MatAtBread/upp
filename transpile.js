@@ -26,8 +26,8 @@ const diagnostics = new DiagnosticsManager({});
 // 1. Resolve Config (Search up tree for upp.json, supports extends and UPP fallback)
 const loadedConfig = resolveConfig(absCupFile);
 
-const configIncludesRaw = loadedConfig.includePaths || [];
-if (loadedConfig.includePaths) configIncludesRaw.push(...loadedConfig.includePaths);
+const configIncludesRaw = [];
+if (loadedConfig.includePaths) configIncludesRaw.push(...loadedConfig.includePaths.filter(p => !configIncludesRaw.includes(p)));
 
 const finalIncludePaths = [
     path.dirname(absCupFile),

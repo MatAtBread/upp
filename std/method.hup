@@ -1,10 +1,8 @@
 @define method(targetType) {
     const node = upp.consume(['function_definition', 'declaration']);
     if (!node) return "";
-    console.log(`[method] Consumed node: ${node.type} text="${node.text.slice(0, 40)}"`);
 
     const funcDeclarator = upp.childForFieldName(node, 'declarator');
-    console.log(`[method] funcDeclarator: ${funcDeclarator ? funcDeclarator.type : 'null'} text="${funcDeclarator ? funcDeclarator.text : ''}" range=[${funcDeclarator ? funcDeclarator.startIndex : 0}, ${funcDeclarator ? funcDeclarator.endIndex : 0}]`);
 
     // Handle pointer declarators
     let funcDecl = funcDeclarator;
@@ -13,7 +11,6 @@
     }
 
     const funcIdentifier = upp.childForFieldName(funcDecl, 'declarator');
-    console.log(`[method] funcIdentifier: ${funcIdentifier ? funcIdentifier.type : 'null'} text="${funcIdentifier ? funcIdentifier.text : ''}"`);
     if (!funcIdentifier) return node.text;
 
     const originalName = funcIdentifier.text;
@@ -48,21 +45,17 @@
             // Check if method name matches
             if (!objectNode || !methodNode) return false;
 
-            console.log(`[method.hup matcher] checking call: ${objectNode.text}.${methodNode.text}`);
             if (methodNode.text !== originalName) return false;
 
             // Get the object's type
             const objDef = helpers.getDefinition(objectNode);
-            console.log(`[method.hup matcher] objDef: ${objDef ? objDef.type : 'null'} text="${objDef ? objDef.text : ''}"`);
             if (!objDef) return false;
 
             let objType = helpers.getType(objDef);
-            console.log(`[method.hup matcher] objType: ${objType}`);
             let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
 
             // Check if type matches (direct or via typedef)
             if (cleanObjType === cleanTarget) {
-                console.log(`[method.hup matcher] MATCH!`);
                 return true;
             }
             return false;

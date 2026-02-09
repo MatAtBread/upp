@@ -237,7 +237,7 @@ class UppHelpersC extends UppHelpersBase {
             bodyNode = fnNode.namedChildren.find(c => c.type === 'compound_statement');
         }
 
-        return { returnType, name, params, bodyNode, node: fnNode };
+        return { returnType, name, params, bodyNode, node: fnNode, nameNode };
     }
 
     /**
@@ -278,7 +278,7 @@ class UppHelpersC extends UppHelpersBase {
 
             for (const match of matches) {
                 // The @name capture might be the actual identifier or a recursive declarator
-                let n = match.name;
+                let n = match.captures.name;
                 while (n && n.type !== 'identifier' && n.type !== 'type_identifier') {
                     n = this.childForFieldName(n, 'declarator') || n.namedChildren.find(c => c.type === 'identifier' || c.type === 'type_identifier' || c.type.endsWith('_declarator'));
                     if (n && (n.type === 'identifier' || n.type === 'type_identifier')) break;
@@ -455,17 +455,9 @@ class UppHelpersC extends UppHelpersBase {
 
         // Process existing nodes at root level
         return this.atRoot((root, helpers) => {
-            console.log(`[withPattern] Walking root for nodeType=${nodeType}, root.type=${root.type}, root.childCount=${root.childCount}`);
-            console.log(`[withPattern] Root text (first 200 chars): ${root.text.substring(0, 200)}`);
-            let matchCount = 0;
-            let nodeCount = 0;
             helpers.walk(root, (node) => {
-                nodeCount++;
                 if (node.type === nodeType) {
-                    console.log(`[withPattern] Found ${nodeType} node: ${node.text.substring(0, 40)}`);
                     if (matcher(node, helpers)) {
-                        matchCount++;
-                        console.log(`[withPattern] Matcher returned true for: ${node.text.substring(0, 40)}`);
                         const replacement = callback(node);
                         if (replacement !== undefined) {
                             helpers.replace(node, replacement === null ? '' : replacement);
@@ -473,7 +465,6 @@ class UppHelpersC extends UppHelpersBase {
                     }
                 }
             });
-            console.log(`[withPattern] Walk complete. Visited ${nodeCount} nodes, found ${matchCount} matches`);
         });
     }
 

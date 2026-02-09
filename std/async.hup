@@ -2,8 +2,9 @@
 #define __UPP_STDLIB_ASYNC_H__
 
 @define async() {
-    const node = upp.contextNode;
-    let def = (node.type === 'expression_statement' || node.type === 'declaration') ? node.child(0) : node;
+    let node = upp.consume(['function_definition', 'declaration']);
+    node = (node.type === 'expression_statement' || node.type === 'declaration') ? node.child(0) : node;
+    debugger;
     // Note: function_definition is usually top-level, but check anyway
     if (node.type !== 'function_definition') {
         upp.error(node, `@async must be applied to a function definition, not ${node.type}`);

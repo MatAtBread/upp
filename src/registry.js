@@ -42,6 +42,7 @@ class Registry {
 
         this.idCounter = 0;
         this.loadedDependencies = new Set();
+        this.shouldMaterializeDependency = false;
         this.transformRules = [];
         this.ruleIdCounter = 0;
         this.deferredMarkers = [];
@@ -50,7 +51,6 @@ class Registry {
     }
 
     registerMacro(name, params, body, language = 'js', origin = 'unknown', startIndex = 0) {
-        console.log(`[registerMacro] Registering @${name} from ${origin}`);
         this.macros.set(name, { name, params, body, language, origin, startIndex });
     }
 
@@ -67,7 +67,7 @@ class Registry {
         }
     }
 
-    loadDependency(file, originPath = 'unknown') {
+    loadDependency(file, originPath = 'unknown', parentHelpers = null) {
         let targetPath;
         if (path.isAbsolute(file)) {
             targetPath = file;
@@ -89,11 +89,16 @@ class Registry {
         }
 
         const source = fs.readFileSync(targetPath, 'utf8');
-        const output = this.transform(source, targetPath);
+        const output = this.transform(source, targetPath, parentHelpers);
 
-        if (targetPath.endsWith('.hup')) {
-            const outputPath = targetPath.slice(0, -2); // .hup -> .h
-            fs.writeFileSync(outputPath, output);
+        if (this.shouldMaterializeDependency) {
+            let outputPath = null;
+            if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
+            else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
+
+            if (outputPath) {
+                fs.writeFileSync(outputPath, output);
+            }
         }
     }
 
@@ -119,7 +124,6 @@ class Registry {
         context.tree = this._parse(context.source, oldTree);
         Marker.migrate(oldTree, context.tree);
         context.helpers.root = context.tree.rootNode;
-        console.log(`[Registry] applySplice: source length=${context.source.length}`);
     }
 
     applyRootSplice(context, replacement) {
@@ -154,6 +158,13 @@ class Registry {
         }
 
         if (parentHelpers) {
+            helpers.parentHelpers = parentHelpers;
+            helpers.parentTree = parentHelpers.root;
+            helpers.parentRegistry = {
+                invocations: parentHelpers.context.invocations,
+                sourceCode: parentHelpers.context.source,
+                helpers: parentHelpers
+            };
             helpers.topLevelInvocation = parentHelpers.topLevelInvocation || parentHelpers.invocation;
             helpers.currentInvocations = foundInvs.length > 0 ? foundInvs : (parentHelpers.currentInvocations || []);
         } else {
@@ -268,7 +279,6 @@ class Registry {
             if (updated) {
                 const delta = updated.childCount - childCountBefore;
                 if (delta !== 0) {
-                    console.log(`[Registry] Node ${node.type} childCount changed by ${delta}, adjusting i`);
                     i += delta;
                 }
                 node = updated;
@@ -414,7 +424,17 @@ class Registry {
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
         let match;
+        const tree = this.parser.parse(source);
         while ((match = definerRegex.exec(source)) !== null) {
+            const node = tree.rootNode.descendantForIndex(match.index);
+            let insideComment = false;
+            let curr = node;
+            while (curr) {
+                if (curr.type === 'comment') { insideComment = true; break; }
+                curr = curr.parent;
+            }
+            if (insideComment) continue;
+
             const name = match[1];
             const params = match[2].split(',').map(s => s.trim()).filter(Boolean);
             const bodyStart = match.index + match[0].length;
@@ -427,7 +447,7 @@ class Registry {
             cleanSource = cleanSource.slice(0, match.index) + replaced + cleanSource.slice(match.index + fullMatchLength);
         }
 
-        const invocations = this.findInvocations(cleanSource);
+        const invocations = this.findInvocations(cleanSource, tree);
         for (let i = invocations.length - 1; i >= 0; i--) {
             const inv = invocations[i];
             const original = cleanSource.slice(inv.startIndex, inv.endIndex);
@@ -448,15 +468,26 @@ class Registry {
         return source.slice(startOffset, i - 1);
     }
 
-    findInvocations(source) {
+    findInvocations(source, tree = null) {
         const invs = [];
-        const regex = /@(\w+)\s*\(([^)]*)\)/g;
+        const regex = /@(\w+)(\s*\(([^)]*)\))?/g;
         let match;
+        const currentTree = tree || this.parser.parse(source);
+
         while ((match = regex.exec(source)) !== null) {
             if (this.isInsideInvocation(match.index, match.index + match[0].length)) continue;
 
-            const name = match[1];
-            const args = match[2].split(',').map(s => s.trim()).filter(Boolean);
+            const node = currentTree.rootNode.descendantForIndex(match.index);
+            let insideComment = false;
+            let curr = node;
+            while (curr) {
+                if (curr.type === 'comment') { insideComment = true; break; }
+                curr = curr.parent;
+            }
+            if (insideComment) continue;
+
+            const name = match[1].trim();
+            const args = match[3] ? match[3].trim().split(',').map(s => s.trim()).filter(Boolean) : [];
             invs.push({
                 name,
                 args,
@@ -470,12 +501,12 @@ class Registry {
     }
 
     absorbInvocation(text, startIndex) {
-        const regex = /@(\w+)\s*\(([^)]*)\)/;
+        const regex = /@(\w+)(\s*\(([^)]*)\))?/;
         const match = text.slice(startIndex).match(regex);
         if (match) {
             return {
                 name: match[1],
-                args: match[2].split(',').map(s => s.trim()).filter(Boolean)
+                args: match[3]?.trim().split(',').map(s => s.trim()).filter(Boolean) || []
             };
         }
         return null;

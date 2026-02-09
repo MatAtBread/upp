@@ -21,6 +21,18 @@ class UppHelpersBase {
         this.context = null; // Back-reference to the local transform context
     }
 
+    code(strings, ...values) {
+        let result = "";
+        for (let i = 0; i < strings.length; i++) {
+            result += strings[i];
+            if (i < values.length) {
+                const val = values[i];
+                result += (val && typeof val === 'object' && val.text !== undefined) ? val.text : String(val);
+            }
+        }
+        return result;
+    }
+
     atRoot(callback) {
         const root = this.findRoot();
         if (!root) return "";
@@ -82,7 +94,9 @@ class UppHelpersBase {
             for (const c of m.captures) {
                 captures[c.name] = this.wrapNode(c.node);
             }
-            return captures;
+            // Return compatible structure
+            const firstCapture = m.captures[0] ? this.wrapNode(m.captures[0].node) : null;
+            return { captures, node: captures[Object.keys(captures)[0]] || firstCapture };
         });
     }
 
@@ -195,7 +209,16 @@ class UppHelpersBase {
     }
 
     loadDependency(file) {
-        this.registry.loadDependency(file, this.context.originPath);
+        this.registry.loadDependency(file, this.context.originPath, this);
+    }
+
+    registerParentTransform(callback) {
+        if (!this.parentHelpers) {
+            console.warn("registerParentTransform called without a parent context");
+            return;
+        }
+        // Simplified: just run it on the parent's root node now
+        callback(this.parentTree, this.parentHelpers);
     }
 
     consume(expectedTypeOrOptions, errorMessage) {
