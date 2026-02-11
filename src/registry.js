@@ -242,7 +242,7 @@ class Registry {
 
                     if (result !== undefined) {
                         let finalResult = (result === null) ? "" : String(result);
-                        console.log(`[DEBUG] Macro @${inv.name} at ${node.startIndex}-${node.endIndex} result:`, finalResult);
+
 
                         // Pre-process the result to wrap nested macros in comments (like prepareSource does)
                         // otherwise they will be parsed as invalid syntax or identifiers
@@ -303,12 +303,12 @@ class Registry {
             while (iterations < MAX_ITERATIONS) {
                 // Find all nodes that have pending markers
                 const nodesWithMarkers = this.tree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
-                console.log(`[DEBUG] executeDeferredMarkers: found ${nodesWithMarkers.length} nodes with markers`);
+
                 if (nodesWithMarkers.length === 0) break;
 
                 iterations++;
                 for (const node of nodesWithMarkers) {
-                    console.log(`[DEBUG] executeDeferredMarkers: executing markers on ${node.type} at ${node.startIndex}`);
+
                 }
 
                 // Sort bottom-up and right-to-left for predictable execution
@@ -552,7 +552,7 @@ class Registry {
             });
         }
         if (invs.length > 0) {
-            console.log(`[DEBUG] findInvocations found: ${invs.map(i => i.name).join(', ')}`);
+
         }
         return invs;
     }

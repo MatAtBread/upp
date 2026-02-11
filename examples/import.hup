@@ -5,7 +5,7 @@
         pathNode = upp.consume('string_literal');
         if (!pathNode) {
             const next = upp.nextNode();
-            console.log(`[DEBUG] @import expected string, found: ${next ? next.type : 'null'} text: '${next ? next.text : ''}'`);
+
              // Try to handle ERROR node if it contains string
              if (next && next.type === 'ERROR') {
                  // Try to find string child

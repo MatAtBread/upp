@@ -59,7 +59,7 @@ class UppHelpersBase {
 
         // Handle range object { start, end } implementation for root insertion
         if (typeof n.start === 'number' && typeof n.end === 'number') {
-            console.log(`[DEBUG] replace range: ${n.start}-${n.end}`);
+
             const root = this.root || this.findRoot();
             if (root && n.start === 0 && n.end === 0) {
                 if (root.children.length > 0) {

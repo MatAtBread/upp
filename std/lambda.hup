@@ -2,7 +2,7 @@
 #define __UPP_STDLIB_LAMBDA_H__
 
 @define lambda(...args) {
-    // console.log("[DEBUG] lambda macro started with args:", args);
+
     // 1. Peek at the next node (function definition) WITHOUT consuming it yet.
     //    This preserves location data (startIndex/endIndex) for proper analysis.
     let fnNode = upp.nextNode('function_definition');
@@ -43,7 +43,7 @@
     }
 
     const bodyNode = sig.bodyNode || (sig.node ? upp.childForFieldName(sig.node, 'body') : upp.childForFieldName(fnNode, 'body'));
-    // console.log(`[DEBUG] bodyNode: ${bodyNode ? bodyNode.type : 'null'} id: ${bodyNode ? bodyNode.id : 'N/A'}`);
+
 
     // Identify captures
     const captureMap = new Map(); // name -> defNode
@@ -94,10 +94,10 @@
                     }
 
                     if (!isStaticOrExtern) {
-                        // console.log(`[DEBUG] Capturing ${node.text}`);
+
                         captureMap.set(node.text, def);
                     } else {
-                        // console.log(`[DEBUG] Ignoring static/extern/global ${node.text}`);
+
                     }
                 }
             }
@@ -205,7 +205,7 @@
         const contextArg = ctxName ? `(&${ctxId})` : "";
 
         function processReferences(targetDefName, isOriginal) {
-            // console.log(`[DEBUG] processReferences for ${targetDefName} (original: ${isOriginal})`);
+
             helpers.walk(root, (ref) => {
                 if (ref.type !== 'identifier') return;
                 if (ref.text !== targetDefName) return;
