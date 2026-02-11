@@ -1,5 +1,5 @@
 Macro @test_error_missing failed: Error: @test_error_missing expected compound_statement, but nothing found
-    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:383:21)
     at reportFailure (file://./src/upp_helpers_base.js:228:18)
     at UppHelpersC.consume (file://./src/upp_helpers_base.js:234:46)
     at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:18)
@@ -43,14 +43,14 @@ Macro @test_error_missing failed: Error: @test_error_missing expected compound_s
       nodeCache: [Map],
       root: [SourceNode]
     },
-    id: 5560150264,
+    id: 4989531144,
     type: 'comment',
     startIndex: 669,
     endIndex: 692,
     children: [],
     parent: SourceNode {
       tree: [SourceTree],
-      id: 5560150160,
+      id: 4989531040,
       type: 'translation_unit',
       startIndex: 412,
       endIndex: 693,

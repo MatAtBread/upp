@@ -224,7 +224,8 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             process.exit(0);
         }
     } catch (e) {
-        console.error(`[upp] Error: ${e.message}`);
+        console.error(`[upp] Error:`);
+        console.error(e);
         process.exit(1);
     }
 }

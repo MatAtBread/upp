@@ -21,11 +21,11 @@
 
         // Also add before the closing brace of the scope
         const last = scope.children[scope.children.length - 1];
-        if (last && last.type === '}' || last.type === 'compound_statement' && last.text === '}') {
+        if (last && (last.type === '}' || (last.type === 'compound_statement' && last.text === '}'))) {
             // Check if we already handled a return at the very end.
             // When we replace a return with 'code \n return', 
-            // the original return node's identity is NOT necessarily preserved at the same position.
-            // Let's check if the last non-comment, non-whitespace node is a return.
+            // the original return node's identity is preserved if we use insertBefore on the return,
+            // but here we are looking for the end of the block.
             let foundReturn = false;
             for (let i = scope.children.length - 1; i >= 0; i--) {
                 const child = scope.children[i];
@@ -39,7 +39,7 @@
             }
 
             if (!foundReturn) {
-                helpers.replace(last, codeText + "\n" + last.text);
+                 last.insertBefore(codeText);
             }
         }
     });

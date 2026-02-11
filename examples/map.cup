@@ -9,8 +9,8 @@
         bodyNode = upp.childForFieldName(node, 'body');
     } else {
         arrayNode = node;
-        varNode = node.nextNamedSibling;
-        bodyNode = varNode ? varNode.nextNamedSibling : null;
+        varNode = upp.consume();
+        bodyNode = upp.consume();
     }
 
     if (!bodyNode || (bodyNode.type !== 'compound_statement' && bodyNode.type !== 'expression_statement' && bodyNode.type !== 'ERROR')) {
@@ -35,9 +35,12 @@
     }`;
 }
 
+#include "io-lite.h"
+
 int main() {
     int arr[] = {1, 2, 3};
     @map arr z { z = z + 1; };
+    printf("%d %d %d\n", arr[0], arr[1], arr[2]);
     return 0;
 }
 

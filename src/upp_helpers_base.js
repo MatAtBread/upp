@@ -55,7 +55,7 @@ class UppHelpersBase {
         // If we replaced 'this.contextNode', update it for the helper?
         // Actually Registry handles the walk, but helpers.contextNode might need update.
         if (this.contextNode === n) this.contextNode = result;
-        return "";
+        return result;
     }
 
     query(queryString, node = null) {
@@ -84,9 +84,6 @@ class UppHelpersBase {
         return this.parent(node);
     }
 
-    findScope(node) {
-        return this.enclosingScope(node || this.contextNode);
-    }
 
     withNode(node, callback) {
         if (!node) return "";
@@ -161,33 +158,10 @@ class UppHelpersBase {
      * @private
      */
     _getNextNode(expectedTypes = null) {
-        let node = null;
-        let anchor = this.lastConsumedNode || (this.invocation && this.invocation.invocationNode) || this.contextNode;
-
-        if (anchor && anchor.parent) {
-            // Priority 1: Check siblings
-            const idx = anchor.parent.children.indexOf(anchor);
-            if (idx !== -1 && idx + 1 < anchor.parent.children.length) {
-                node = anchor.parent.children[idx + 1];
-            }
-
-            // Priority 2: Check parent (embedded macro case, e.g. @attribute in a struct)
-            // But only if no sibling found, and anchor is NOT a comment (tokens are never parents of their context)
-            if (!node && anchor.type !== 'comment' && expectedTypes && expectedTypes.includes(anchor.parent.type)) {
-                node = anchor.parent;
-            }
-        }
-
-        if (!node && this.contextNode) {
-            // Check descendants if not found as sibling
-            for (const child of this.contextNode.children) {
-                if (!expectedTypes || expectedTypes.includes(child.type)) {
-                    node = child;
-                    break;
-                }
-            }
-        }
-        return node;
+        const root = this.root || this.findRoot();
+        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode.endIndex);
+        if (index === undefined) return null;
+        return this.findNextNodeAfter(root, index);
     }
 
     /**
@@ -240,18 +214,20 @@ class UppHelpersBase {
 
         const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
 
-        const text = node.text;
+        const captureText = (n) => {
+            n._capturedText = n.text;
+            n.children.forEach(captureText);
+        };
+        captureText(node);
         const wrapped = node;
-        // We could store the text on the node object itself if needed, 
-        // but for now we just return the node which still has correct indices 
-        // if we are careful, or we can add a 'capturedText' property.
-        node._capturedText = text;
 
+        const nextSearchIndex = node.startIndex;
         if (!isHoisted) {
             this.replace(node, "");
         }
         this.consumedIds.add(node.id);
         this.lastConsumedNode = node;
+        this.lastConsumedIndex = nextSearchIndex;
         return wrapped;
     }
 
@@ -298,48 +274,77 @@ class UppHelpersBase {
 
     findNextNodeAfter(root, index) {
         if (!root) return null;
-        let node = root.descendantForIndex(index, index);
-        const rawRoot = root.__internal_raw_node || root;
 
-        while (node && node.endIndex <= index) {
-            const rawNode = node.__internal_raw_node || node;
-            if (rawNode.nextNamedSibling) { node = rawNode.nextNamedSibling; break; }
-            node = rawNode.parent;
-            if (!node || (node.__internal_raw_node || node) === rawRoot) break;
-        }
-        if (!node) return null;
-
-        while (node && node.startIndex < index) {
-            let nextChild = null;
-            for (let i = 0; i < node.namedChildCount; i++) {
-                const c = node.namedChild(i);
-                if (c.endIndex > index) { nextChild = c; break; }
+        const findNextSibling = (node) => {
+            if (!node || !node.parent || node === root) return null;
+            const idx = node.parent.children.indexOf(node);
+            if (idx === -1) return null;
+            for (let i = idx + 1; i < node.parent.children.length; i++) {
+                const sibling = node.parent.children[i];
+                if (sibling.startIndex >= index) return sibling;
             }
-            if (nextChild) node = nextChild;
+            return findNextSibling(node.parent);
+        };
+
+        let current = root.descendantForIndex(index, index);
+
+        while (current && current.startIndex < index && current.endIndex > index && current.children.length > 0) {
+            let nextChild = null;
+            for (const child of current.children) {
+                if (child.endIndex > index) {
+                    nextChild = child;
+                    break;
+                }
+            }
+            if (nextChild) current = nextChild;
             else break;
         }
 
-        let current = node;
-        while (current.parent && current.parent.startIndex >= index && current.parent.type !== 'translation_unit') {
-            current = current.parent;
+        while (current && current.endIndex <= index) {
+            current = findNextSibling(current);
         }
-        node = current;
 
-        const finalNode = node && node.isNamed ? node : (node ? node.nextNamedSibling : null);
-        return (finalNode && finalNode.type !== 'translation_unit') ? finalNode : null;
+        if (!current || current === root) return null;
+
+        while (current.children.length > 0) {
+            if (current.startIndex >= index && current.isNamed) break;
+
+            let found = false;
+            for (const child of current.children) {
+                if (child.startIndex >= index) {
+                    current = child;
+                    found = true;
+                    break;
+                } else if (child.endIndex > index) {
+                    current = child;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) break;
+        }
+
+        const isSafe = (current && current.startIndex >= index && current !== root);
+        if (isSafe) {
+            let p = current.parent;
+            let ok = false;
+            while (p) {
+                if (p === root) { ok = true; break; }
+                p = p.parent;
+            }
+            if (!ok) return null;
+        }
+
+        return isSafe ? current : null;
     }
 
-    enclosingScope(node) {
-        let p = node ? node.parent : null;
-        while (p) {
-            if (['compound_statement', 'function_definition', 'translation_unit'].includes(p.type)) return p;
-            p = p.parent;
-        }
-        return this.findRoot();
-    }
 
     registerTransformRule(rule) {
         this.registry.registerTransformRule(rule);
+    }
+
+    findScope() {
+        return this.findEnclosing(this.lastConsumedNode || this.contextNode, ['compound_statement', 'translation_unit']);
     }
 
     findEnclosing(node, types) {
@@ -372,9 +377,17 @@ class UppHelpersBase {
     }
 
     error(node, message) {
-        const err = new Error(message);
+        let finalNode = node;
+        let finalMessage = message;
+
+        if (arguments.length === 1 && typeof node === 'string') {
+            finalMessage = node;
+            finalNode = this.contextNode || (this.invocation && this.invocation.invocationNode);
+        }
+
+        const err = new Error(finalMessage);
         err.isUppError = true;
-        err.node = node;
+        err.node = finalNode;
         throw err;
     }
 }

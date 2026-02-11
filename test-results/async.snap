@@ -1,3 +1,7 @@
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-23 result: #include "async.h"
+[DEBUG] Macro @async at 492-502 result: 
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/async.c ===
 #include "async.h"
 /* A minimal C stdio/stdlib for upp to make it easy to
@@ -23,6 +27,42 @@ int main() {
     os_start(afn);
     return 0;
 }
+
+==== std/async.h ===
+#ifndef __UPP_STDLIB_ASYNC_H__
+#define __UPP_STDLIB_ASYNC_H__
+
+                 
+                                                                    
+                         
+                                               
+                                 
+
+                                
+                          
+
+                                                 
+                                                      
+                                            
+                               
+                                                                                                               
+                                       
+         
+
+                                                              
+                                                                             
+                                                                       
+                                                                                                
+                                                                           
+                                                                                      
+             
+         
+       
+
+                
+ 
+
+#endif
 
 ==== RUN OUTPUT ===
 Run in background

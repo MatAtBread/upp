@@ -96,6 +96,19 @@ async function runTest(entryName) {
     const output = run.stdout + run.stderr;
 
     const testName = entryName.endsWith('.cup') ? entryName.slice(0, -4) : entryName;
+    const isErrorTest = testName.startsWith('error_');
+
+    const hasCompilationError = output.includes('==== COMPILATION ERROR ===');
+    const hasMacroError = output.includes('Macro @') && output.includes('failed:');
+    const hasGenericError = output.includes('error:');
+
+    if (!isErrorTest && (hasCompilationError || hasMacroError || hasGenericError)) {
+        console.log(`[FAIL] ${testName} contains UNEXPECTED ERROR!`);
+        // We still verify snapshot to see the error details in diff if it matched before
+        await verifySnapshot(testName, output);
+        return false;
+    }
+
     return await verifySnapshot(testName, output);
 }
 

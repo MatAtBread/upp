@@ -1,5 +1,0 @@
-examples/nested_macros_4.c: In function ‘main’:
-examples/nested_macros_4.c:9:5: error: ‘expanded_innerexpanded_inner’ undeclared (first use in this function)
-    9 |     expanded_innerexpanded_inner;
-      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
-examples/nested_macros_4.c:9:5: note: each undeclared identifier is reported only once for each function it appears in

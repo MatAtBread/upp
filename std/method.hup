@@ -1,5 +1,8 @@
 @define method(targetType) {
-    const node = upp.nextNode(['function_definition', 'declaration']);
+    let node = upp.nextNode(['function_definition', 'declaration']);
+    if (!node) {
+        node = upp.findEnclosing(upp.contextNode, ['function_definition', 'declaration']);
+    }
     if (!node) return "";
 
     const sig = upp.getFunctionSignature(node);

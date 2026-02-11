@@ -1,3 +1,5 @@
+#include "io-lite.h"
+
 @define choice(condition) {
   const body1 = upp.consume('compound_statement');
   const body2 = upp.consume('compound_statement');

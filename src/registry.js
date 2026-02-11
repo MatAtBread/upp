@@ -17,6 +17,7 @@ class Registry {
     constructor(config = {}, parentRegistry = null) {
         this.config = config;
         this.parentRegistry = parentRegistry;
+        this.onMaterialize = config.onMaterialize || (parentRegistry ? parentRegistry.onMaterialize : null);
         this.depth = parentRegistry ? parentRegistry.depth + 1 : 0;
         if (this.depth > 100) {
             throw new Error(`Maximum macro nesting depth exceeded (${this.depth})`);
@@ -116,6 +117,7 @@ class Registry {
 
         const source = fs.readFileSync(targetPath, 'utf8');
         const depRegistry = new Registry(this.config, this);
+        depRegistry.shouldMaterializeDependency = true;
 
         if (isDiscoveryOnly) {
             depRegistry.source = source;
@@ -240,11 +242,25 @@ class Registry {
 
                     if (result !== undefined) {
                         let finalResult = (result === null) ? "" : String(result);
+                        console.log(`[DEBUG] Macro @${inv.name} at ${node.startIndex}-${node.endIndex} result:`, finalResult);
+
+                        // Pre-process the result to wrap nested macros in comments (like prepareSource does)
+                        // otherwise they will be parsed as invalid syntax or identifiers
                         if (finalResult.includes('@')) {
-                            const nestedRegistry = new Registry(this.config, this);
-                            finalResult = nestedRegistry.transform(finalResult, `result-of-@${inv.name}`, helpers);
+                            const prepared = this.prepareSource(finalResult, context.originPath);
+                            finalResult = prepared.cleanSource;
                         }
-                        helpers.replace(node, finalResult);
+
+                        const newNodes = helpers.replace(node, finalResult);
+
+                        // Recursively transform any new nodes in the current context
+                        if (Array.isArray(newNodes)) {
+                            for (const newNode of newNodes) {
+                                this.transformNode(newNode, helpers, context);
+                            }
+                        } else if (newNodes) {
+                            this.transformNode(newNodes, helpers, context);
+                        }
                     }
                     return; // Macro handles its own text/children
                 }
@@ -287,9 +303,13 @@ class Registry {
             while (iterations < MAX_ITERATIONS) {
                 // Find all nodes that have pending markers
                 const nodesWithMarkers = this.tree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
+                console.log(`[DEBUG] executeDeferredMarkers: found ${nodesWithMarkers.length} nodes with markers`);
                 if (nodesWithMarkers.length === 0) break;
 
                 iterations++;
+                for (const node of nodesWithMarkers) {
+                    console.log(`[DEBUG] executeDeferredMarkers: executing markers on ${node.type} at ${node.startIndex}`);
+                }
 
                 // Sort bottom-up and right-to-left for predictable execution
                 nodesWithMarkers.sort((a, b) => {
@@ -490,7 +510,7 @@ class Registry {
 
     findInvocations(source, tree = null) {
         const invs = [];
-        const regex = /@(\w+)(\s*\(([^)]*)\))?/g;
+        const regex = /(?<![\/*])@(\w+)(\s*\(([^)]*)\))?/g;
         let match;
         const currentTree = tree || this.parser.parse(source);
 

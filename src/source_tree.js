@@ -242,6 +242,51 @@ export class SourceNode {
         this.data = {};
     }
 
+    /** @returns {boolean} */
+    get isNamed() {
+        return this.type !== undefined && this.type !== null && !/^[^a-zA-Z_]/.test(this.type);
+    }
+
+    /** @returns {SourceNode|null} */
+    get nextNamedSibling() {
+        if (!this.parent) return null;
+        const idx = this.parent.children.indexOf(this);
+        for (let i = idx + 1; i < this.parent.children.length; i++) {
+            const child = this.parent.children[i];
+            if (child.isNamed) return child;
+        }
+        return null;
+    }
+
+    /** @returns {SourceNode|null} */
+    get prevNamedSibling() {
+        if (!this.parent) return null;
+        const idx = this.parent.children.indexOf(this);
+        for (let i = idx - 1; i >= 0; i--) {
+            const child = this.parent.children[i];
+            if (child.isNamed) return child;
+        }
+        return null;
+    }
+
+    /** @returns {number} */
+    get namedChildCount() {
+        return this.children.filter(c => c.isNamed).length;
+    }
+
+    /** 
+     * @param {number} idx 
+     * @returns {SourceNode|null} 
+     */
+    namedChild(idx) {
+        const named = this.children.filter(c => c.isNamed);
+        return named[idx] || null;
+    }
+
+    toString() {
+        return this.text;
+    }
+
     /** @returns {string} */
     get text() {
         if (this._capturedText !== undefined) return this._capturedText;
@@ -402,6 +447,9 @@ export class SourceNode {
             this.type = newType;
             this.children = newChildren;
             this.data = newData;
+            // Preserve captured text if it was explicitly set (e.g. by consume)
+            if (firstNew._capturedText !== undefined) this._capturedText = firstNew._capturedText;
+
             // Markers: Should we keep old ones or take new ones?
             // Usually take new ones as this is a new identity.
             this.markers = firstNew.markers;
@@ -545,6 +593,28 @@ export class SourceNode {
     }
 
     /**
+     * Finds the smallest descendant that contains the given index range.
+     * @param {number} start 
+     * @param {number} end 
+     * @returns {SourceNode}
+     */
+    descendantForIndex(start, end) {
+        let current = this;
+        let found = true;
+        while (found) {
+            found = false;
+            for (const child of current.children) {
+                if (child.startIndex !== -1 && child.startIndex <= start && child.endIndex >= end) {
+                    current = child;
+                    found = true;
+                    break;
+                }
+            }
+        }
+        return current;
+    }
+
+    /**
      * Finds a direct child by its field name.
      * @param {string} fieldName 
      * @returns {SourceNode|null}
@@ -561,6 +631,7 @@ export class SourceNode {
         return {
             id: this.id,
             type: this.type,
+            fieldName: this.fieldName,
             startIndex: this.startIndex,
             endIndex: this.endIndex,
             text: this.text,

@@ -1,5 +1,5 @@
 Macro @map failed: Error: @map expected compound_statement, but found expression_statement
-    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:383:21)
     at reportFailure (file://./src/upp_helpers_base.js:228:18)
     at UppHelpersC.consume (file://./src/upp_helpers_base.js:238:66)
     at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:23)
@@ -32,14 +32,14 @@ Macro @map failed: Error: @map expected compound_statement, but found expression
       nodeCache: [Map],
       root: [SourceNode]
     },
-    id: 5274677872,
+    id: 5358345680,
     type: 'expression_statement',
     startIndex: 227,
     endIndex: 228,
     children: [ [SourceNode] ],
     parent: SourceNode {
       tree: [SourceTree],
-      id: 5274678592,
+      id: 5358346400,
       type: 'compound_statement',
       startIndex: 173,
       endIndex: 244,

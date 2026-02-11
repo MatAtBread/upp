@@ -1,51 +1,35 @@
-Macro @choice failed: Error: @choice expected compound_statement, but found }
-    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
-    at reportFailure (file://./src/upp_helpers_base.js:228:18)
-    at UppHelpersC.consume (file://./src/upp_helpers_base.js:238:66)
-    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:19)
-    at Registry.evaluateMacro (file://./src/registry.js:363:20)
-    at Registry.transformNode (file://./src/registry.js:234:41)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18) {
-  isUppError: true,
-  node: SourceNode {
-    tree: SourceTree {
-      source: 'if (x) {\n' +
-        '    printf("False\\n");\n' +
-        '  } else {\n' +
-        '  int x = 1;\n' +
-        '  /*@choice(x)*/  \n' +
-        '}',
-      language: [Object],
-      parser: [Parser],
-      tree: [Tree],
-      nodeCache: [Map],
-      root: [SourceNode]
-    },
-    id: 5660732312,
-    type: '}',
-    startIndex: 75,
-    endIndex: 76,
-    children: [],
-    parent: SourceNode {
-      tree: [SourceTree],
-      id: 5660732400,
-      type: 'compound_statement',
-      startIndex: 41,
-      endIndex: 76,
-      children: [Array],
-      parent: [SourceNode],
-      fieldName: null,
-      markers: [],
-      data: {}
-    },
-    fieldName: null,
-    markers: [],
-    data: {}
+[DEBUG] Macro @choice at 224-238 result: if (x) {
+    printf("True\n");
+  } else {
+    printf("False\n");
   }
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+==== examples/choice_test.c ===
+                           
+                                                  
+                                                  
+                                                              
+ 
+void main() {
+  int x = 1;
+  if (x) {
+    printf("True\n");
+  } else {
+    printf("False\n");
+  }  
 }
-[31mresult-of-@choice:1:1: error: [0] Macro @choice failed: @choice expected compound_statement, but found }[0m
-if (x) {
-[31m^[0m
+
+==== COMPILATION ERROR ===
+./examples/choice_test.c:6:1: warning: return type of 'main' is not 'int' [-Wmain-return-type]
+    6 | void main() {
+      | ^
+./examples/choice_test.c:6:1: note: change return type to 'int'
+    6 | void main() {
+      | ^~~~
+      | int
+./examples/choice_test.c:9:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    9 |     printf("True\n");
+      |     ^
+./examples/choice_test.c:9:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
+1 warning and 1 error generated.
+

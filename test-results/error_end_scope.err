@@ -1,5 +1,0 @@
-examples/error_end_scope.c: In function ‘main’:
-examples/error_end_scope.c:28:9: error: ‘nested’ undeclared (first use in this function)
-   28 |  { free(nested); nested = ((void*)0); }
-      |         ^~~~~~
-examples/error_end_scope.c:28:9: note: each undeclared identifier is reported only once for each function it appears in

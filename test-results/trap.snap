@@ -1,5 +1,5 @@
 Macro @trap failed: Error: Could not find declared identifier for @trap
-    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:383:21)
     at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:33:13)
     at Registry.evaluateMacro (file://./src/registry.js:363:20)
     at Registry.transformNode (file://./src/registry.js:234:41)
@@ -47,14 +47,14 @@ Macro @trap failed: Error: Could not find declared identifier for @trap
       nodeCache: [Map],
       root: [SourceNode]
     },
-    id: 5669154016,
+    id: 4906446352,
     type: 'field_declaration',
     startIndex: -1,
     endIndex: 525,
     children: [ [SourceNode], [SourceNode], [SourceNode] ],
     parent: SourceNode {
       tree: [SourceTree],
-      id: 5669154256,
+      id: 4906446592,
       type: 'field_declaration_list',
       startIndex: 486,
       endIndex: 559,
