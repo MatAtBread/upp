@@ -165,15 +165,16 @@ class UppHelpersBase {
         let anchor = this.lastConsumedNode || (this.invocation && this.invocation.invocationNode) || this.contextNode;
 
         if (anchor && anchor.parent) {
-            // Check parent (embedded macro case)
-            if (expectedTypes && expectedTypes.includes(anchor.parent.type)) {
+            // Priority 1: Check siblings
+            const idx = anchor.parent.children.indexOf(anchor);
+            if (idx !== -1 && idx + 1 < anchor.parent.children.length) {
+                node = anchor.parent.children[idx + 1];
+            }
+
+            // Priority 2: Check parent (embedded macro case, e.g. @attribute in a struct)
+            // But only if no sibling found, and anchor is NOT a comment (tokens are never parents of their context)
+            if (!node && anchor.type !== 'comment' && expectedTypes && expectedTypes.includes(anchor.parent.type)) {
                 node = anchor.parent;
-            } else {
-                // Check siblings
-                const idx = anchor.parent.children.indexOf(anchor);
-                if (idx !== -1 && idx + 1 < anchor.parent.children.length) {
-                    node = anchor.parent.children[idx + 1];
-                }
             }
         }
 
