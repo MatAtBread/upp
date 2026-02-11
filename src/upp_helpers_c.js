@@ -303,7 +303,28 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {Array<import('tree-sitter').SyntaxNode>} The references.
      */
     findReferences(node) {
-        return this.registry.findReferences(node);
+        const name = node.text;
+        if (!name) return [];
+
+        const root = this.registry.mainTree ? this.registry.mainTree.rootNode : this.context.tree.rootNode;
+        const queryStr = `(identifier) @id`;
+        const matches = this.query(queryStr, root);
+
+        const refs = [];
+        for (const match of matches) {
+            const idNode = match.captures.id;
+            if (idNode.text === name) {
+                // Skip the definition node itself
+                if (idNode.startIndex === node.startIndex && idNode.endIndex === node.endIndex) continue;
+
+                // Verify this identifier refers to our definition
+                const def = this.findDefinition(idNode);
+                if (def && def.startIndex === node.startIndex && def.endIndex === node.endIndex) {
+                    refs.push(idNode);
+                }
+            }
+        }
+        return refs;
     }
 
     /**
@@ -367,7 +388,7 @@ class UppHelpersC extends UppHelpersBase {
         for (const ref of references) {
             if (ref.startIndex >= currentPos) {
                 // Below current node - transform immediately
-                const replacement = callback(ref);
+                const replacement = callback(ref, this);
                 if (replacement !== undefined) {
                     // null or "" deletes, string replaces, undefined skips
                     this.replace(ref, replacement === null ? '' : replacement);
@@ -382,7 +403,7 @@ class UppHelpersC extends UppHelpersBase {
             return this.atRoot((root, helpers) => {
                 for (const ref of references) {
                     if (ref.startIndex < currentPos) {
-                        const replacement = callback(ref);
+                        const replacement = callback(ref, helpers);
                         if (replacement !== undefined) {
                             helpers.replace(ref, replacement === null ? '' : replacement);
                         }
@@ -458,7 +479,7 @@ class UppHelpersC extends UppHelpersBase {
             helpers.walk(root, (node) => {
                 if (node.type === nodeType) {
                     if (matcher(node, helpers)) {
-                        const replacement = callback(node);
+                        const replacement = callback(node, helpers);
                         if (replacement !== undefined) {
                             helpers.replace(node, replacement === null ? '' : replacement);
                         }

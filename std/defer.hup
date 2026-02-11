@@ -2,27 +2,30 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
-    if (upp.contextNode) {
-    }
-
-    const node = upp.consume();
-    if (!node) return "";
-    const deferredText = node.text;
-
-
-    const marker = upp.inScope((scope, helpers) => {
-
-        // Store the cleanup code in the task info so the registry can insert it
-        const taskInfo = helpers.registry.deferredCallbacks.get(marker);
-        if (taskInfo) {
-            taskInfo.cleanupCode = deferredText;
-            taskInfo.insertBeforeReturns = true;
-            taskInfo.insertAtScopeEnd = true;
+    debugger;
+    const node = upp.consume(['expression_statement', 'compound_statement']);
+    if (!node) return upp.error("Expected expression_statement or compound_statement", node);
+    upp.withScope((scope, helpers) => {
+        // Find all return statements in this scope
+        const returns = helpers.query('(return_statement) @stmt', scope);
+        for (const r of returns) {
+            helpers.withNode(r.node, (retNode, h) => {
+                return `${deferredText}\n${retNode.text}`;
+            });
         }
 
+        // Also add at the end of the scope block
+        // In a compound_statement, the last child is '}'
+        if (scope.type === 'compound_statement') {
+            const lastChild = scope.child(scope.childCount - 1);
+            if (lastChild && lastChild.type === '}') {
+                helpers.withNode(lastChild, (brace, h) => {
+                    return `${deferredText}\n${brace.text}`;
+                });
+            }
+        }
     });
-
-    return marker;
+    return null;
 }
 
 #endif

@@ -18,6 +18,7 @@ class UppHelpersBase {
         this.nodeCache = new Map();
         this.currentInvocations = [];
         this.consumedIds = new Set();
+        this.detachedNodeText = new WeakMap();
         this.context = null; // Back-reference to the local transform context
     }
 
@@ -39,10 +40,14 @@ class UppHelpersBase {
         return this.withNode(root, callback);
     }
 
-    inScope(callback) {
+    withScope(callback) {
         const scope = this.findScope();
         if (!scope) return "";
         return this.withNode(scope, callback);
+    }
+
+    withRoot(callback) {
+        return this.withNode(this.findRoot(), callback);
     }
 
     replace(n, newContent) {
@@ -114,92 +119,70 @@ class UppHelpersBase {
 
     withNode(node, callback) {
         if (!node) return "";
+        const rawNode = node.__internal_raw_node || node;
 
-        const isDescendant = this.registry.activeTransformNode && this.isDescendant(this.registry.activeTransformNode, node);
-        const isMarkerAware = !!node.__marker_bound;
-
-        if (isDescendant || this.registry.isExecutingDeferred || isMarkerAware) {
-            const wrapped = this.wrapNode(node, this.registry.isExecutingDeferred);
-            const result = callback(wrapped, this);
-            if (result !== undefined) {
-                const start = node.__marker_bound ? node.__marker_bound.offset : node.startIndex;
-                const end = node.endIndex;
-                const len = node.__marker_bound ? 0 : (end - start);
-
-                this.registry.applySplice(this.context, start, len, result === null ? "" : String(result));
-            }
-            return "";
-        }
-
-        const preservedText = node.text;
-        const marker = new Marker(this.context.tree, node.startIndex, {
+        const preservedText = rawNode.text;
+        const marker = new Marker(this.context.tree, rawNode.startIndex, {
             callback: (target, helpers) => {
                 const wrapped = helpers.wrapNode(target, true, preservedText);
                 const result = callback(wrapped, helpers);
                 if (result !== undefined) {
-                    helpers.replace(target, result === null ? "" : String(result));
+                    helpers.replace(target, result);
                 }
             },
             targetType: 'node',
-            nodeType: node.type,
-            nodeLength: node.endIndex - node.startIndex,
+            nodeType: rawNode.type,
+            nodeLength: rawNode.endIndex - rawNode.startIndex,
             helpers: this
         });
         this.registry.deferredMarkers.push(marker);
-        return preservedText;
+        return "";
     }
 
     wrapNode(node, lateBound = false, sourceOverride = null, treeOverride = null) {
-        if (!node || node.__isWrapped) return node;
+        if (!node) return null;
+        if (node.__isWrapped) return node;
+
         const helpers = this;
+        const rawNode = node.__internal_raw_node || node;
+        const treeSource = sourceOverride || (this.context ? this.context.source : "");
 
-        const treeSource = sourceOverride || (node.tree && node.tree.sourceText) || helpers.context.source;
-        const currentTree = treeOverride || node.tree || helpers.context.tree;
-        const capturedText = lateBound ? null : treeSource.slice(node.startIndex, node.endIndex);
-
-        const proxy = new Proxy(node, {
-            get(target, prop) {
+        const proxy = new Proxy(rawNode, {
+            get: (target, prop, receiver) => {
                 if (prop === '__isWrapped') return true;
                 if (prop === '__internal_raw_node') return target;
                 if (prop === '__isLateBound') return lateBound;
                 if (prop === '__sourceOverride') return treeSource;
-                if (prop === '__treeOverride') return currentTree;
-                if (prop === 'startIndex') {
-                    if (lateBound && target.__marker_bound) return target.__marker_bound.offset;
-                    return target.startIndex;
-                }
-                if (prop === 'endIndex') {
-                    if (lateBound && target.__marker_bound_end) return target.__marker_bound_end.offset;
-                    return target.endIndex;
-                }
+
                 if (prop === 'text') {
-                    if (lateBound) {
-                        return helpers.context.source.slice(helpers.getLiveOffset(target, 'start'), helpers.getLiveOffset(target, 'end'));
+                    if (helpers.detachedNodeText && helpers.detachedNodeText.has(target)) {
+                        return helpers.detachedNodeText.get(target);
                     }
-                    return capturedText;
+                    const dynamicSource = (helpers.context && helpers.context.source) || treeSource;
+                    return dynamicSource.slice(target.startIndex, target.endIndex);
                 }
-                if (prop === 'childForFieldName') {
-                    return (fieldName) => {
-                        const child = target.childForFieldName(fieldName);
-                        return child ? helpers.wrapNode(child, lateBound, treeSource, currentTree) : null;
-                    };
-                }
-                const value = Reflect.get(target, prop);
+
+                const value = target[prop];
+
                 if (typeof value === 'function') {
                     return (...args) => {
-                        let result = value.apply(target, args);
+                        // Minimal unwrapping for native TS calls
+                        const unwrappedArgs = args.map(a => (a && a.__internal_raw_node) ? a.__internal_raw_node : a);
+                        let result = value.apply(target, unwrappedArgs);
                         if (result && typeof result === 'object' && result.type) {
                              return helpers.wrapNode(result, lateBound, treeSource);
                         }
                         return result;
                     };
                 }
+
                 if (value && typeof value === 'object' && value.type) {
                     return helpers.wrapNode(value, lateBound, treeSource);
                 }
                 return value;
             }
         });
+
         return proxy;
     }
 
@@ -301,6 +284,10 @@ class UppHelpersBase {
         const markerEnd = new Marker(this.context.tree, node.endIndex);
         node.__marker_bound = marker;
         node.__marker_bound_end = markerEnd;
+
+        // Capture text before deletion/modification
+        const textContent = node.text;
+        this.detachedNodeText.set(node, textContent);
 
         const wrapped = this.wrapNode(node, true);
         const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);

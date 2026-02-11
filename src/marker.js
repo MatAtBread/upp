@@ -33,6 +33,12 @@ class Marker {
      * @returns {string} The updated source text
      */
     static splice(tree, source, offset, deleteCount, insertString) {
+        // Bounds check
+        if (offset < 0) offset = 0;
+        if (offset > source.length) offset = source.length;
+        if (deleteCount < 0) deleteCount = 0;
+        if (offset + deleteCount > source.length) deleteCount = source.length - offset;
+
         const insertLength = insertString.length;
         const delta = insertLength - deleteCount;
 
@@ -40,33 +46,33 @@ class Marker {
         if (markers) {
             for (const marker of markers) {
                 if (marker.offset >= offset + deleteCount) {
-                    // Marker is at or after the modified region
                     marker.offset += delta;
                 } else if (marker.offset > offset && marker.offset < offset + deleteCount) {
-                    // Marker is strictly within the deleted region
                     marker.valid = false;
                 }
-                // At exactly 'offset' remains at 'offset'
             }
         }
 
-        // 2. Compute positions for tree.edit()
         const startPosition = Marker.offsetToPosition(source, offset);
         const oldEndPosition = Marker.offsetToPosition(source, offset + deleteCount);
 
-        // 3. Update source
         const newSource = source.slice(0, offset) + insertString + source.slice(offset + deleteCount);
         const newEndPosition = Marker.offsetToPosition(newSource, offset + insertLength);
 
-        // 4. Update tree
-        tree.edit({
-            startIndex: offset,
-            oldEndIndex: offset + deleteCount,
-            newEndIndex: offset + insertLength,
-            startPosition,
-            oldEndPosition,
-            newEndPosition
-        });
+         try {
+             console.log(`[DEBUG] tree.edit: start=${offset} del=${deleteCount} ins=${insertLength}`);
+             // console.log(`[DEBUG] Pos: start=${startPosition.row}:${startPosition.column} end=${oldEndPosition.row}:${oldEndPosition.column} -> ${newEndPosition.row}:${newEndPosition.column}`);
+            tree.edit({
+                startIndex: offset,
+                oldEndIndex: offset + deleteCount,
+                newEndIndex: offset + insertLength,
+                startPosition,
+                oldEndPosition,
+                newEndPosition
+            });
+         } catch (e) {
+             console.error(`[DEBUG] tree.edit failed:`, e);
+         }
 
         return newSource;
     }
