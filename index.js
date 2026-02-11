@@ -88,19 +88,141 @@ function transpileOne(sourceFile, outputCFile = null) {
     }
 }
 
-if (command.mode === 'transpile' || command.mode === 'ast') {
+if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === 'test') {
     try {
+        const materializations = new Map();
+        const expandedFiles = [];
+
+        // 1. Expand directories into .cup files
+        for (const f of command.files) {
+            const stat = fs.statSync(f);
+            if (stat.isDirectory()) {
+                const files = fs.readdirSync(f).filter(file => file.endsWith('.cup'));
+                for (const cupFile of files) {
+                    expandedFiles.push(path.join(f, cupFile));
+                }
+            } else {
+                expandedFiles.push(f);
+            }
+        }
+
         if (command.mode === 'ast') {
-            const absSource = path.resolve(command.file);
+            const absSource = path.resolve(expandedFiles[0]);
             const preProcessed = preprocess(absSource, command.depFlags || []);
             const registry = new Registry({ diagnostics: new DiagnosticsManager({}) });
             const tree = registry._parse(preProcessed);
             console.log(tree.rootNode.toString());
             process.exit(0);
         }
-        const output = transpileOne(command.file);
-        process.stdout.write(output);
-        process.exit(0);
+
+        let mainOutput = "";
+
+        const projectRoot = path.dirname(new URL(import.meta.url).pathname);
+        const stdPath = path.join(projectRoot, 'std');
+
+        for (const absSource of expandedFiles) {
+            const preProcessed = preprocess(absSource, command.depFlags || []);
+            const loadedConfig = resolveConfig(absSource);
+            const resolvedConfigIncludes = loadedConfig.includePaths || [];
+            const finalIncludePaths = [
+                path.dirname(absSource),
+                ...resolvedConfigIncludes,
+                ...(command.includePaths || []),
+                stdPath,
+                projectRoot // So #include "std/package.h" works
+            ];
+
+            const config = {
+                cache,
+                includePaths: finalIncludePaths,
+                stdPath,
+                diagnostics: new DiagnosticsManager({}),
+                onMaterialize: (p, content) => {
+                    materializations.set(p, content);
+                },
+                preprocess: (file) => preprocess(file)
+            };
+
+            const registry = new Registry(config);
+            const coreFiles = loadedConfig.core || [];
+            for (const coreFile of coreFiles) {
+                let foundPath = null;
+                for (const inc of finalIncludePaths) {
+                    const p = path.join(inc, coreFile);
+                    if (fs.existsSync(p)) { foundPath = p; break; }
+                }
+                if (foundPath) registry.loadDependency(foundPath);
+            }
+
+            const output = registry.transform(preProcessed, absSource);
+
+            let mainOutputPath = null;
+            if (absSource.endsWith('.cup')) mainOutputPath = absSource.slice(0, -4) + '.c';
+            else if (absSource.endsWith('.hup')) mainOutputPath = absSource.slice(0, -4) + '.h';
+
+            if (mainOutputPath) {
+                materializations.set(mainOutputPath, output);
+            }
+            if (absSource === expandedFiles[0]) {
+                mainOutput = output;
+            }
+        }
+
+        if (command.mode === 'test') {
+            // 1. Print all materialized files
+            const sortedPaths = Array.from(materializations.keys()).sort();
+            for (const p of sortedPaths) {
+                const content = materializations.get(p);
+                const relPath = path.relative(process.cwd(), p);
+                console.log(`==== ${relPath} ===`);
+                console.log(content);
+            }
+
+            // 2. Prepare for compilation
+            const compiler = command.compiler || 'cc';
+            const firstFile = expandedFiles[0];
+            const exePath = firstFile.slice(0, -4) + '.exe';
+            const cFiles = Array.from(materializations.keys()).filter(p => p.endsWith('.c'));
+
+            // Write to disk for the real compiler
+            for (const [p, content] of materializations) {
+                fs.writeFileSync(p, content);
+            }
+
+            // Gather all include paths for the compiler
+            const allIncludePaths = new Set();
+            for (const f of expandedFiles) {
+                const loaded = resolveConfig(f);
+                allIncludePaths.add(path.dirname(f));
+                (loaded.includePaths || []).forEach(inc => allIncludePaths.add(path.resolve(path.dirname(f), inc)));
+            }
+            allIncludePaths.add(stdPath);
+            allIncludePaths.add(projectRoot);
+
+            const compileArgs = [...cFiles, '-o', exePath, ...Array.from(allIncludePaths).map(p => `-I${p}`)];
+            const compile = spawnSync(compiler, compileArgs, { encoding: 'utf8' });
+
+            if (compile.status !== 0) {
+                console.log("==== COMPILATION ERROR ===");
+                console.log(compile.stdout + compile.stderr);
+            } else {
+                // 3. Run
+                const run = spawnSync(exePath, [], { encoding: 'utf8' });
+                console.log("==== RUN OUTPUT ===");
+                console.log(run.stdout + run.stderr);
+            }
+
+            // Cleanup
+            if (fs.existsSync(exePath)) fs.unlinkSync(exePath);
+            for (const p of materializations.keys()) {
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            }
+            process.exit(0);
+        } else {
+            // Transpile mode: just output the FIRST file's content
+            process.stdout.write(mainOutput);
+            process.exit(0);
+        }
     } catch (e) {
         console.error(`[upp] Error: ${e.message}`);
         process.exit(1);

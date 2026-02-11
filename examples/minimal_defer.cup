@@ -4,7 +4,9 @@
 
 int main() {
     char *str1 = malloc(100);
-    @defer { free(str1); str1 = NULL; }
+    printf("allocated\n");
+    @defer { free(str1); str1 = NULL; printf("deferred\n"); }
     str1[0] = 0;
+    printf("returning\n");
     return 0;
 }

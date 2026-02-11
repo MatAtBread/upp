@@ -63,6 +63,7 @@ class Registry {
         this.transformRules = [];
         this.ruleIdCounter = 0;
         this.isExecutingDeferred = false;
+        this.onMaterialize = config.onMaterialize || null;
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.UppHelpersC = UppHelpersC; // Ensure this is available
     }
@@ -128,7 +129,11 @@ class Registry {
                 else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
 
                 if (outputPath) {
-                    fs.writeFileSync(outputPath, output);
+                    if (this.onMaterialize) {
+                        this.onMaterialize(outputPath, output);
+                    } else {
+                        fs.writeFileSync(outputPath, output);
+                    }
                 }
             }
         }
