@@ -1,19 +1,11 @@
 @define method(targetType) {
-    const node = upp.consume(['function_definition', 'declaration']);
+    const node = upp.nextNode(['function_definition', 'declaration']);
     if (!node) return "";
 
-    const funcDeclarator = upp.childForFieldName(node, 'declarator');
+    const sig = upp.getFunctionSignature(node);
+    if (!sig.nameNode) return node.text;
 
-    // Handle pointer declarators
-    let funcDecl = funcDeclarator;
-    while (funcDecl && funcDecl.type === 'pointer_declarator') {
-        funcDecl = upp.childForFieldName(funcDecl, 'declarator');
-    }
-
-    const funcIdentifier = upp.childForFieldName(funcDecl, 'declarator');
-    if (!funcIdentifier) return node.text;
-
-    const originalName = funcIdentifier.text;
+    const originalName = sig.name;
     let cleanTarget = targetType.trim();
     if (cleanTarget.startsWith('struct ')) {
         cleanTarget = cleanTarget.slice(7).trim();
@@ -22,60 +14,43 @@
     // Generate new name: _Point_method_getX
     const newName = `_${cleanTarget}_method_${originalName}`;
 
-    const idStart = funcIdentifier.startIndex - node.startIndex;
-    const idEnd = funcIdentifier.endIndex - node.startIndex;
-
-    // Rename the function
-    let functionText = node.text;
-    functionText = functionText.slice(0, idStart) + newName + functionText.slice(idEnd);
-
-    // Strip the macro invocation itself from the text to avoid double-comments or recursive expansion
-    functionText = functionText.replace(/\/\*@method\([^)]*\)\*\//g, '');
+    // Rename the function identifier stable-y
+    sig.nameNode.text = newName;
 
     // Use withPattern to transform method calls
-    const marker = upp.withPattern('call_expression',
+    upp.withPattern('call_expression',
         (callNode, helpers) => {
             // Check if this is a field_expression call (obj.method() or obj->method())
-            const funcNode = helpers.childForFieldName(callNode, 'function');
+            const funcNode = callNode.findChildByFieldName('function');
             if (!funcNode || funcNode.type !== 'field_expression') return false;
 
-            const objectNode = helpers.childForFieldName(funcNode, 'argument');
-            const methodNode = helpers.childForFieldName(funcNode, 'field');
+            const objectNode = funcNode.findChildByFieldName('argument');
+            const methodNode = funcNode.findChildByFieldName('field');
 
-            // Check if method name matches
             if (!objectNode || !methodNode) return false;
-
             if (methodNode.text !== originalName) return false;
 
-            // Get the object's type
-            const objDef = helpers.getDefinition(objectNode);
+            const objDef = helpers.findDefinition(objectNode);
             if (!objDef) return false;
 
             let objType = helpers.getType(objDef);
             let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
 
-            // Check if type matches (direct or via typedef)
-            if (cleanObjType === cleanTarget) {
-                return true;
-            }
-            return false;
+            return cleanObjType === cleanTarget;
         },
         (callNode, helpers) => {
-            const funcNode = helpers.childForFieldName(callNode, 'function');
-            const targetNode = helpers.childForFieldName(funcNode, 'argument');
-            const argsNode = helpers.childForFieldName(callNode, 'arguments');
+            const funcNode = callNode.findChildByFieldName('function');
+            const targetNode = funcNode.findChildByFieldName('argument');
+            const argsNode = callNode.findChildByFieldName('arguments');
 
             // Transform f.print() into _Foo_method_print(&f)
             let argsText = argsNode ? argsNode.text : "()";
-            if (argsText === "()") {
-                argsText = `(&${targetNode.text})`;
-            } else {
-                argsText = `(&${targetNode.text}, ${argsText.slice(1)}`;
-            }
-
-            return `${newName}${argsText}`;
+            const separator = (argsText === "()") ? "" : ", ";
+            const innerArgs = (argsText === "()") ? "" : argsText.slice(1, -1);
+            
+            return `${newName}(&${targetNode.text}${separator}${innerArgs})`;
         }
     );
 
-    return functionText;
+    return null; // Node already updated in-place
 }

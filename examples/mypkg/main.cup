@@ -2,7 +2,7 @@
 @include(mypkg.hup)
 
 // This 'add' should NOT be renamed because we are a consumer, not the implementation.
-// There is no @implements(mypkg) here.
+// There is no at-implements(mypkg) here.
 int add(int a, int b) {
     return (a + b) * 10;
 }

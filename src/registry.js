@@ -3,8 +3,9 @@ import C from 'tree-sitter-c';
 import fs from 'fs';
 import path from 'path';
 import { UppHelpersC } from './upp_helpers_c.js';
+import { UppHelpersBase } from './upp_helpers_base.js';
 import { DiagnosticCodes, DiagnosticsManager } from './diagnostics.js';
-import Marker from './marker.js';
+import { SourceTree, SourceNode } from './source_tree.js';
 
 export const RECURSION_LIMITER_ENABLED = false;
 
@@ -20,11 +21,24 @@ class Registry {
         if (this.depth > 100) {
             throw new Error(`Maximum macro nesting depth exceeded (${this.depth})`);
         }
+
+        this.filePath = config.filePath || '';
+        this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
+
+        let lang = C;
+        if (lang && lang.default) lang = lang.default;
+        this.language = lang;
+
+        this.helpers = null;
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
+        this.parentTree = parentRegistry ? parentRegistry.tree : null;
+
         this.macros = new Map();
 
         this.registerMacro('__deferred_task', ['id'], '/* handled internally */', 'js', 'internal');
+        this.registerMacro('implements', ['pkgName'], '', 'js', 'internal');
         this.registerMacro('include', ['file'], `
-            upp.loadDependency(file);
+            upp.loadDependency(file, null, upp);
             let headerName = file;
             if (headerName.endsWith('.hup')) {
                 headerName = headerName.slice(0, -4) + '.h';
@@ -34,28 +48,25 @@ class Registry {
             }
         `, 'js', 'internal');
 
-        this.filePath = config.filePath || '';
-        this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
-
-        let lang = C;
-        if (lang && lang.default) lang = lang.default;
-        this.language = lang;
-
         this.parser = new Parser();
         this.parser.setLanguage(this.language);
 
         this.idCounter = 0;
-        this.loadedDependencies = new Set();
+        this.stdPath = config.stdPath || null;
+        this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
         this.transformRules = [];
         this.ruleIdCounter = 0;
-        this.deferredMarkers = [];
         this.isExecutingDeferred = false;
-        this.mainContext = null;
+        this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
+        this.UppHelpersC = UppHelpersC; // Ensure this is available
     }
 
     registerMacro(name, params, body, language = 'js', origin = 'unknown', startIndex = 0) {
         this.macros.set(name, { name, params, body, language, origin, startIndex });
+        if (this.parentRegistry) {
+            this.parentRegistry.registerMacro(name, params, body, language, origin, startIndex);
+        }
     }
 
     getMacro(name) {
@@ -80,8 +91,11 @@ class Registry {
             targetPath = path.resolve(dir, file);
         }
 
-        if (this.loadedDependencies.has(targetPath)) return;
-        this.loadedDependencies.add(targetPath);
+        const isDiscoveryOnly = parentHelpers === null;
+        const previousPass = this.loadedDependencies.get(targetPath);
+
+        if (previousPass === 'full') return;
+        if (isDiscoveryOnly && previousPass === 'discovery') return;
 
         if (!fs.existsSync(targetPath)) {
             const stdPath = path.resolve(process.cwd(), 'std', file);
@@ -92,16 +106,25 @@ class Registry {
             }
         }
 
+        this.loadedDependencies.set(targetPath, isDiscoveryOnly ? 'discovery' : 'full');
+
         const source = fs.readFileSync(targetPath, 'utf8');
-        const output = this.transform(source, targetPath, parentHelpers);
+        const depRegistry = new Registry(this.config, this);
 
-        if (this.shouldMaterializeDependency) {
-            let outputPath = null;
-            if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
-            else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
+        if (isDiscoveryOnly) {
+            depRegistry.source = source;
+            depRegistry.prepareSource(source, targetPath);
+        } else {
+            const output = depRegistry.transform(source, targetPath, parentHelpers);
 
-            if (outputPath) {
-                fs.writeFileSync(outputPath, output);
+            if (depRegistry.shouldMaterializeDependency) {
+                let outputPath = null;
+                if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
+                else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
+
+                if (outputPath) {
+                    fs.writeFileSync(outputPath, output);
+                }
             }
         }
     }
@@ -110,54 +133,28 @@ class Registry {
         return `rule_${++this.ruleIdCounter}`;
     }
 
-    _parse(source, oldTree) {
-        if (typeof source !== 'string') return this.parser.parse("");
-        const tree = this.parser.parse(source, oldTree);
-        if (tree) {
-             tree.sourceText = source;
-        }
-        if (oldTree && tree && oldTree !== tree) {
-            Marker.migrate(oldTree, tree);
-        }
-        return tree;
-    }
-
-    applySplice(context, offset, length, replacement) {
-        const oldTree = context.tree;
-        const replacementStr = replacement === null ? "" : String(replacement);
-        context.source = Marker.splice(oldTree, context.source, offset, length, replacementStr);
-        context.tree = this._parse(context.source, oldTree);
-        Marker.migrate(oldTree, context.tree);
-        context.helpers.root = context.tree.rootNode;
-        context.helpers.nodeCache.clear();
-    }
-
-    applyRootSplice(context, replacement) {
-        this.applySplice(context, 0, context.source.length, replacement);
-    }
 
     transform(source, originPath = 'unknown', parentHelpers = null) {
+        this.source = source;
         if (!source) return "";
 
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
 
-
-
-        let tree = this._parse(cleanSource);
-        if (!tree) return cleanSource;
+        const sourceTree = new SourceTree(cleanSource, this.language);
+        this.currentTree = sourceTree;
 
         const context = {
-            source: cleanSource,
-            tree: tree,
+            source: cleanSource, // This will be stale, should use sourceTree.source
+            tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
             helpers: null
         };
 
-        const helpers = new UppHelpersC(this);
+        const helpers = new this.UppHelpersC(sourceTree.root, this, parentHelpers);
         context.helpers = helpers;
         helpers.context = context;
-        helpers.root = tree.rootNode;
+        helpers.root = sourceTree.root;
 
         const isMain = !this.mainContext;
         if (isMain) {
@@ -170,7 +167,7 @@ class Registry {
             helpers.parentTree = parentHelpers.root;
             helpers.parentRegistry = {
                 invocations: parentHelpers.context.invocations,
-                sourceCode: parentHelpers.context.source,
+                sourceCode: (parentHelpers.context.tree && parentHelpers.context.tree.source) || parentHelpers.context.source,
                 helpers: parentHelpers
             };
             helpers.topLevelInvocation = parentHelpers.topLevelInvocation || parentHelpers.invocation;
@@ -179,157 +176,129 @@ class Registry {
             helpers.currentInvocations = foundInvs;
         }
 
+        this.transformNode(sourceTree.root, helpers, context);
 
+        this.executeDeferredMarkers(helpers);
 
-        this.transformNode(tree.rootNode, helpers, context);
-
-        this.executeDeferredMarkers();
-
-        if (isMain) {
-            return this.mainContext.source;
-        }
-
-        return context.source;
+        return sourceTree.source;
     }
 
     transformNode(node, helpers, context) {
         if (!node) return;
 
-        // Skip consumed nodes
-        if (helpers.isConsumed(node)) return;
+        // Skip invalidated nodes
+        if (node.startIndex === -1) return;
 
-        // 1. Check for Transformation Rules
-        const wrappedNode = helpers.wrapNode(node);
-        for (const rule of this.transformRules) {
-            if (rule.active && rule.nodeType === node.type) {
-                try {
-                    if (rule.matcher(wrappedNode, helpers)) {
-                        const marker = new Marker(context.tree, node.startIndex, {
-                            callback: (target, h) => {
-                                const wrapped = h.wrapNode(target);
-                                const result = rule.callback(wrapped, h);
-                                if (result !== undefined) {
-                                    h.replace(target, result);
-                                }
-                            },
-                            targetType: 'node',
-                            nodeType: node.type,
-                            nodeLength: node.endIndex - node.startIndex,
-                            helpers: helpers
-                        });
-                        this.deferredMarkers.push(marker);
-                        return; // Rule handles its own subtree/text
-                    }
-                } catch (e) {
-                    // console.error(`[Registry] Rule ${rule.id} failed:`, e);
+        // 1. Check for attached markers/callbacks (Deferred transformations)
+        const markers = [...node.markers];
+        node.markers = []; // Clear so we don't re-run
+        for (const marker of markers) {
+            try {
+                const result = marker.callback(node, helpers);
+                if (result !== undefined) {
+                    helpers.replace(node, result);
                 }
+            } catch (e) {
+                console.error(`Marker callback failed on ${node.type}:`, e);
             }
         }
 
+        // Re-check validity after markers (node might have been replaced)
+        if (node.startIndex === -1) return;
+
         // 2. Check for Macro Invocation (wrapped in comments by prepareSource)
         if (node.type === 'comment') {
-            const nodeText = context.source.slice(node.startIndex, node.endIndex);
+            const nodeText = node.text;
             if (nodeText.startsWith('/*@') && nodeText.endsWith('*/')) {
                 const commentText = nodeText.slice(2, -2);
                 const inv = this.absorbInvocation(commentText, 0);
                 if (inv) {
-                    // Always collect a marker for macro invocations, even if not yet registered.
-                    // This allows @include to register macros before they are used later in the same pass.
-                    const marker = new Marker(context.tree, node.startIndex, {
-                        callback: (target, h) => {
-                            const targetText = h.context.source.slice(target.startIndex, target.endIndex);
-                            const internalInv = this.absorbInvocation(targetText.slice(2, -2), 0);
-                            if (!internalInv) return;
+                    const result = this.evaluateMacro({
+                        ...inv,
+                        startIndex: node.startIndex,
+                        endIndex: node.endIndex,
+                        invocationNode: node
+                    }, context.tree.source, helpers, context.originPath);
 
-                            const result = this.evaluateMacro({
-                                ...internalInv,
-                                startIndex: target.startIndex,
-                                endIndex: target.endIndex,
-                                invocationNode: target
-                            }, h.context.source, h, h.context.originPath);
-
-                            if (result !== undefined) {
-                                let finalResult = (result === null) ? "" : String(result);
-                                if (finalResult.includes('@')) {
-                                    const nestedRegistry = new Registry(h.registry.config, h.registry);
-                                    finalResult = nestedRegistry.transform(finalResult, `result-of-@${internalInv.name}`, h);
-                                }
-                                h.replace(target, finalResult);
-                            }
-                        },
-                        targetType: 'node',
-                        nodeType: node.type,
-                        nodeLength: node.endIndex - node.startIndex,
-                        helpers: helpers
-                    });
-                    this.deferredMarkers.push(marker);
+                    if (result !== undefined) {
+                        let finalResult = (result === null) ? "" : String(result);
+                        if (finalResult.includes('@')) {
+                            const nestedRegistry = new Registry(this.config, this);
+                            finalResult = nestedRegistry.transform(finalResult, `result-of-@${inv.name}`, helpers);
+                        }
+                        helpers.replace(node, finalResult);
+                    }
                     return; // Macro handles its own text/children
                 }
             }
         }
 
-        // 3. Recursive Stable Walk (READ-ONLY)
-        for (let i = 0; i < node.childCount; i++) {
-            this.transformNode(node.child(i), helpers, context);
+        for (const rule of this.transformRules) {
+            if (rule.active) {
+                try {
+                    if (rule.matcher(node, helpers)) {
+                        const result = rule.callback(node, helpers);
+                        if (result !== undefined) {
+                            helpers.replace(node, result);
+                        }
+                        if (node.startIndex === -1) return;
+                    }
+                } catch (e) {
+                    // rule failed
+                }
+            }
+        }
+
+        // 4. Recursive Stable Walk
+        // NOTE: We snapshot children because transformations might add/remove nodes
+        const children = [...node.children];
+        for (const child of children) {
+            this.transformNode(child, helpers, context);
         }
     }
 
 
-    executeDeferredMarkers(specificTree = null) {
-        let iterations = 0;
-        const maxIterations = 100;
+    executeDeferredMarkers(helpers) {
+        if (this.isExecutingDeferred) return;
         this.isExecutingDeferred = true;
 
         try {
-            while (this.deferredMarkers.length > 0 && iterations < maxIterations) {
+            let iterations = 0;
+            const MAX_ITERATIONS = 100;
+
+            while (iterations < MAX_ITERATIONS) {
+                // Find all nodes that have pending markers
+                const nodesWithMarkers = this.currentTree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
+                if (nodesWithMarkers.length === 0) break;
+
                 iterations++;
 
-                // Only take markers that match specificTree (if provided) or all valid ones
-                const current = this.deferredMarkers.filter(m => !specificTree || m.tree === specificTree);
-                this.deferredMarkers = this.deferredMarkers.filter(m => specificTree && m.tree !== specificTree);
-
-                if (current.length === 0) break;
-
-                // Sort: High priority first, then by offset descending (bottom-up)
-                current.sort((a, b) => {
-                    // 1. Priority (Higher first)
-                    const pA = (a.data && a.data.priority) || 0;
-                    const pB = (b.data && b.data.priority) || 0;
-                    if (pA !== pB) return pB - pA;
-
-                    // 2. Offset (Descending / Bottom-Up)
-                    const diff = b.offset - a.offset;
-                    if (diff !== 0) return diff;
-
-                    // 3. Length (Ascending - inner nodes first if offsets match)
-                    const lenA = (a.data && a.data.nodeLength !== undefined) ? a.data.nodeLength : 0;
-                    const lenB = (b.data && b.data.nodeLength !== undefined) ? b.data.nodeLength : 0;
-                    return lenA - lenB;
+                // Sort bottom-up and right-to-left for predictable execution
+                nodesWithMarkers.sort((a, b) => {
+                    if (b.startIndex !== a.startIndex) return b.startIndex - a.startIndex;
+                    return b.endIndex - a.endIndex;
                 });
 
-                for (const marker of current) {
-                    if (!marker.valid) continue;
+                for (const node of nodesWithMarkers) {
+                    if (node.startIndex === -1) continue; // Skip if already invalidated
 
-                    const { callback, targetType, helpers } = marker.data;
-                    let targetNode = null;
-                    if (targetType === 'root') {
-                        targetNode = marker.tree.rootNode;
-                    } else if (targetType === 'node') {
-                        targetNode = marker.getNode({ type: marker.data.nodeType });
-                    }
-
-                    if (targetNode) {
-                        const h = helpers || this.mainContext.helpers;
-                        const prevContext = h.contextNode;
-                        h.contextNode = targetNode;
+                    const markers = [...node.markers];
+                    node.markers = [];
+                    for (const marker of markers) {
                         try {
-                            callback(targetNode, h);
-                        } finally {
-                            h.contextNode = prevContext;
+                            const result = marker.callback(node, helpers);
+                            if (result !== undefined) {
+                                helpers.replace(node, result);
+                            }
+                            if (node.startIndex === -1) break; // Node replaced, stop running markers on it
+                        } catch (e) {
+                            console.error(`Deferred marker failed on ${node.type}:`, e);
                         }
                     }
-                    marker.destroy();
                 }
+            }
+            if (iterations === MAX_ITERATIONS) {
+                console.warn("MAX_ITERATIONS reached in executeDeferredMarkers (possible infinite marker loop)");
             }
         } finally {
             this.isExecutingDeferred = false;
@@ -355,6 +324,12 @@ class Registry {
             helpers.lastConsumedNode = null;
             this.activeTransformNode = invocationNode;
 
+            const upp = Object.create(helpers);
+            upp.registry = this;
+            upp.parentHelpers = this.parentHelpers;
+            upp.path = path;
+            upp.invocation = { ...invocation, invocationNode };
+
             const macroFn = this.createMacroFunction(macro);
             const args = [...invocation.args];
             let isTransformer = false;
@@ -367,7 +342,7 @@ class Registry {
                 throw new Error(`@${invocation.name} expected ${isTransformer ? macro.params.length - 1 : macro.params.length} arguments, found ${invocation.args.length}`);
             }
 
-            return macroFn(helpers, console, ...args);
+            return macroFn(upp, console, ...args);
         } catch (err) {
             console.error(`Macro @${invocation.name} failed:`, err);
             this.diagnostics.reportError(0, `Macro @${invocation.name} failed: ${err.message}`, filePath, invocation.line || 1, invocation.col || 1, source);
@@ -381,11 +356,17 @@ class Registry {
     }
 
     createMacroFunction(macro) {
-        const bodyWithReturn = (macro.language === 'js' && !macro.body.includes('return'))
-            ? `return (${macro.body})`
-            : macro.body;
+        const body = macro.body.trim();
+        // Avoid wrapping empty or comment-only macros in 'return ()' which is invalid syntax
+        const shouldWrap = macro.language === 'js' &&
+            body.length > 0 &&
+            !body.startsWith('//') &&
+            !body.startsWith('/*') &&
+            !body.includes('return');
 
-        return new Function('upp', 'console', ...macro.params, bodyWithReturn);
+        const finalBody = shouldWrap ? `return (${body})` : body;
+
+        return new Function('upp', 'console', ...macro.params, finalBody);
     }
 
     prepareSource(source, originPath) {
@@ -421,82 +402,18 @@ class Registry {
             const original = cleanSource.slice(inv.startIndex, inv.endIndex);
 
             if (inv.name === 'include') {
-                // Handle @include immediately
+                // Handle @include immediately for dependency discovery
                 const file = inv.args[0];
                 if (file) {
-                   // Strip quotes if present (args parser might leave them if simple split/trim used)
-                   // The current findInvocations/absorbInvocation seems to simple split by comma.
-                   // Let's assume the args are raw strings.
-                   // Wait, absorbInvocation splits by comma and trims.
-                   // If the user wrote @include("foo.h"), arg is "\"foo.h\"".
-                   // If they wrote @include(foo.h), arg is "foo.h".
-                   // The original macro didn't seem to strip quotes explicitly in the JS code provided in Registry constructor,
-                   // but `upp.loadDependency(file)` would fail if file had quotes in the string content itself.
-                   // Actually looking at the registry.js macro def: `upp.loadDependency(file);`
-                   // If the regex match included quotes, they are part of the string.
-
-                   let filename = file;
-                   if ((filename.startsWith('"') && filename.endsWith('"')) || (filename.startsWith("'") && filename.endsWith("'"))) {
-                       filename = filename.slice(1, -1);
-                   }
-
-                   this.loadDependency(filename, originPath);
-
-                   let replacement = "";
-                   if (filename.endsWith('.hup')) {
-                       const headerName = filename.slice(0, -4) + '.h';
-                       replacement = `#include "${headerName}"`;
-                   } else if (filename.endsWith('.cup')) {
-                        // .cup files usually don't generate .h files directly to include,
-                        // but maybe they do? The original macro threw error for anything not .hup?
-                        // Original macro:
-                        // if (headerName.endsWith('.hup')) { ... } else { throw ... }
-                        // I should verify what the original macro did.
-                        // It was:
-                        // if (headerName.endsWith('.hup')) { ... } else { throw new Error('Unsupported header file type: ' + file); }
-                        // So I should stick to that logic or make it safe.
-                        // However, standard C includes might be .h
-                        // If it's just a .h file, we should probably just emit #include "..."
-                        // But loadDependency handles the loading.
-
-                        // Let's stick to the .hup logic for now to match exactly.
-                       const headerName = filename.slice(0, -4) + '.h';
-                       replacement = `#include "${headerName}"`;
-                   } else {
-                        // For standard includes or others, maybe just keep them?
-                        // The user said "ALL @include directives should be processed...".
-                        // If it's a standard .h, loadDependency might fail if it tries to find it in std/ or relative,
-                        // unless it exists.
-                        // But wait, the original macro threw an error!
-                        // "throw new Error('Unsupported header file type: ' + file);"
-                        // So I should probably replicate that or be slightly more permissive?
-                        // The user's prompt implies fixing ordering, not changing behavior.
-                        // I'll stick to logic that supports .hup.
-
-                       // Actually, if it is JUST a .h file, we might want to allow it if transpile.js expects it?
-                       // But the macro logic was strict. I will relax it slightly to allow .h if loadDependency works?
-                       // No, strict is safer to match previous behavior.
-
-                       // Wait, looking at lines 26-35 of registry.js:
-                       // if (headerName.endsWith('.hup')) { ... } else { throw ... }
-                       // So it ONLY supported .hup.
-
-                       if (filename.endsWith('.hup')) {
-                           replacement = `#include "${filename.slice(0, -4) + '.h'}"`;
-                       } else {
-                            // If we want to support raw C includes via @include, we could.
-                            // But usually #include is used for that.
-                            // I will throw to match original behavior.
-                             throw new Error('Unsupported header file type for @include: ' + filename);
-                       }
-                   }
-
-                   cleanSource = cleanSource.slice(0, inv.startIndex) + replacement + cleanSource.slice(inv.endIndex);
+                    let filename = file;
+                    if ((filename.startsWith('"') && filename.endsWith('"')) || (filename.startsWith("'") && filename.endsWith("'"))) {
+                        filename = filename.slice(1, -1);
+                    }
+                    this.loadDependency(filename, originPath);
                 }
-            } else {
-                // Wrap other macros
-                cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
             }
+            // Wrap ALL macros in comments so transformNode can find and execute them
+            cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
         }
 
         return { cleanSource, invocations };
@@ -510,7 +427,7 @@ class Registry {
 
         while (i < source.length && depth > 0) {
             const char = source[i];
-            const nextChar = source[i+1];
+            const nextChar = source[i + 1];
 
             if (escaped) {
                 escaped = false;
@@ -519,8 +436,8 @@ class Registry {
             } else if (inString) {
                 if (char === inString) {
                     // Template literal interpolation handling
-                    if (char === '`' && source[i-1] === '}' && !escaped) {
-                         // This is tricky, but for now let's just assume backticks are balanced
+                    if (char === '`' && source[i - 1] === '}' && !escaped) {
+                        // This is tricky, but for now let's just assume backticks are balanced
                     }
                     inString = null;
                 }

@@ -1,109 +1,111 @@
 @define implements(pkgName) {
+    // Marker macro used by @package
 }
 
 @define package(pkgName) {
-    if (!upp.parentTree) {
+    if (!upp.parentHelpers) {
         // This macro is intended to be run from an included file (like pkg.hup)
         // inspecting the parent (like pkg.cup).
-        console.warn("@package used without a parent context (should be used inside an @included file)");
-        return;
+        return "";
     }
 
     const nameSpace = pkgName + "_";
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    const parentInvocations = upp.parentRegistry.invocations;
-    const parentSource = upp.parentRegistry.sourceCode;
-    const isImpl = parentInvocations.some(inv =>
-        (inv.name === 'implements' || inv.name === 'implement') && inv.args[0] === pkgName
-    ) || new RegExp(`^\\s*@(?:implements|implement)\\s*\\(\\s*${pkgName}\\s*\\)`, 'm').test(parentSource);
-
-    const root = upp.parentTree;
+    const impls = upp.parentHelpers.findInvocations('implements');
+    const isImpl = impls.some(inv => inv.text.includes(pkgName));
 
     if (isImpl) {
         upp.registry.shouldMaterializeDependency = true;
-        const definitions = upp.parentRegistry.helpers.query('(function_definition) @fn', root);
+        if (upp.parentHelpers && upp.parentHelpers.registry) {
+            upp.parentHelpers.registry.shouldMaterializeDependency = true;
+        }
 
-        for (const match of definitions) {
-            const fn = match.captures.fn;
-
+        // Find public functions to generate headers
+        const functions = upp.parentHelpers.query('function_definition');
+        for (const { node: fn } of functions) {
             let isStatic = false;
-            for(let i=0; i<fn.childCount; i++) {
-                 const child = fn.child(i);
-                 if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                     isStatic = true;
-                     break;
-                 }
+            for (const child of fn.children) {
+                if (child.type === 'storage_class_specifier' && child.text === 'static') {
+                    isStatic = true;
+                    break;
+                }
             }
-
-            const { returnType, name, params } = upp.parentRegistry.helpers.getFunctionSignature(fn);
-            if (name === "unknown" || name.startsWith(nameSpace)) continue;
 
             if (!isStatic) {
-                publicProtos.push(`${returnType} ${nameSpace}${name}${params};`);
+                const { returnType, name, params } = upp.parentHelpers.getFunctionSignature(fn);
+                if (name !== 'unknown' && !name.startsWith(nameSpace)) {
+                    publicProtos.push(`extern ${returnType} ${nameSpace}${name}${params};`);
+                }
             }
         }
-    }
 
-    // 3. Registering Transform for the Parent (only if IMPLEMENTING)
-    if (isImpl) {
-        upp.registerParentTransform((_root, pHelpers) => {
-             // Rename local calls FIRST (while definitions still have old names)
-             pHelpers.matchReplaceAll(_root, '$call__call_expression', ({call}) => {
-                 const funcNode = pHelpers.childForFieldName(call, 'function');
-                 if (!funcNode) return null;
-                 const funcName = funcNode.text;
+        // Register transformation rule for the parent context
+        upp.registerTransformRule({
+            id: `package_${pkgName}_renamer`,
+            type: 'pattern',
+            active: true,
+            matcher: (node, helpers) => {
+                if (node.type === 'function_definition') {
+                    const sig = helpers.getFunctionSignature(node);
+                    let isStatic = false;
+                    for (const child of node.children) {
+                        if (child.type === 'storage_class_specifier' && child.text === 'static') {
+                            isStatic = true;
+                            break;
+                        }
+                    }
+                    if (isStatic) return false;
+                    return sig.name !== 'unknown' && !sig.name.startsWith(nameSpace);
+                }
 
-                 const def = pHelpers.getDefinition(funcNode);
-                 if (def && pHelpers.isDescendant(_root, def)) {
-                     let fnDef = def;
-                     while(fnDef && fnDef.type !== 'function_definition' && fnDef.parent) fnDef = fnDef.parent;
+                if (node.type === 'call_expression') {
+                    const funcNode = node.findChildByFieldName('function');
+                    if (!funcNode || funcNode.text.startsWith(nameSpace)) return false;
 
-                     if (fnDef && fnDef.type === 'function_definition') {
-                         let isStaticVal = false;
-                         try {
-                              for(let i=0; i<fnDef.childCount; i++) {
-                                 const child = fnDef.child(i);
-                                 if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                                     isStaticVal = true;
-                                     break;
-                                 }
+                    const name = funcNode.text;
+                    const allFns = helpers.query('function_definition');
+                    const def = allFns.find(f => {
+                        const sig = helpers.getFunctionSignature(f.node);
+                        return sig.name === name || sig.name === nameSpace + name;
+                    });
+                    
+                    if (def) {
+                        let fnNode = def.node;
+                        let isStatic = false;
+                        for (const child of fnNode.children) {
+                             if (child.type === 'storage_class_specifier' && child.text === 'static') {
+                                 isStatic = true;
+                                 break;
                              }
-                         } catch (e) {}
-
-                         if (!isStaticVal && !funcName.startsWith(nameSpace)) {
-                             const args = pHelpers.childForFieldName(call, 'arguments');
-                             return pHelpers.code`${nameSpace}${funcName}${args}`;
-                         }
-                     }
-                 }
-             });
-
-             // Rename definitions AFTER calls
-             pHelpers.matchReplaceAll(_root, '$fn__function_definition', ({fn}) => {
-                 let isStatic = false;
-                 try {
-                     for(let i=0; i<fn.childCount; i++) {
-                         const child = fn.child(i);
-                         if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                             isStatic = true;
-                             break;
-                         }
-                     }
-                 } catch (e) {}
-
-                 if (isStatic) return;
-
-                 const { name, nameNode } = pHelpers.getFunctionSignature(fn);
-                 if (name === "unknown" || name.startsWith(nameSpace)) return;
-
-                 if (nameNode) {
-                    pHelpers.replace(nameNode, nameSpace + name);
-                 }
-             });
+                        }
+                        return !isStatic;
+                    }
+                }
+                return false;
+            },
+            callback: (node, helpers) => {
+                if (node.type === 'function_definition') {
+                    const { name, nameNode } = helpers.getFunctionSignature(node);
+                    if (nameNode) nameNode.text = nameSpace + name;
+                    return undefined;
+                }
+                if (node.type === 'call_expression') {
+                    const funcNode = node.findChildByFieldName('function');
+                    funcNode.text = nameSpace + funcNode.text;
+                    return undefined;
+                }
+            }
         });
     }
 
-    return publicProtos.join('\n');
+    const stdDir = upp.stdPath || "";
+    const parentDir = upp.path.dirname(upp.registry.originPath || "");
+    let packageHPath = "package.h";
+    if (stdDir && parentDir) {
+        packageHPath = upp.path.relative(parentDir, upp.path.join(stdDir, 'package.h'));
+    }
+
+    return `#include "${packageHPath}"\n` + publicProtos.join('\n');
 }

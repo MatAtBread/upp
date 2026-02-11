@@ -1,25 +1,24 @@
-import Parser, { SyntaxNode, Query } from 'tree-sitter';
 import path from 'path';
 import fs from 'fs';
-import Marker from './marker.js';
 
 /**
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
 class UppHelpersBase {
-    constructor(registry) {
+    constructor(root, registry, parentHelpers = null) {
+        this.root = root;
         this.registry = registry;
-        this.root = null;
+        this.parentHelpers = parentHelpers;
         this.contextNode = null;
         this.invocation = null;
         this.lastConsumedNode = null;
         this.isDeferred = false;
-        this.nodeCache = new Map();
         this.currentInvocations = [];
         this.consumedIds = new Set();
-        this.detachedNodeText = new WeakMap();
         this.context = null; // Back-reference to the local transform context
+        this.parentTree = (registry && registry.parentRegistry) ? registry.parentRegistry.tree : null;
+        this.stdPath = registry ? registry.stdPath : null;
     }
 
     code(strings, ...values) {
@@ -51,58 +50,25 @@ class UppHelpersBase {
     }
 
     replace(n, newContent) {
-        const contentStr = typeof newContent === 'object' ? newContent.text : String(newContent);
-        const isRoot = n.type === 'translation_unit' || n.parent === null;
-
-        const startMarker = n.__marker_bound ? n.__marker_bound : new Marker(this.context.tree, n.startIndex);
-        const endMarker = new Marker(this.context.tree, n.endIndex);
-
-        if (this.registry.isExecutingDeferred) {
-            const len = endMarker.offset - startMarker.offset;
-            if (isRoot) {
-                this.registry.applyRootSplice(this.context, contentStr);
-            } else {
-                this.registry.applySplice(this.context, startMarker.offset, len, contentStr);
-            }
-            if (!n.__marker_bound) startMarker.destroy();
-            endMarker.destroy();
-            return "";
-        }
-
-        const marker = new Marker(this.context.tree, startMarker.offset, {
-            callback: (target, helpers) => {
-                const len = endMarker.offset - startMarker.offset;
-                if (isRoot) {
-                    helpers.registry.applyRootSplice(helpers.context, contentStr);
-                } else {
-                    helpers.registry.applySplice(helpers.context, startMarker.offset, len, contentStr);
-                }
-                if (!n.__marker_bound) startMarker.destroy();
-                endMarker.destroy();
-            },
-            targetType: isRoot ? 'root' : 'node',
-            nodeType: n.type,
-            nodeLength: n.endIndex - n.startIndex,
-            helpers: this
-        });
-        this.registry.deferredMarkers.push(marker);
+        if (!n) return "";
+        const result = n.replaceWith(newContent);
+        // If we replaced 'this.contextNode', update it for the helper?
+        // Actually Registry handles the walk, but helpers.contextNode might need update.
+        if (this.contextNode === n) this.contextNode = result;
         return "";
     }
 
     query(queryString, node = null) {
-        const target = node ? (node.__internal_raw_node || node) : this.root;
-        const query = new Query(this.registry.language, queryString);
-        const matches = query.matches(target);
+        let target = node || this.root;
+        if (!target && this.registry && this.registry.tree) target = this.registry.tree.root;
 
-        return matches.map(m => {
-            const captures = {};
-            for (const c of m.captures) {
-                captures[c.name] = this.wrapNode(c.node);
-            }
-            // Return compatible structure
-            const firstCapture = m.captures[0] ? this.wrapNode(m.captures[0].node) : null;
-            return { captures, node: captures[Object.keys(captures)[0]] || firstCapture };
-        });
+        // Simple type-based or functional query fallback if queryString is just a type
+        if (target && !queryString.includes('(')) {
+            return target.find(queryString).map(n => ({ node: n, captures: { node: n } }));
+        }
+        // For complex S-expressions, we'd need a stable matcher.
+        // For Milestone 1, we'll stick to simple finds or implement a basic matcher.
+        throw new Error("Complex S-expression queries not yet supported on stable SourceTree");
     }
 
     findRoot() {
@@ -119,71 +85,50 @@ class UppHelpersBase {
 
     withNode(node, callback) {
         if (!node) return "";
-        const rawNode = node.__internal_raw_node || node;
-
-        const preservedText = rawNode.text;
-        const marker = new Marker(this.context.tree, rawNode.startIndex, {
-            callback: (target, helpers) => {
-                const wrapped = helpers.wrapNode(target, true, preservedText);
-                const result = callback(wrapped, helpers);
-                if (result !== undefined) {
-                    helpers.replace(target, result);
-                }
-            },
-            targetType: 'node',
-            nodeType: rawNode.type,
-            nodeLength: rawNode.endIndex - rawNode.startIndex,
-            helpers: this
+        node.markers.push({
+            callback: (target, helpers) => callback(target, helpers),
+            data: {}
         });
-        this.registry.deferredMarkers.push(marker);
         return "";
     }
 
-    wrapNode(node, lateBound = false, sourceOverride = null, treeOverride = null) {
-        if (!node) return null;
-        if (node.__isWrapped) return node;
+    wrapNode(node) {
+        return node; // No longer needed, but kept for compatibility during transition
+    }
 
-        const helpers = this;
-        const rawNode = node.__internal_raw_node || node;
-        const treeSource = sourceOverride || (this.context ? this.context.source : "");
+    /**
+     * Finds macro invocations in the tree.
+     * @param {string} macroName
+     * @param {SourceNode} [node]
+     * @returns {SourceNode[]}
+     */
+    findInvocations(macroName, node = null) {
+        let target = node || this.root;
+        if (!target && this.context && this.context.tree) target = this.context.tree.root;
 
-        const proxy = new Proxy(rawNode, {
-            get: (target, prop, receiver) => {
-                if (prop === '__isWrapped') return true;
-                if (prop === '__internal_raw_node') return target;
-                if (prop === '__isLateBound') return lateBound;
-                if (prop === '__sourceOverride') return treeSource;
+        if (!target) {
+            const source = this.registry.source || (this.context && this.context.tree && this.context.tree.source);
+            // console.log(`[UPP DEBUG] findInvocations(${macroName}) no target, using registry source (${source ? source.length : 0} bytes)`);
+            if (!source) return [];
 
-                if (prop === 'text') {
-                    if (helpers.detachedNodeText && helpers.detachedNodeText.has(target)) {
-                        return helpers.detachedNodeText.get(target);
-                    }
-                    const dynamicSource = (helpers.context && helpers.context.source) || treeSource;
-                    return dynamicSource.slice(target.startIndex, target.endIndex);
-                }
+            const invs = this.registry.findInvocations(source);
+            return invs.filter(i => i.name === macroName).map(i => ({
+                ...i,
+                text: `@${i.name}(${i.args.join(',')})`,
+                // Mock includes for package.hup
+                includes: (str) => i.args.some(arg => arg.includes(str))
+            }));
+        }
 
-                const value = target[prop];
-
-                if (typeof value === 'function') {
-                    return (...args) => {
-                        // Minimal unwrapping for native TS calls
-                        const unwrappedArgs = args.map(a => (a && a.__internal_raw_node) ? a.__internal_raw_node : a);
-                        let result = value.apply(target, unwrappedArgs);
-                        if (result && typeof result === 'object' && result.type) {
-                             return helpers.wrapNode(result, lateBound, treeSource);
-                        }
-                        return result;
-                    };
-                }
-
-                if (value && typeof value === 'object' && value.type) {
-                    return helpers.wrapNode(value, lateBound, treeSource);
-                }
-                return value;
+        const pattern = new RegExp(`@${macroName}\\s*\\(`);
+        const results = target.find(n => {
+            if (n.type === 'preproc_def') return pattern.test(n.text);
+            if (n.type === 'comment') {
+                return n.text.startsWith('/*@') && pattern.test(n.text);
             }
+            return false;
         });
-
-        return proxy;
+        return results;
     }
 
     isConsumed(node) {
@@ -202,6 +147,53 @@ class UppHelpersBase {
         }
         // Simplified: just run it on the parent's root node now
         callback(this.parentTree, this.parentHelpers);
+    }
+
+    /**
+     * Finds the next logical node after the macro invocation.
+     * @private
+     */
+    _getNextNode(expectedTypes = null) {
+        let node = null;
+        let anchor = this.lastConsumedNode || (this.invocation && this.invocation.invocationNode) || this.contextNode;
+
+        if (anchor && anchor.parent) {
+            // Check parent (embedded macro case)
+            if (expectedTypes && expectedTypes.includes(anchor.parent.type)) {
+                node = anchor.parent;
+            } else {
+                // Check siblings
+                const idx = anchor.parent.children.indexOf(anchor);
+                if (idx !== -1 && idx + 1 < anchor.parent.children.length) {
+                    node = anchor.parent.children[idx + 1];
+                }
+            }
+        }
+
+        if (!node && this.contextNode) {
+            // Check descendants if not found as sibling
+            for (const child of this.contextNode.children) {
+                if (!expectedTypes || expectedTypes.includes(child.type)) {
+                    node = child;
+                    break;
+                }
+            }
+        }
+        return node;
+    }
+
+    /**
+     * Retrieves the next node without removing it from the tree.
+     * @param {string|string[]} [types] 
+     * @returns {SourceNode|null}
+     */
+    nextNode(types = null) {
+        const expectedTypes = typeof types === 'string' ? [types] : types;
+        const node = this._getNextNode(expectedTypes);
+        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
+            return null;
+        }
+        return node;
     }
 
     consume(expectedTypeOrOptions, errorMessage) {
@@ -228,76 +220,29 @@ class UppHelpersBase {
             this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode, msg);
         };
 
-        let node = null;
-        let anchor = this.lastConsumedNode || this.contextNode;
-        if (anchor) {
-            let rootForSearch = this.context.tree.rootNode;
-            let searchIdx = anchor.endIndex;
-
-            if (this.invocation && (anchor.id === this.invocation.id || anchor.type === 'macro_invocation')) {
-                 searchIdx = anchor.endIndex;
-            } else if (this.invocation && anchor.startIndex <= this.invocation.startIndex && anchor.endIndex >= this.invocation.endIndex) {
-                 searchIdx = this.invocation.endIndex;
-            }
-
-            node = this.findNextNodeAfter(rootForSearch, searchIdx);
-        } else if (this.invocation) {
-            let rootForSearch = this.context.tree.rootNode;
-            node = this.findNextNodeAfter(rootForSearch, (this.topLevelInvocation || this.invocation).endIndex);
-        }
-
-        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
-            // Found a sibling but it doesn't match. Are we nested?
-            let p = this.contextNode ? (this.contextNode.__internal_raw_node || this.contextNode) : null;
-            while (p) {
-                if (expectedTypes.includes(p.type)) {
-                    node = p;
-                    break;
-                }
-                p = p.parent;
-            }
-        }
+        const node = this._getNextNode(expectedTypes);
 
         if (!node) {
-            // Traditional nested check if nothing was found after anchor
-            let p = this.contextNode ? (this.contextNode.__internal_raw_node || this.contextNode) : null;
-            while (p) {
-                if (expectedTypes && expectedTypes.includes(p.type)) {
-                    node = p;
-                    break;
-                }
-                p = p.parent;
-            }
-
-            if (!node) {
-                if (expectedTypes || validateFn) reportFailure(null);
-                return null;
-            }
+            if (expectedTypes || validateFn) reportFailure(null);
+            return null;
         }
 
-        while (node.parent && node.parent.startIndex === node.startIndex && node.parent.type !== 'translation_unit') node = node.parent;
         if (expectedTypes && !expectedTypes.includes(node.type)) reportFailure(node);
         if (validateFn && !validateFn(node)) reportFailure(node);
 
-        // Capture markers BEFORE deletion so they track the correct spot
-        const marker = new Marker(this.context.tree, node.startIndex);
-        const markerEnd = new Marker(this.context.tree, node.endIndex);
-        node.__marker_bound = marker;
-        node.__marker_bound_end = markerEnd;
-
-        // Capture text before deletion/modification
-        const textContent = node.text;
-        this.detachedNodeText.set(node, textContent);
-
-        const wrapped = this.wrapNode(node, true);
         const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
 
-        // Perform immediate deletion (unless we're hoisting, in which case the macro result will replace the range)
+        const text = node.text;
+        const wrapped = node;
+        // We could store the text on the node object itself if needed, 
+        // but for now we just return the node which still has correct indices 
+        // if we are careful, or we can add a 'capturedText' property.
+        node._capturedText = text;
+
         if (!isHoisted) {
             this.replace(node, "");
         }
         this.consumedIds.add(node.id);
-
         this.lastConsumedNode = node;
         return wrapped;
     }
@@ -335,17 +280,16 @@ class UppHelpersBase {
     }
 
     parent(node) {
-        try { return this.wrapNode(node ? (node.__internal_raw_node || node).parent : null); }
-        catch (e) { return null; }
+        return node ? node.parent : null;
     }
 
     childForFieldName(node, fieldName) {
         if (!node) return null;
-        const rawNode = node.__internal_raw_node || node;
-        try {
-            const child = rawNode.childForFieldName(fieldName);
-            return child ? this.wrapNode(child) : null;
-        } catch (e) { return null; }
+        // Search in children for one that matches fieldName if we had that, 
+        // but SourceNode doesn't keep field names yet.
+        // For now, look at the type/structure or use a fallback.
+        // TODO: Map fieldNames in SourceNode wrapper.
+        return null;
     }
 
     findNextNodeAfter(root, index) {
@@ -362,13 +306,13 @@ class UppHelpersBase {
         if (!node) return null;
 
         while (node && node.startIndex < index) {
-             let nextChild = null;
-             for (let i = 0; i < node.namedChildCount; i++) {
-                 const c = node.namedChild(i);
-                 if (c.endIndex > index) { nextChild = c; break; }
-             }
-             if (nextChild) node = nextChild;
-             else break;
+            let nextChild = null;
+            for (let i = 0; i < node.namedChildCount; i++) {
+                const c = node.namedChild(i);
+                if (c.endIndex > index) { nextChild = c; break; }
+            }
+            if (nextChild) node = nextChild;
+            else break;
         }
 
         let current = node;
@@ -382,12 +326,16 @@ class UppHelpersBase {
     }
 
     enclosingScope(node) {
-        let p = node ? (node.__internal_raw_node || node).parent : null;
+        let p = node ? node.parent : null;
         while (p) {
-            if (['compound_statement', 'function_definition', 'translation_unit'].includes(p.type)) return this.wrapNode(p);
+            if (['compound_statement', 'function_definition', 'translation_unit'].includes(p.type)) return p;
             p = p.parent;
         }
         return this.findRoot();
+    }
+
+    registerTransformRule(rule) {
+        this.registry.registerTransformRule(rule);
     }
 
     error(node, message) {

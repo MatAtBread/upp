@@ -2,26 +2,37 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
-    debugger;
-    const node = upp.consume(['expression_statement', 'compound_statement']);
-    if (!node) return upp.error("Expected expression_statement or compound_statement", node);
+    const stmt = upp.consume(['expression_statement', 'compound_statement']);
+    if (!stmt) return upp.error("Expected expression_statement or compound_statement");
+    
+    const code = stmt.text;
+
     upp.withScope((scope, helpers) => {
+        const trimmed = code.trim();
+        const codeText = (trimmed.endsWith('}') || trimmed.endsWith(';')) ? code : code + ";";
+        
         // Find all return statements in this scope
-        const returns = helpers.query('(return_statement) @stmt', scope);
-        for (const r of returns) {
-            helpers.withNode(r.node, (retNode, h) => {
-                return `${deferredText}\n${retNode.text}`;
-            });
+        const returns = scope.find('return_statement');
+        const returnOffsets = new Set();
+        for (const ret of returns) {
+            ret.insertBefore(codeText + "\n");
+            returnOffsets.add(ret.startIndex);
         }
 
         // Also add at the end of the scope block
-        // In a compound_statement, the last child is '}'
-        if (scope.type === 'compound_statement') {
-            const lastChild = scope.child(scope.childCount - 1);
-            if (lastChild && lastChild.type === '}') {
-                helpers.withNode(lastChild, (brace, h) => {
-                    return `${deferredText}\n${brace.text}`;
-                });
+        const last = scope.children[scope.children.length - 1];
+        if (last && last.text === '}') {
+            // Heuristic: check if the previous non-comment sibling was a return we already touched
+            let prev = null;
+            const idx = scope.children.indexOf(last);
+            for (let i = idx - 1; i >= 0; i--) {
+                if (scope.children[i].type !== 'comment') {
+                    prev = scope.children[i];
+                    break;
+                }
+            }
+            if (!prev || !returnOffsets.has(prev.startIndex)) {
+                last.insertBefore(codeText + "\n");
             }
         }
     });

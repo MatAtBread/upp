@@ -47,7 +47,8 @@ async function runTests() {
 
     if (!tree.source.includes("return 1;")) console.error("FAIL: replaceWith source update");
     if (tree.source.includes("return 0;")) console.error("FAIL: Old content should be gone.");
-    if (returnStmt.startIndex !== -1) console.error("FAIL: Old node should be invalidated.");
+    if (returnStmt.text !== "return 1;") console.error("FAIL: Old node should be morphed to new content.");
+    // if (returnStmt.startIndex === -1) console.error("FAIL: Old node should be invalidated.");
 
     console.log("PASS: replaceWith");
 

@@ -33,18 +33,21 @@ export class SourceTree {
      * Internal method to get or create a SourceNode wrapper for a Tree-sitter node.
      * @param {import('tree-sitter').SyntaxNode} tsNode The Tree-sitter node to wrap.
      * @param {SourceNode} [parent] The parent SourceNode, if any.
+     * @param {string} [fieldName] The field name for this node in the parent.
      * @returns {SourceNode|null}
      */
-    wrap(tsNode, parent = null) {
+    wrap(tsNode, parent = null, fieldName = null) {
         if (!tsNode) return null;
         if (this.nodeCache.has(tsNode.id)) {
             const node = this.nodeCache.get(tsNode.id);
             if (parent) node.parent = parent;
+            if (fieldName) node.fieldName = fieldName;
             return node;
         }
 
         const node = new SourceNode(this, tsNode);
         node.parent = parent;
+        node.fieldName = fieldName;
         this.nodeCache.set(tsNode.id, node);
         return node;
     }
@@ -209,14 +212,20 @@ export class SourceNode {
             this.children = [];
             /** @type {SourceNode|null} */
             this.parent = null;
+            /** @type {string|null} */
+            this.fieldName = null;
             for (let i = 0; i < tsNode.childCount; i++) {
-                this.children.push(tree.wrap(tsNode.child(i), this));
+                const child = tsNode.child(i);
+                const fieldName = tsNode.fieldNameForChild(i);
+                this.children.push(tree.wrap(child, this, fieldName));
             }
         } else {
             /** @type {string} */
             this.id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
             /** @type {string} */
             this.type = 'fragment';
+            /** @type {string|null} */
+            this.fieldName = null;
             /** @type {number} */
             this.startIndex = 0;
             /** @type {number} */
@@ -226,16 +235,36 @@ export class SourceNode {
             /** @type {SourceNode|null} */
             this.parent = null;
         }
+
+        /** @type {Array<{callback: Function, data: any}>} */
+        this.markers = [];
+        /** @type {Object} */
+        this.data = {};
     }
 
     /** @returns {string} */
     get text() {
+        if (this._capturedText !== undefined) return this._capturedText;
+        if (this.startIndex === -1) return "";
         return this.tree.source.slice(this.startIndex, this.endIndex);
     }
 
     /** @param {string} value */
     set text(value) {
         this.tree.edit(this.startIndex, this.endIndex, value);
+    }
+
+    /** @returns {number} */
+    get childCount() {
+        return this.children.length;
+    }
+
+    /** 
+     * @param {number} idx 
+     * @returns {SourceNode} 
+     */
+    child(idx) {
+        return this.children[idx];
     }
 
     /**
@@ -347,8 +376,10 @@ export class SourceNode {
 
         this.tree.edit(start, end, newText);
 
-        // Deeply invalidate self and children
-        this._invalidateRecursively();
+        // Deeply invalidate children, but keep self reference stable if we can
+        for (const child of this.children) {
+            child._invalidateRecursively();
+        }
 
         const attached = this._attachNewNode(newNode, start);
         const attachedList = Array.isArray(attached) ? attached : (attached ? [attached] : []);
@@ -356,13 +387,34 @@ export class SourceNode {
         // re-point current node if there is at least one new node
         if (attachedList.length > 0) {
             const firstNew = attachedList[0];
-            Object.assign(this, firstNew);
-            // After Object.assign, 'this' has the same children array as firstNew.
-            // These children were created pointing to firstNew; update them to point to 'this'.
+            const oldId = this.id;
+
+            // We want to KEEP the same object identity.
+            // But we update all properties from the new node.
+            const newChildren = firstNew.children;
+            const newStartIndex = firstNew.startIndex;
+            const newEndIndex = firstNew.endIndex;
+            const newType = firstNew.type;
+            const newData = firstNew.data;
+
+            this.startIndex = newStartIndex;
+            this.endIndex = newEndIndex;
+            this.type = newType;
+            this.children = newChildren;
+            this.data = newData;
+            // Markers: Should we keep old ones or take new ones?
+            // Usually take new ones as this is a new identity.
+            this.markers = firstNew.markers;
+
+            // Update children parent pointers to this (morphed) node
             for (const child of this.children) {
                 child.parent = this;
             }
+            // Ensure even if ID changed (it shouldn't if we don't assign it), we are in cache
             this.tree.nodeCache.set(this.id, this);
+        } else {
+            // If we replaced with nothing, THEN we invalidate self
+            this.startIndex = -1;
         }
 
         // Update parent children
@@ -468,6 +520,37 @@ export class SourceNode {
             return rootNode.children;
         }
         return rootNode;
+    }
+
+    /**
+     * Finds nodes matching a predicate or type within this subtree.
+     * @param {string|function(SourceNode):boolean} predicate Type name or filter function.
+     * @returns {SourceNode[]}
+     */
+    find(predicate) {
+        const results = [];
+        const isMatch = typeof predicate === 'string'
+            ? (n) => n.type === predicate
+            : predicate;
+
+        const walk = (n) => {
+            if (isMatch(n)) results.push(n);
+            for (const child of n.children) {
+                walk(child);
+            }
+        };
+
+        walk(this);
+        return results;
+    }
+
+    /**
+     * Finds a direct child by its field name.
+     * @param {string} fieldName 
+     * @returns {SourceNode|null}
+     */
+    findChildByFieldName(fieldName) {
+        return this.children.find(c => c.fieldName === fieldName) || null;
     }
 
     /**
