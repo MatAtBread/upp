@@ -42,6 +42,11 @@ class Registry {
             let headerName = file;
             if (headerName.endsWith('.hup')) {
                 headerName = headerName.slice(0, -4) + '.h';
+                const stdDir = upp.stdPath || "";
+                const parentDir = upp.path.dirname(upp.registry.originPath || "");
+                if (stdDir && parentDir && file.includes('package.hup')) {
+                    headerName = upp.path.relative(parentDir, upp.path.join(stdDir, 'package.h'));
+                }
                 return \`#include "\${headerName}"\`;
             } else {
                 throw new Error('Unsupported header file type: ' + file);
@@ -138,10 +143,18 @@ class Registry {
         this.source = source;
         if (!source) return "";
 
+        // Initialize tree as early as possible so dependencies can see us
+        this.tree = new SourceTree(source, this.language);
+        this.helpers = new this.UppHelpersC(this.tree.root, this, parentHelpers);
+
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
 
-        const sourceTree = new SourceTree(cleanSource, this.language);
-        this.currentTree = sourceTree;
+        // Update tree with clean source if it changed
+        if (cleanSource !== source) {
+            this.tree = new SourceTree(cleanSource, this.language);
+            this.helpers.root = this.tree.root; // Update helpers root
+        }
+        const sourceTree = this.tree;
 
         const context = {
             source: cleanSource, // This will be stale, should use sourceTree.source
@@ -268,7 +281,7 @@ class Registry {
 
             while (iterations < MAX_ITERATIONS) {
                 // Find all nodes that have pending markers
-                const nodesWithMarkers = this.currentTree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
+                const nodesWithMarkers = this.tree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
                 if (nodesWithMarkers.length === 0) break;
 
                 iterations++;
@@ -376,13 +389,14 @@ class Registry {
         const tree = this.parser.parse(source);
         while ((match = definerRegex.exec(source)) !== null) {
             const node = tree.rootNode.descendantForIndex(match.index);
-            let insideComment = false;
+            let shouldSkip = false;
             let curr = node;
+            const skipTypes = ['comment', 'string_literal', 'system_lib_string', 'char_literal'];
             while (curr) {
-                if (curr.type === 'comment') { insideComment = true; break; }
+                if (skipTypes.includes(curr.type)) { shouldSkip = true; break; }
                 curr = curr.parent;
             }
-            if (insideComment) continue;
+            if (shouldSkip) continue;
 
             const name = match[1];
             const params = match[2].split(',').map(s => s.trim()).filter(Boolean);
@@ -465,13 +479,14 @@ class Registry {
             if (this.isInsideInvocation(match.index, match.index + match[0].length)) continue;
 
             const node = currentTree.rootNode.descendantForIndex(match.index);
-            let insideComment = false;
+            let shouldSkip = false;
             let curr = node;
+            const skipTypes = ['comment', 'string_literal', 'system_lib_string', 'char_literal'];
             while (curr) {
-                if (curr.type === 'comment') { insideComment = true; break; }
+                if (skipTypes.includes(curr.type)) { shouldSkip = true; break; }
                 curr = curr.parent;
             }
-            if (insideComment) continue;
+            if (shouldSkip) continue;
 
             const name = match[1].trim();
             const args = match[3] ? match[3].trim().split(',').map(s => s.trim()).filter(Boolean) : [];

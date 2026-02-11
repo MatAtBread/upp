@@ -134,7 +134,7 @@ export class SourceTree {
         const body = funcDef.children.find(c => c.type === 'compound_statement');
         if (!body) throw new Error("Failed to parse wrapped fragment body.");
 
-        const innerNodes = body.children.filter(c => c.type !== '{' && c.type !== '}');
+        const innerNodes = body.children.filter(c => c.type !== '{' && c.type !== '}' && c.text.length > 0);
 
         if (innerNodes.length === 0) {
             return new SourceTree("", language).root;
@@ -251,7 +251,7 @@ export class SourceNode {
 
     /** @param {string} value */
     set text(value) {
-        this.tree.edit(this.startIndex, this.endIndex, value);
+        this.replaceWith(value);
     }
 
     /** @returns {number} */

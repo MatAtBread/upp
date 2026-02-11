@@ -60,12 +60,17 @@ class UppHelpersBase {
 
     query(queryString, node = null) {
         let target = node || this.root;
-        if (!target && this.registry && this.registry.tree) target = this.registry.tree.root;
+        if (!target && this.registry) {
+            target = this.registry.tree ? this.registry.tree.root : null;
+        }
 
         // Simple type-based or functional query fallback if queryString is just a type
         if (target && !queryString.includes('(')) {
             return target.find(queryString).map(n => ({ node: n, captures: { node: n } }));
         }
+
+        if (!target) return [];
+
         // For complex S-expressions, we'd need a stable matcher.
         // For Milestone 1, we'll stick to simple finds or implement a basic matcher.
         throw new Error("Complex S-expression queries not yet supported on stable SourceTree");
@@ -104,7 +109,9 @@ class UppHelpersBase {
      */
     findInvocations(macroName, node = null) {
         let target = node || this.root;
-        if (!target && this.context && this.context.tree) target = this.context.tree.root;
+        if (!target && this.registry) {
+            target = this.registry.tree ? this.registry.tree.root : null;
+        }
 
         if (!target) {
             const source = this.registry.source || (this.context && this.context.tree && this.context.tree.source);

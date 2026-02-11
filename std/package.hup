@@ -100,12 +100,5 @@
         });
     }
 
-    const stdDir = upp.stdPath || "";
-    const parentDir = upp.path.dirname(upp.registry.originPath || "");
-    let packageHPath = "package.h";
-    if (stdDir && parentDir) {
-        packageHPath = upp.path.relative(parentDir, upp.path.join(stdDir, 'package.h'));
-    }
-
-    return `#include "${packageHPath}"\n` + publicProtos.join('\n');
+    return publicProtos.join('\n');
 }
