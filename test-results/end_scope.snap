@@ -1,24 +1,25 @@
 [DEBUG] findInvocations found: include, defer, defer, defer
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 378-401 result: #include "defer.h"
-[DEBUG] Macro @defer at 464-474 result: 
-[DEBUG] Macro @defer at 532-542 result: 
-[DEBUG] Macro @defer at 669-679 result: 
+[DEBUG] Macro @include at 397-420 result: #include "defer.h"
+[DEBUG] Macro @defer at 483-493 result: 
+[DEBUG] Macro @defer at 551-561 result: 
+[DEBUG] Macro @defer at 688-698 result: 
 [DEBUG] executeDeferredMarkers: found 2 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 428
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 486
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 447
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 505
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/end_scope.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "defer.h"
 int some_condition;
@@ -31,17 +32,17 @@ int main() {
          
         if (some_condition) {
             // should defer here, str1
-            { free(nested); nested = ((void*)0); }
-{ free(str1); str1 = ((void*)0); }
-{ free(str2); str2 = ((void*)0); }
+            { free(nested); nested = ((void *)0); }
+{ free(str1); str1 = ((void *)0); }
+{ free(str2); str2 = ((void *)0); }
 return 1;
         }
-    { free(nested); nested = ((void*)0); }}
+    { free(nested); nested = ((void *)0); }}
     str2 = malloc(100);
      
     // should defer here, str2 then str1
-    { free(str1); str1 = ((void*)0); }
-{ free(str2); str2 = ((void*)0); }
+    { free(str1); str1 = ((void *)0); }
+{ free(str2); str2 = ((void *)0); }
 return 0;
 }
 

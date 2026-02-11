@@ -1,10 +1,10 @@
 [DEBUG] findInvocations found: include, method, method, Point, Point
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 378-402 result: #include "method.h"
-[DEBUG] Macro @method at 447-465 result: 
-[DEBUG] Macro @method at 530-548 result: 
-[DEBUG] Macro @Point at 639-649 result: Point p = {0}; p.Create();
-[DEBUG] Macro @Point at 686-696 result: Point q  = { .x = 5, .y = 9 }; q.Create();
+[DEBUG] Macro @include at 397-421 result: #include "method.h"
+[DEBUG] Macro @method at 466-484 result: 
+[DEBUG] Macro @method at 549-567 result: 
+[DEBUG] Macro @Point at 658-668 result: Point p = {0}; p.Create();
+[DEBUG] Macro @Point at 705-715 result: Point q  = { .x = 5, .y = 9 }; q.Create();
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
@@ -12,13 +12,14 @@
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "method.h"
 typedef struct {

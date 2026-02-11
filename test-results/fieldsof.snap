@@ -1,10 +1,10 @@
 [DEBUG] findInvocations found: include, fieldsof, fieldsof
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 377-403 result: #include "fieldsof.h"
-[DEBUG] Macro @fieldsof at 548-574 result: int x;
+[DEBUG] Macro @include at 396-422 result: #include "fieldsof.h"
+[DEBUG] Macro @fieldsof at 567-593 result: int x;
     int y;
     
-[DEBUG] Macro @fieldsof at 599-622 result: float lat;
+[DEBUG] Macro @fieldsof at 618-641 result: float lat;
     float lon;
     
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
@@ -12,13 +12,14 @@
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 #include "fieldsof.h"
 struct Base {
     int x;

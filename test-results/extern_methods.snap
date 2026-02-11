@@ -8,9 +8,9 @@
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 377-409 result: #include "extern_methods.h"
-[DEBUG] Macro @method at 405-421 result: 
-[DEBUG] Macro @method at 471-487 result: 
+[DEBUG] Macro @include at 396-428 result: #include "extern_methods.h"
+[DEBUG] Macro @method at 424-440 result: 
+[DEBUG] Macro @method at 490-506 result: 
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
@@ -41,13 +41,14 @@ extern  void _Foo_method_print(Foo *f);
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 #include "extern_methods.h"
  void _Foo_method_print(Foo *f) {
     printf("Foo %d\n", f->x);

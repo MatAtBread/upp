@@ -1,39 +1,40 @@
 [DEBUG] findInvocations found: include, allocate, allocate, allocate
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 378-401 result: #include "defer.h"
-[DEBUG] Macro @allocate at 435-453 result: 
+[DEBUG] Macro @include at 397-420 result: #include "defer.h"
+[DEBUG] Macro @allocate at 454-472 result: 
                     char *str1 = malloc(100 * sizeof(char));
-                    @defer { free(str1); str1 = ((void*)0); }
+                    @defer { free(str1); str1 = ((void *)0); }
                 
 [DEBUG] findInvocations found: defer
-[DEBUG] Macro @defer at 476-486 result: 
-[DEBUG] Macro @allocate at 483-501 result: 
+[DEBUG] Macro @defer at 495-505 result: 
+[DEBUG] Macro @allocate at 502-520 result: 
                     char *str2 = malloc(100 * sizeof(char));
-                    @defer { free(str2); str2 = ((void*)0); }
+                    @defer { free(str2); str2 = ((void *)0); }
                 
 [DEBUG] findInvocations found: defer
-[DEBUG] Macro @defer at 524-534 result: 
-[DEBUG] Macro @allocate at 541-559 result: 
+[DEBUG] Macro @defer at 543-553 result: 
+[DEBUG] Macro @allocate at 560-578 result: 
                     char *nested = malloc(100 * sizeof(char));
-                    @defer { free(nested); nested = ((void*)0); }
+                    @defer { free(nested); nested = ((void *)0); }
                 
 [DEBUG] findInvocations found: defer
-[DEBUG] Macro @defer at 584-594 result: 
+[DEBUG] Macro @defer at 603-613 result: 
 [DEBUG] executeDeferredMarkers: found 2 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 429
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 531
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 448
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 550
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/auto-free.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "defer.h"
 
@@ -51,15 +52,15 @@ int main() {
  
         if (some_condition) {
             // should defer here, str1
-            { free(nested); nested = ((void*)0); }
-{ free(str1); str1 = ((void*)0); }
-{ free(str2); str2 = ((void*)0); }
+            { free(nested); nested = ((void *)0); }
+{ free(str1); str1 = ((void *)0); }
+{ free(str2); str2 = ((void *)0); }
 return 1;
         }
-    { free(nested); nested = ((void*)0); }}
+    { free(nested); nested = ((void *)0); }}
     // should defer here, str2 then str1
-    { free(str1); str1 = ((void*)0); }
-{ free(str2); str2 = ((void*)0); }
+    { free(str1); str1 = ((void *)0); }
+{ free(str2); str2 = ((void *)0); }
 return 0;
 }
 

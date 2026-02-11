@@ -1,21 +1,22 @@
 [DEBUG] findInvocations found: include, defer
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 378-401 result: #include "defer.h"
-[DEBUG] Macro @defer at 471-481 result: 
+[DEBUG] Macro @include at 397-420 result: #include "defer.h"
+[DEBUG] Macro @defer at 490-500 result: 
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 408
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 427
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/minimal_defer.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "defer.h"
 int main() {
@@ -24,7 +25,7 @@ int main() {
      
     str1[0] = 0;
     printf("returning\n");
-    { free(str1); str1 = ((void*)0); printf("deferred\n"); }
+    { free(str1); str1 = ((void *)0); printf("deferred\n"); }
 return 0;
 }
 

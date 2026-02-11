@@ -1,9 +1,9 @@
 [DEBUG] findInvocations found: include, include, trace
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 378-402 result: #include "lambda.h"
+[DEBUG] Macro @include at 397-421 result: #include "lambda.h"
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 398-421 result: #include "defer.h"
-[DEBUG] Macro @trace at 418-428 result: int my_function(int x) {
+[DEBUG] Macro @include at 417-440 result: #include "defer.h"
+[DEBUG] Macro @trace at 437-447 result: int my_function(int x) {
     fputs("Entering: my_function\n", stderr);
     @lambda void _exit() { fputs("Exiting: my_function\n", stderr); };
     @defer _exit();
@@ -17,23 +17,24 @@
 	return g;
 }
 [DEBUG] findInvocations found: lambda, defer
-[DEBUG] Macro @lambda at 493-504 result: 
-[DEBUG] Macro @defer at 500-510 result: 
+[DEBUG] Macro @lambda at 512-523 result: 
+[DEBUG] Macro @defer at 519-529 result: 
 [DEBUG] executeDeferredMarkers: found 2 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 441
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 460
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_2.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "lambda.h"
 #include "defer.h"
@@ -80,8 +81,8 @@ int main() {
 ==== COMPILATION ERROR ===
 Undefined symbols for architecture arm64:
   "_stderr", referenced from:
-      __exit_lambda in trace_2-1ea50e.o
-      _my_function in trace_2-1ea50e.o
+      __exit_lambda in trace_2-77ad0f.o
+      _my_function in trace_2-77ad0f.o
 ld: symbol(s) not found for architecture arm64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 

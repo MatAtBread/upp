@@ -1,9 +1,9 @@
 [DEBUG] findInvocations found: include, method, method, method
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 [DEBUG] Macro @include at 0-24 result: #include "method.h"
-[DEBUG] Macro @method at 522-546 result: 
-[DEBUG] Macro @method at 604-628 result: 
-[DEBUG] Macro @method at 704-723 result: 
+[DEBUG] Macro @method at 541-565 result: 
+[DEBUG] Macro @method at 623-647 result: 
+[DEBUG] Macro @method at 723-742 result: 
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
@@ -12,13 +12,14 @@
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 struct Base {
     int x;

@@ -1,7 +1,7 @@
 [DEBUG] findInvocations found: include, lambda
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 377-401 result: #include "lambda.h"
-[DEBUG] Macro @lambda at 463-474 result: struct hello_lambda_ctx ctx_d9n7xj = { .direction = &direction, .name = &name };
+[DEBUG] Macro @include at 396-420 result: #include "lambda.h"
+[DEBUG] Macro @lambda at 482-493 result: struct hello_lambda_ctx ctx_g6u5di = { .direction = &direction, .name = &name };
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
 [DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
@@ -9,13 +9,14 @@
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 #include "lambda.h"
 struct hello_lambda_ctx {
     int  *direction;
@@ -30,14 +31,14 @@ void hello_lambda(struct hello_lambda_ctx *ctx, int num) {
     }int main() {
     char *name = "Diego";
     int direction = 1;
-    struct hello_lambda_ctx ctx_d9n7xj = { .direction = &direction, .name = &name }; 
-    hello_lambda(&ctx_d9n7xj, 1);
+    struct hello_lambda_ctx ctx_g6u5di = { .direction = &direction, .name = &name }; 
+    hello_lambda(&ctx_g6u5di, 1);
     name = "Fabio";
-    hello_lambda(&ctx_d9n7xj, 2);
+    hello_lambda(&ctx_g6u5di, 2);
     direction = 0;
-    hello_lambda(&ctx_d9n7xj, 3);
+    hello_lambda(&ctx_g6u5di, 3);
     typeof(&hello_lambda) z = hello_lambda;
-    z(&ctx_d9n7xj, 4);
+    z(&ctx_g6u5di, 4);
     return 0;
 }
 

@@ -1,9 +1,9 @@
 [DEBUG] findInvocations found: include, include, trace
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 756-780 result: #include "lambda.h"
+[DEBUG] Macro @include at 794-818 result: #include "lambda.h"
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 776-799 result: #include "defer.h"
-[DEBUG] Macro @trace at 796-806 result: int my_function(int x) {
+[DEBUG] Macro @include at 814-837 result: #include "defer.h"
+[DEBUG] Macro @trace at 834-844 result: int my_function(int x) {
     fputs("Entering: my_function\n", stderr);
     @defer { fputs("Exiting: my_function\n", stderr); };
     int g = 1;
@@ -16,32 +16,34 @@
 	return g;
 }
 [DEBUG] findInvocations found: defer
-[DEBUG] Macro @defer at 871-881 result: 
+[DEBUG] Macro @defer at 909-919 result: 
 [DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 819
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 857
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_1.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 #include "lambda.h"
 #include "defer.h"
@@ -83,9 +85,9 @@ int main() {
 ==== COMPILATION ERROR ===
 Undefined symbols for architecture arm64:
   "_stderr", referenced from:
-      _my_function in trace_1-b12da8.o
-      _my_function in trace_1-b12da8.o
-      _my_function in trace_1-b12da8.o
+      _my_function in trace_1-748e19.o
+      _my_function in trace_1-748e19.o
+      _my_function in trace_1-748e19.o
 ld: symbol(s) not found for architecture arm64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 
