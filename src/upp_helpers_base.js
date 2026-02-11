@@ -77,7 +77,7 @@ class UppHelpersBase {
     }
 
     findRoot() {
-        return this.context.tree ? this.wrapNode(this.context.tree.rootNode) : this.root;
+        return (this.context && this.context.tree) ? this.wrapNode(this.context.tree.rootNode) : this.root;
     }
 
     findParent(node) {
@@ -293,11 +293,7 @@ class UppHelpersBase {
 
     childForFieldName(node, fieldName) {
         if (!node) return null;
-        // Search in children for one that matches fieldName if we had that, 
-        // but SourceNode doesn't keep field names yet.
-        // For now, look at the type/structure or use a fallback.
-        // TODO: Map fieldNames in SourceNode wrapper.
-        return null;
+        return node.findChildByFieldName(fieldName);
     }
 
     findNextNodeAfter(root, index) {
@@ -344,6 +340,35 @@ class UppHelpersBase {
 
     registerTransformRule(rule) {
         this.registry.registerTransformRule(rule);
+    }
+
+    findEnclosing(node, types) {
+        if (!node) return null;
+        const typeArray = Array.isArray(types) ? types : [types];
+        let p = node.parent;
+        while (p) {
+            if (typeArray.includes(p.type)) return p;
+            p = p.parent;
+        }
+        return null;
+    }
+
+    createUniqueIdentifier(prefix = 'v') {
+        const id = Math.random().toString(36).slice(2, 8);
+        return `${prefix}_${id}`;
+    }
+
+    childCount(node) {
+        return node ? node.childCount : 0;
+    }
+
+    child(node, index) {
+        return node ? node.child(index) : null;
+    }
+
+    childForFieldName(node, fieldName) {
+        if (!node) return null;
+        return node.findChildByFieldName(fieldName);
     }
 
     error(node, message) {

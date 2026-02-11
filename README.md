@@ -86,6 +86,16 @@ All the command line options you specify are passed to the C compiler, making UP
 
 Typically, rather than define your macros in your C files, you'd put them in ".hup" files, and use `@include` to reference them.
 
+## Testing with `upp --test`
+
+UPP provides a unified test harness that can transpile, compile, and run your code in a single step. This is ideal for verification and regression testing.
+
+```bash
+$ upp --test examples/my_test.cup
+```
+
+The output will include the materialized C code, compilation status, and the standard output of the executed program. This is the mechanism used by the UPP test suite to manage snapshots.
+
 The only built in macro is `@define`, even `@include` is implemented as a macro which you can find in `std/include.hup`.
 
 This allows you to create powerful, reusable abstractions across your project.
@@ -195,5 +205,7 @@ Sometimes you need to look outside the immediate vicinity of the macro invocatio
 -   `upp.findReferences(node)`: Finds all usages of a local or global symbol.
 -   `upp.hoist(code)`: Moves code to the top of the file (e.g., for generated structures or helper functions).
 -   `upp.getFunctionSignature(fnNode)`: Parses a function definition into its name, return type, and parameters.
+-   `upp.createUniqueIdentifier(prefix)`: Generates a unique C-safe identifier.
+-   `upp.childForFieldName(node, fieldName)`: Reliable way to access tree-sitter fields.
 
 

@@ -1,0 +1,34 @@
+==== examples/with_references_test.c ===
+// Simple test for withReferences transformation rule tracking
+                                     
+                                   
+                                               
+                            
+                                                     
+                                                             
+                       
+       
+                                    
+                                                            
+                             
+ 
+int main() {
+    int renamedX = 10;
+    
+    int y = x + 5; // This should become: int y = renamedX + 5
+    int z = x * 2; // This should become: int z = renamedX * 2
+    return x; // This should become: return renamedX;
+}
+
+==== COMPILATION ERROR ===
+./examples/with_references_test.c:17:13: error: use of undeclared identifier 'x'
+   17 |     int y = x + 5; // This should become: int y = renamedX + 5
+      |             ^
+./examples/with_references_test.c:18:13: error: use of undeclared identifier 'x'
+   18 |     int z = x * 2; // This should become: int z = renamedX * 2
+      |             ^
+./examples/with_references_test.c:19:12: error: use of undeclared identifier 'x'
+   19 |     return x; // This should become: return renamedX;
+      |            ^
+3 errors generated.
+

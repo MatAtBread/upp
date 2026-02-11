@@ -1,0 +1,68 @@
+==== examples/init_struct.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts (const char *s);
+extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+
+#include "method.h"
+typedef struct {
+    int x;
+    int y;
+} Point;
+                 
+                             
+                   
+                                  
+                                                                        
+                    
+                       
+            
+                                                              
+                    
+                            
+                                                      
+                
+                                                
+                           
+         
+     
+                                                      
+ 
+ void _Point_method_print(Point *p) {
+    printf("Point(%d, %d)\n", p->x, p->y);
+}
+ void _Point_method_Create(Point *p) {
+    printf("Point created(%d, %d)\n", p->x, p->y);
+}
+int main() {
+    Point p = {0};
+p.Create(); ;
+    Point q  = { .x = 5, .y = 9 };
+q.Create(); 
+    _Point_method_print(&p);
+    _Point_method_print(&q);
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/init_struct.c:44:3: error: no member named 'Create' in 'Point'
+   44 | p.Create(); ;
+      | ~ ^
+./examples/init_struct.c:46:3: error: no member named 'Create' in 'Point'
+   46 | q.Create(); 
+      | ~ ^
+2 errors generated.
+
+./examples/init_struct.cup:22:51: warning: empty character constant [-Winvalid-pp-token]
+   22 |             init = ' = ' + match[2].replace(/;$/, '');
+      |                                                   ^
+./examples/init_struct.cup:24:38: warning: empty character constant [-Winvalid-pp-token]
+   24 |             name = text.replace(';', '').trim();
+      |                                      ^
+2 warnings generated.

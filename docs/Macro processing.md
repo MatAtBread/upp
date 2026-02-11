@@ -66,6 +66,9 @@ Macro authors interact with the system through the `upp` object passed to the ma
 | `code\`text\`` | A tagged template literal that safely embeds nodes by using their `text` property. |
 | `loadDependency(file)` | Dynamically loads and transpiles a `.hup` dependency. |
 | `registerParentTransform(cb)` | (Included files only) Registers a callback to run on the parent implementation file's AST. |
+| `findEnclosing(node, types)` | Finds the nearest parent node matching the specified types. |
+| `createUniqueIdentifier(prefix)` | Generates a unique C-safe identifier. |
+| `childForFieldName(node, field)` | Accesses a Tree-sitter field by name reliably. |
 
 ### C-Specific Helpers (via `UppHelpersC`)
 
@@ -87,8 +90,9 @@ Macro authors interact with the system through the `upp` object passed to the ma
 | :--- | :--- | :--- |
 | `package.hup` | **STABLE** | Implements `@package` and `@implements`. Handles namespacing and header generation. |
 | `method.hup` | **STABLE** | Implements OOP-style method calls for C structs. |
-| `defer.hup` | **VALIDATING** | Implements Go-style `defer`. Needs check for complex control flow. |
-| `async.hup` | **EXPERIMENTAL** | Early implementation of async/await patterns. |
+| `defer.hup` | **STABLE** | Implements Go-style `defer`. Modernized with robust scope walking. |
+| `async.hup` | **STABLE** | Implements async/await patterns. Modernized for stable node identity. |
+| `fieldsof.hup` | **STABLE** | Implements structural inheritance. Updated for typedef support. |
 | `lambda.hup` | **EXPERIMENTAL** | Experimental support for C closures/lambdas. |
 | `include.hup` | **DEPRECATED** | Replaced by internal `@include` logic. |
 | `forward.hup` | **VALIDATING** | Automatically generates forward declarations. |

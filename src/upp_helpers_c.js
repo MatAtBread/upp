@@ -28,16 +28,16 @@ class UppHelpersC extends UppHelpersBase {
      */
     match(node, src, callback, options = {}) {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
-        if (typeof src !== 'string') throw new Error("upp.match: Argument 2 (src) must be a string.");
 
+        const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true;
-        const result = this.matcher.match(node, src, deep);
 
-        if (result) {
-            if (callback) {
-                return callback(result);
+        for (const s of srcs) {
+            const result = this.matcher.match(node, s, deep);
+            if (result) {
+                if (callback) return callback(result);
+                return result;
             }
-            return result;
         }
         return null;
     }
@@ -79,15 +79,27 @@ class UppHelpersC extends UppHelpersBase {
      */
     matchAll(node, src, callback, options = {}) {
         if (!node) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
-        if (typeof src !== 'string') throw new Error("upp.matchAll: Argument 2 (src) must be a string.");
 
+        const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true || (options.deep !== false && node.type === 'translation_unit');
-        const matches = this.matcher.matchAll(node, src, deep);
+
+        const allMatches = [];
+        const seenIds = new Set();
+
+        for (const s of srcs) {
+            const matches = this.matcher.matchAll(node, s, deep);
+            for (const m of matches) {
+                if (!seenIds.has(m.node.id)) {
+                    allMatches.push(m);
+                    seenIds.add(m.node.id);
+                }
+            }
+        }
 
         if (callback) {
-            return matches.map(m => callback(m));
+            return allMatches.map(m => callback(m));
         }
-        return matches;
+        return allMatches;
     }
 
     /**
@@ -217,7 +229,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {import('tree-sitter').SyntaxNode|string} target - The node or name.
      * @returns {import('tree-sitter').SyntaxNode|null} The definition.
      */
-    findDefinition(target) {
+    findDefinition(target, options = { variable: true, tag: true }) {
         const name = typeof target === 'string' ? target : target.text;
         if (!name) return null;
 
@@ -226,18 +238,33 @@ class UppHelpersC extends UppHelpersBase {
         if (!current) current = this.root;
 
         while (current) {
-            // Search identifier descendants in this scope
-            const idNodes = current.find('identifier');
-            for (const idNode of idNodes) {
+            // Search identifier/type_identifier descendants in this scope
+            const children = current.find(n => n.type === 'identifier' || n.type === 'type_identifier');
+
+            for (const idNode of children) {
                 if (idNode.text === name) {
-                    // Check if it's a declaring identifier (not a usage)
                     let p = idNode.parent;
-                    if (p && (p.type === 'init_declarator' || p.type === 'parameter_declaration' || p.type === 'field_declaration')) {
-                        return idNode;
+                    if (!p) continue;
+
+                    // Tag check (struct/union/enum)
+                    if (options.tag && p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
+                        // Check if idNode is the name/tag (first child usually)
+                        if (p.child(1) && p.child(1).id === idNode.id) {
+                            return p;
+                        }
                     }
-                    if (p && p.type === 'function_declarator') {
-                        // Check if this is the name of the function being defined
-                        return idNode;
+
+                    // Variable/Function/Typedef check
+                    if (options.variable) {
+                        if (p.type === 'init_declarator' || p.type === 'parameter_declaration' || p.type === 'field_declaration') {
+                            return idNode;
+                        }
+                        if (p.type === 'function_declarator') {
+                            return idNode;
+                        }
+                        if (p.type === 'type_definition') {
+                            return idNode; // The typedef name
+                        }
                     }
                 }
             }
@@ -289,17 +316,18 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {string} Marker for deferred transformations (empty if all references were below)
      */
     withReferences(definitionNode, callback) {
+        const originalName = definitionNode.text;
         // Register a transformation rule for this definition
         const rule = {
             id: this.registry.generateRuleId(),
             type: 'references',
             identity: {
-                name: definitionNode.text,
+                name: originalName,
                 definitionNode: definitionNode
             },
             matcher: (node) => {
                 if (node.type !== 'identifier') return false;
-                if (node.text !== definitionNode.text) return false;
+                if (node.text !== originalName) return false;
 
                 // Resolves to our definition
                 const def = this.findDefinition(node);

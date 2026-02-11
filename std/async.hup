@@ -2,15 +2,13 @@
 #define __UPP_STDLIB_ASYNC_H__
 
 @define async() {
-    let node = upp.consume(['function_definition', 'declaration']);
-    node = (node.type === 'expression_statement' || node.type === 'declaration') ? node.child(0) : node;
-    const declarator = node.childForFieldName('declarator');
-    // Find the identifier within the potentially complex declarator
-    const idMatches = upp.query(`(identifier) @id`, declarator);
-    if (idMatches.length === 0) return "";
+    let node = upp.nextNode(['function_definition', 'declaration']);
+    if (!node) return "";
+    const sig = upp.getFunctionSignature(node);
+    if (!sig.nameNode) return "";
 
-    const idNode = idMatches[0].captures.id;
-    const name = idNode.text;
+    const idNode = sig.nameNode;
+    const name = sig.name;
 
     // Use withReferences to transform call sites
     upp.withReferences(idNode, (refNode, helpers) => {
@@ -30,7 +28,7 @@
         }
     });
 
-    return node.text;
+    return null;
 }
 
 #endif

@@ -1,0 +1,56 @@
+==== examples/map.c ===
+               
+                                     
+                               
+                                              
+                                                        
+                                                            
+                                                       
+            
+                         
+                                        
+                                                             
+     
+                                                                                                                                         
+                                                                                             
+     
+                                                       
+                                              
+                                 
+                                  
+     
+                                     
+                                 
+                               
+                    
+                                                                               
+                                          
+               
+                                      
+       
+ 
+int main() {
+    int arr[] = {1, 2, 3};
+    for (int _i = 0; _i < sizeof()/sizeof([0]); _i++) {
+        int  = [_i];
+        
+        [_i] = ;
+    } ;
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/map.c:33:34: error: expected expression
+   33 |     for (int _i = 0; _i < sizeof()/sizeof([0]); _i++) {
+      |                                  ^
+./examples/map.c:33:43: error: expected expression
+   33 |     for (int _i = 0; _i < sizeof()/sizeof([0]); _i++) {
+      |                                           ^
+./examples/map.c:34:14: error: expected identifier or '('
+   34 |         int  = [_i];
+      |              ^
+./examples/map.c:36:9: error: expected expression
+   36 |         [_i] = ;
+      |         ^
+4 errors generated.
+

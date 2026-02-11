@@ -1,0 +1,70 @@
+Macro @test_error_missing failed: Error: @test_error_missing expected compound_statement, but nothing found
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at reportFailure (file://./src/upp_helpers_base.js:228:18)
+    at UppHelpersC.consume (file://./src/upp_helpers_base.js:234:46)
+    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:18)
+    at Registry.evaluateMacro (file://./src/registry.js:363:20)
+    at Registry.transformNode (file://./src/registry.js:234:41)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transform (file://./src/registry.js:197:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25) {
+  isUppError: true,
+  node: SourceNode {
+    tree: SourceTree {
+      source: '                           \n' +
+        '                                                   \n' +
+        '                     \n' +
+        ' \n' +
+        '                              \n' +
+        '                              \n' +
+        '                                   \n' +
+        '                                                                      \n' +
+        '       \n' +
+        '                     \n' +
+        ' \n' +
+        '                              \n' +
+        '                                                   \n' +
+        '                     \n' +
+        ' \n' +
+        'int main() {\n' +
+        '    // 1. Wrong type (expression instead of block)\n' +
+        '    // @test_error_type printf("Hello\\n");\n' +
+        '    // 2. Custom error message\n' +
+        '    // @test_error_message int x = 0;\n' +
+        '    // 3. Missing node at end of file\n' +
+        '    // @test_error_missing\n' +
+        '    return 0;\n' +
+        '}\n' +
+        '/*@test_error_missing*/\n',
+      language: [Object],
+      parser: [Parser],
+      tree: [Tree],
+      nodeCache: [Map],
+      root: [SourceNode]
+    },
+    id: 5560150264,
+    type: 'comment',
+    startIndex: 669,
+    endIndex: 692,
+    children: [],
+    parent: SourceNode {
+      tree: [SourceTree],
+      id: 5560150160,
+      type: 'translation_unit',
+      startIndex: 412,
+      endIndex: 693,
+      children: [Array],
+      parent: null,
+      fieldName: null,
+      markers: [],
+      data: {}
+    },
+    fieldName: null,
+    markers: [],
+    data: {}
+  }
+}
+[31m./examples/error_consume.cup:1:1: error: [0] Macro @test_error_missing failed: @test_error_missing expected compound_statement, but nothing found[0m
+                           
+[31m^[0m

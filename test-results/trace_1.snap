@@ -1,0 +1,60 @@
+==== examples/trace_1.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts (const char *s);
+extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts (const char *s);
+extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+
+#include "lambda.h"
+#include "defer.h"
+                 
+                                                                                              
+                                                                          
+                                                       
+               
+                       
+                                 
+                                          
+                                                     
+                                                                                                     
+   
+     
+ 
+{
+    fputs("Entering: \n", stderr);
+     ;
+    
+	
+	
+{ fputs("Exiting: \n", stderr); } }
+
+int main() {
+    printf("magic number %d\n", my_function(10));
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/trace_1.c:38:1: error: expected identifier or '('
+   38 | {
+      | ^
+./examples/trace_1.c:47:33: error: call to undeclared function 'my_function'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   47 |     printf("magic number %d\n", my_function(10));
+      |                                 ^
+2 errors generated.
+

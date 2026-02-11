@@ -4,17 +4,17 @@
     const node = upp.consume();
 
     if (node.type === 'function_definition') {
-        arrayNode = node.childForFieldName('type');
-        varNode = node.childForFieldName('declarator');
-        bodyNode = node.childForFieldName('body');
+        arrayNode = upp.childForFieldName(node, 'type');
+        varNode = upp.childForFieldName(node, 'declarator');
+        bodyNode = upp.childForFieldName(node, 'body');
     } else {
         arrayNode = node;
         varNode = node.nextNamedSibling;
         bodyNode = varNode ? varNode.nextNamedSibling : null;
     }
 
-    if (!bodyNode || (bodyNode.type !== 'compound_statement' && bodyNode.type !== 'ERROR')) {
-        upp.error(node, `@map: Expected a block, but found ${bodyNode?.type}.`);
+    if (!bodyNode || (bodyNode.type !== 'compound_statement' && bodyNode.type !== 'expression_statement' && bodyNode.type !== 'ERROR')) {
+        upp.error(node, `@map: Expected a block or statement, but found ${bodyNode?.type}.`);
     }
 
     // Explicitly delete the extra nodes we've consumed

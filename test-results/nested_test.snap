@@ -1,0 +1,24 @@
+==== examples/nested_test.c ===
+                    
+                                                 
+ 
+                     
+                                                                              
+ 
+void main() {
+    int result = @Inner(5) + @Inner(10);
+}
+
+==== COMPILATION ERROR ===
+./examples/nested_test.c:7:1: warning: return type of 'main' is not 'int' [-Wmain-return-type]
+    7 | void main() {
+      | ^
+./examples/nested_test.c:7:1: note: change return type to 'int'
+    7 | void main() {
+      | ^~~~
+      | int
+./examples/nested_test.c:8:18: error: expected expression
+    8 |     int result = @Inner(5) + @Inner(10);
+      |                  ^
+1 warning and 1 error generated.
+

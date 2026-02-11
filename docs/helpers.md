@@ -18,6 +18,7 @@ These utilities are always available in any UPP environment.
 - `upp.findRoot()`: Returns the root node of the current file.
 - `upp.findParent(node)`: Returns the parent of the specified node.
 - `upp.findScope(node)`: Returns the closest enclosing scope (`compound_statement` or `function_definition`).
+- `upp.findEnclosing(node, types)`: Finds the nearest parent node of a specific type (e.g., `["struct_specifier", "type_definition"]`).
 - `upp.findInvocations(macroName)`: Returns a list of all occurrences of a specific macro call.
 
 ### Transformation Control
@@ -27,6 +28,9 @@ These utilities are always available in any UPP environment.
 ### Infrastructure
 - `upp.loadDependency(file)`: Loads and processes another file as a dependency.
 - `upp.isConsumed(node)`: Returns `true` if the node has been removed via `upp.consume`.
+- `upp.createUniqueIdentifier(prefix)`: Generates a unique random identifier (e.g., `v_6f3a1z`).
+- `upp.childCount(node)` / `upp.child(node, i)`: AST traversal helpers.
+- `upp.childForFieldName(node, name)`: Safe access to field children.
 
 ---
 
@@ -35,8 +39,11 @@ These utilities are always available in any UPP environment.
 Available when transpiling C code.
 
 ### Pattern Matching
-- `upp.match(node, pattern, [callback])`: Matches a source fragment pattern against a node.
-- `upp.matchAll(node, pattern)`: Returns all occurrences of a pattern within a sub-tree.
+
+Patterns use a structural matching engine. You can use `$name` to capture nodes, or `$opt$name` for optional nodes that might not be present in the source.
+
+- `upp.match(node, pattern, [callback])`: Matches a pattern (or array of alternative patterns) against a node.
+- `upp.matchAll(node, pattern)`: Returns all occurrences of a pattern (or array of patterns) within a sub-tree.
 - `upp.matchReplace(node, pattern, callback)`: Finds a pattern match and replaces the matching node with the result of the callback.
 
 ### C Analysis

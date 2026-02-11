@@ -1,0 +1,39 @@
+==== examples/find_refs_test.c ===
+                         
+                                 
+                                                                       
+                                          
+                             
+                                  
+     
+ 
+/*@rename(y)*/
+int x = 10;
+void print_x() {
+    printf("Global x: %d\n", x);
+}
+void local_rename() {
+    /*@rename(a)*/ int b = 10;
+    {
+        // Shadowed
+        int b = 40;
+    }
+    return b;
+}
+int main() {
+    print_x();
+    x = 20;
+    print_x();
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/find_refs_test.c:12:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   12 |     printf("Global x: %d\n", x);
+      |     ^
+./examples/find_refs_test.c:12:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
+./examples/find_refs_test.c:20:5: error: void function 'local_rename' should not return a value [-Wreturn-mismatch]
+   20 |     return b;
+      |     ^      ~
+2 errors generated.
+

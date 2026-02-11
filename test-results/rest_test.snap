@@ -1,0 +1,18 @@
+./examples/rest_test.cup:4:29: warning: empty character constant [-Winvalid-pp-token]
+    4 |     return '"' + items.join('') + '"';
+      |                             ^
+1 warning generated.
+Macro @join failed: Error: @join expected 1 arguments, found 4
+    at Registry.evaluateMacro (file://./src/registry.js:360:23)
+    at Registry.transformNode (file://./src/registry.js:234:41)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transform (file://./src/registry.js:197:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
+[31m./examples/rest_test.cup:1:1: error: [0] Macro @join failed: @join expected 1 arguments, found 4[0m
+// #include "io-lite.h"
+[31m^[0m

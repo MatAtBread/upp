@@ -13,91 +13,44 @@
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    const impls = upp.parentHelpers.findInvocations('implements');
-    const isImpl = impls.some(inv => inv.text.includes(pkgName));
+    const isImpl = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
 
     if (isImpl) {
         upp.registry.shouldMaterializeDependency = true;
-        if (upp.parentHelpers && upp.parentHelpers.registry) {
+        if (upp.parentHelpers.registry) {
             upp.parentHelpers.registry.shouldMaterializeDependency = true;
         }
 
         // Find public functions to generate headers
-        const functions = upp.parentHelpers.query('function_definition');
-        for (const { node: fn } of functions) {
-            let isStatic = false;
-            for (const child of fn.children) {
-                if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                    isStatic = true;
-                    break;
-                }
-            }
+        const functions = upp.parentHelpers.root.find('function_definition');
+        for (const fn of functions) {
+            const isStatic = fn.children.some(c => c.type === 'storage_class_specifier' && c.text === 'static');
+            if (isStatic) continue;
 
-            if (!isStatic) {
-                const { returnType, name, params } = upp.parentHelpers.getFunctionSignature(fn);
-                if (name !== 'unknown' && !name.startsWith(nameSpace)) {
-                    publicProtos.push(`extern ${returnType} ${nameSpace}${name}${params};`);
+            const { returnType, name, params, nameNode } = upp.parentHelpers.getFunctionSignature(fn);
+            if (name !== 'unknown' && !name.startsWith(nameSpace)) {
+                publicProtos.push(`extern ${returnType} ${nameSpace}${name}${params};`);
+                
+                const originalName = name;
+                
+                // Immediately rename all existing references in the tree
+                const refs = upp.parentHelpers.findReferences(nameNode);
+                for (const ref of refs) {
+                    ref.text = nameSpace + originalName;
                 }
+
+                // Register a rule via withPattern for any future references (like from other macros)
+                // We use withPattern instead of withReferences because findDefinition 
+                // will fail to resolve 'add' to 'mypkg_add' once renamed.
+                upp.parentHelpers.withPattern('identifier',
+                    (node, h) => node.text === originalName,
+                    (node, h) => nameSpace + originalName
+                );
+
+                // Rename definition
+                nameNode.text = nameSpace + originalName;
             }
         }
-
-        // Register transformation rule for the parent context
-        upp.registerTransformRule({
-            id: `package_${pkgName}_renamer`,
-            type: 'pattern',
-            active: true,
-            matcher: (node, helpers) => {
-                if (node.type === 'function_definition') {
-                    const sig = helpers.getFunctionSignature(node);
-                    let isStatic = false;
-                    for (const child of node.children) {
-                        if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                            isStatic = true;
-                            break;
-                        }
-                    }
-                    if (isStatic) return false;
-                    return sig.name !== 'unknown' && !sig.name.startsWith(nameSpace);
-                }
-
-                if (node.type === 'call_expression') {
-                    const funcNode = node.findChildByFieldName('function');
-                    if (!funcNode || funcNode.text.startsWith(nameSpace)) return false;
-
-                    const name = funcNode.text;
-                    const allFns = helpers.query('function_definition');
-                    const def = allFns.find(f => {
-                        const sig = helpers.getFunctionSignature(f.node);
-                        return sig.name === name || sig.name === nameSpace + name;
-                    });
-                    
-                    if (def) {
-                        let fnNode = def.node;
-                        let isStatic = false;
-                        for (const child of fnNode.children) {
-                             if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                                 isStatic = true;
-                                 break;
-                             }
-                        }
-                        return !isStatic;
-                    }
-                }
-                return false;
-            },
-            callback: (node, helpers) => {
-                if (node.type === 'function_definition') {
-                    const { name, nameNode } = helpers.getFunctionSignature(node);
-                    if (nameNode) nameNode.text = nameSpace + name;
-                    return undefined;
-                }
-                if (node.type === 'call_expression') {
-                    const funcNode = node.findChildByFieldName('function');
-                    funcNode.text = nameSpace + funcNode.text;
-                    return undefined;
-                }
-            }
-        });
     }
 
     return publicProtos.join('\n');

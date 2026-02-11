@@ -21,11 +21,11 @@
     upp.withPattern('call_expression',
         (callNode, helpers) => {
             // Check if this is a field_expression call (obj.method() or obj->method())
-            const funcNode = callNode.findChildByFieldName('function');
+            const funcNode = helpers.childForFieldName(callNode, 'function');
             if (!funcNode || funcNode.type !== 'field_expression') return false;
 
-            const objectNode = funcNode.findChildByFieldName('argument');
-            const methodNode = funcNode.findChildByFieldName('field');
+            const objectNode = helpers.childForFieldName(funcNode, 'argument');
+            const methodNode = helpers.childForFieldName(funcNode, 'field');
 
             if (!objectNode || !methodNode) return false;
             if (methodNode.text !== originalName) return false;
@@ -39,9 +39,9 @@
             return cleanObjType === cleanTarget;
         },
         (callNode, helpers) => {
-            const funcNode = callNode.findChildByFieldName('function');
-            const targetNode = funcNode.findChildByFieldName('argument');
-            const argsNode = callNode.findChildByFieldName('arguments');
+            const funcNode = helpers.childForFieldName(callNode, 'function');
+            const targetNode = helpers.childForFieldName(funcNode, 'argument');
+            const argsNode = helpers.childForFieldName(callNode, 'arguments');
 
             // Transform f.print() into _Foo_method_print(&f)
             let argsText = argsNode ? argsNode.text : "()";

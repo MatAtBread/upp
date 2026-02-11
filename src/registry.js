@@ -382,9 +382,15 @@ class Registry {
             !body.startsWith('/*') &&
             !body.includes('return');
 
-        const finalBody = shouldWrap ? `return (${body})` : body;
+        const finalBody = shouldWrap && !body.includes(';') && !body.includes('\n') ? `return (${body})` : body;
 
-        return new Function('upp', 'console', ...macro.params, finalBody);
+        try {
+            return new Function('upp', 'console', ...macro.params, finalBody);
+        } catch (e) {
+            console.log("SYNTAX ERROR IN MACRO", macro.name);
+            console.log("FINAL BODY:\n", finalBody);
+            throw e;
+        }
     }
 
     prepareSource(source, originPath) {
@@ -442,6 +448,7 @@ class Registry {
         let depth = 1;
         let i = startOffset;
         let inString = null;
+        let inComment = null; // 'line' or 'block'
         let escaped = false;
 
         while (i < source.length && depth > 0) {
@@ -452,16 +459,23 @@ class Registry {
                 escaped = false;
             } else if (char === '\\') {
                 escaped = true;
-            } else if (inString) {
-                if (char === inString) {
-                    // Template literal interpolation handling
-                    if (char === '`' && source[i - 1] === '}' && !escaped) {
-                        // This is tricky, but for now let's just assume backticks are balanced
-                    }
-                    inString = null;
+            } else if (inComment === 'line') {
+                if (char === '\n') inComment = null;
+            } else if (inComment === 'block') {
+                if (char === '*' && nextChar === '/') {
+                    inComment = null;
+                    i++;
                 }
+            } else if (inString) {
+                if (char === inString) inString = null;
             } else {
-                if (char === "'" || char === '"' || char === '`') {
+                if (char === '/' && nextChar === '/') {
+                    inComment = 'line';
+                    i++;
+                } else if (char === '/' && nextChar === '*') {
+                    inComment = 'block';
+                    i++;
+                } else if (char === "'" || char === '"' || char === '`') {
                     inString = char;
                 } else if (char === '{') {
                     depth++;

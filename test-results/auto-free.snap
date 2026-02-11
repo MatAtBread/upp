@@ -1,0 +1,17 @@
+Macro @allocate failed: Error
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:18:9)
+    at Registry.evaluateMacro (file://./src/registry.js:363:20)
+    at Registry.transformNode (file://./src/registry.js:234:41)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transform (file://./src/registry.js:197:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25) {
+  isUppError: true,
+  node: '@allocate expected <type> *<identifier>;'
+}
+[31m./examples/auto-free.cup:1:1: error: [0] Macro @allocate failed: [0m
+/* A minimal C stdio/stdlib for upp to make it easy to
+[31m^[0m

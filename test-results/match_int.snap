@@ -1,0 +1,14 @@
+Macro @transform_int failed: TypeError: upp.registerTransform is not a function
+    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:5)
+    at Registry.evaluateMacro (file://./src/registry.js:363:20)
+    at Registry.transformNode (file://./src/registry.js:234:41)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transform (file://./src/registry.js:197:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
+    at async Promise.all (index 0)
+    at async ESMLoader.import (node:internal/modules/esm/loader:530:24)
+    at async loadESM (node:internal/process/esm_loader:91:5)
+[31m./examples/match_int.cup:1:1: error: [0] Macro @transform_int failed: upp.registerTransform is not a function[0m
+                         
+[31m^[0m

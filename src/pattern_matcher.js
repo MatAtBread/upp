@@ -142,9 +142,12 @@ export class PatternMatcher {
      */
     structuralMatch(target, pattern, captures, constraints) {
         console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
-        const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_]+);?$/);
+        const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
         if (match) {
-            const name = match[1];
+            let name = match[1];
+            if (name.startsWith('opt$')) {
+                name = name.slice(4);
+            }
 
             // Check constraints
             if (constraints.has(name)) {
@@ -215,7 +218,7 @@ export class PatternMatcher {
     preprocessPattern(patternStr) {
         const constraints = new Map();
         // Match any potential wildcard starting with $
-        const cleanPattern = patternStr.replace(/\$([a-zA-Z0-9_]+)/g, (match, rawId) => {
+        const cleanPattern = patternStr.replace(/\$([a-zA-Z0-9_$]+)/g, (match, rawId) => {
             const { name, types } = this.parseWildcard(rawId);
             if (types && types.length > 0) {
                 constraints.set(name, types);
@@ -231,11 +234,14 @@ export class PatternMatcher {
      * @returns {{name: string, types: Array<{type: string, not: boolean}>}}
      */
     parseWildcard(rawId) {
-        // Current syntax: name__type1__type2
-        // If type starts with NOT_, it's a negative constraint.
+        // syntax: name__type1__type2 or opt$name__type1
         const parts = rawId.split('__');
-        const name = parts[0];
+        let name = parts[0];
         const rawTypes = parts.slice(1);
+
+        if (name.startsWith('opt$')) {
+            name = name.slice(4);
+        }
 
         const types = rawTypes.map(t => {
             if (t.startsWith('NOT_')) {

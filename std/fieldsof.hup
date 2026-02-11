@@ -13,7 +13,7 @@
     // 1b. Consume Trailing Semicolon
     // If the user wrote @fieldsof(...); we want to eat that semicolon so we don't end up with ;;
     const inv = upp.invocation;
-    const source = upp.registry.sourceCode;
+    const source = upp.context.tree.source;
     let end = inv.endIndex;
 
     // Skip whitespace
@@ -42,10 +42,10 @@
         if (def.type === 'struct_specifier') {
             structDef = def;
         } else {
-             // Search for a struct definition inside the found definition (for typedefs)
-             const matches = upp.query('(struct_specifier) @struct', def);
+             const actualDef = def.parent && def.parent.type === 'type_definition' ? def.parent : def;
+             const matches = actualDef.find('struct_specifier');
              if (matches.length > 0) {
-                 structDef = matches[0].captures.struct;
+                 structDef = matches[0];
              }
         }
     }

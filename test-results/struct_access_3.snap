@@ -1,0 +1,24 @@
+==== examples/struct_access_3.c ===
+#include "method.h"
+struct Point {
+    int x;
+    int y;
+};
+typedef struct Point Point;
+ int _Point_method_distance(Point *p) {
+    return p->x * p->x + p->y * p->y;
+}
+int main() {
+    Point p;
+    p.x = 10;
+    p.y = 20;
+    int r = p.distance();
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/struct_access_3.c:14:15: error: no member named 'distance' in 'struct Point'
+   14 |     int r = p.distance();
+      |             ~ ^
+1 error generated.
+

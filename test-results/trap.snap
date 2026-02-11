@@ -1,0 +1,75 @@
+Macro @trap failed: Error: Could not find declared identifier for @trap
+    at UppHelpersC.error (file://./src/upp_helpers_base.js:375:21)
+    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:33:13)
+    at Registry.evaluateMacro (file://./src/registry.js:363:20)
+    at Registry.transformNode (file://./src/registry.js:234:41)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transformNode (file://./src/registry.js:274:18)
+    at Registry.transform (file://./src/registry.js:197:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25) {
+  isUppError: true,
+  node: SourceNode {
+    tree: SourceTree {
+      source: '#include "trap.h"\n' +
+        '/* A minimal C stdio/stdlib for upp to make it easy to\n' +
+        '   see the output of the examples but permit compilation\n' +
+        '*/\n' +
+        'extern int puts (const char *s);\n' +
+        'extern int printf (const char *format, ...);\n' +
+        'extern int fputs (const char *s, void *stream);\n' +
+        'extern void* stderr;\n' +
+        'extern void *malloc(unsigned long n);\n' +
+        'extern void free(void *p);\n' +
+        'extern char *strcpy(char *dest, const char *src);\n' +
+        '\n' +
+        'int my_logger(int v) {\n' +
+        '    printf("Logging value: %d\\n", v);\n' +
+        '    return v;\n' +
+        '}\n' +
+        'struct Point {\n' +
+        '    /*@trap({ return value * 2; })*/ \n' +
+        '    /*@trap(my_logger)*/ int y;\n' +
+        '};\n' +
+        'int main() {\n' +
+        '    struct Point p;\n' +
+        '    p.x = 10; // x = trap(10) -> 20\n' +
+        '    p.y = 5; // y = logger(5) -> 5, prints "Logging value: 5"\n' +
+        '    /*@trap({ return value + 1; })*/ int z = 10; // z = trap(10) -> 11\n' +
+        '    z = 20; // z = trap(20) -> 21\n' +
+        '    printf("p.x=%d, p.y=%d, z=%d\\n", p.x, p.y, z);\n' +
+        '    return 0;\n' +
+        '}\n',
+      language: [Object],
+      parser: [Parser],
+      tree: [Tree],
+      nodeCache: [Map],
+      root: [SourceNode]
+    },
+    id: 5669154016,
+    type: 'field_declaration',
+    startIndex: -1,
+    endIndex: 525,
+    children: [ [SourceNode], [SourceNode], [SourceNode] ],
+    parent: SourceNode {
+      tree: [SourceTree],
+      id: 5669154256,
+      type: 'field_declaration_list',
+      startIndex: 486,
+      endIndex: 559,
+      children: [Array],
+      parent: [SourceNode],
+      fieldName: 'body',
+      markers: [],
+      data: {}
+    },
+    fieldName: null,
+    markers: [],
+    data: {},
+    _capturedText: 'int x;'
+  }
+}
+[31m./examples/trap.cup:1:1: error: [0] Macro @trap failed: Could not find declared identifier for @trap[0m
+#include "trap.h"
+[31m^[0m

@@ -1,0 +1,18 @@
+==== examples/return_values_test.c ===
+                      
+                                    
+ 
+                  
+                
+ 
+                  
+                                   
+ 
+void main() {
+    int replaced = 42;
+    
+    /*@Ignore()*/
+}
+
+==== RUN OUTPUT ===
+

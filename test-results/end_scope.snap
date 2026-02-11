@@ -1,0 +1,46 @@
+==== examples/end_scope.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts (const char *s);
+extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+
+#include "defer.h"
+int some_condition;
+int main() {
+    char *str1 = malloc(100);
+     
+    char *str2;
+    {
+        char *nested = malloc(100);
+         
+        if (some_condition) {
+            // should defer here, str1
+            { free(nested); nested = ((void*)0); }
+{ free(str1); str1 = ((void*)0); }
+{ free(str2); str2 = ((void*)0); }
+return 1;
+        }
+    { free(nested); nested = ((void*)0); }
+    str2 = malloc(100);
+     
+    // should defer here, str2 then str1
+    { free(str1); str1 = ((void*)0); }
+{ free(str2); str2 = ((void*)0); }
+return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/end_scope.c:35:2: error: expected '}'
+   35 | }
+      |  ^
+./examples/end_scope.c:14:12: note: to match this '{'
+   14 | int main() {
+      |            ^
+1 error generated.
+

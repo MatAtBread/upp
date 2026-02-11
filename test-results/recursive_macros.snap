@@ -1,3 +1,7 @@
+==== examples/recursive_macros.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
 extern int puts (const char *s);
 extern int printf (const char *format, ...);
 extern int fputs (const char *s, void *stream);
@@ -12,15 +16,15 @@ struct String {
     char *data;
 };
 typedef struct String String;
-void _String_method_print(String *s) {
+ void _String_method_print(String *s) {
     printf("%s\n", s->data);
-} 
-void _String_method_Defer(String *s) {
+}
+ void _String_method_Defer(String *s) {
     s->print();
     free(s->data);
-} 
+}
 int main() {
-    String s1;_String_method_Defer(&s1);  
+    String s1;
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
     if (some_condition) {
@@ -28,3 +32,10 @@ int main() {
     }
     return 1;
 }
+
+==== COMPILATION ERROR ===
+./examples/recursive_macros.c:22:8: error: no member named 'print' in 'struct String'
+   22 |     s->print();
+      |     ~  ^
+1 error generated.
+
