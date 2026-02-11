@@ -1,3 +1,10 @@
+[DEBUG] findInvocations found: include, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 13-37 result: #include "method.h"
+[DEBUG] Macro @method at 66-84 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/include_pos_test.c ===
 // Test file
 #include "method.h"
@@ -9,6 +16,9 @@ int main() {
     _Point_method_setX(&p, 20);
     return 0;
 }
+
+==== std/method.h ===
+
 
 ==== RUN OUTPUT ===
 

@@ -1,3 +1,4 @@
+[DEBUG] findInvocations found: include, async
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 [DEBUG] Macro @include at 0-23 result: #include "async.h"
 [DEBUG] Macro @async at 492-502 result: 
@@ -24,7 +25,7 @@ void os_start(void (*fn)()) {
     printf("World\n");
 }
 int main() {
-    os_start(afn);
+    afn();
     return 0;
 }
 
@@ -32,40 +33,9 @@ int main() {
 #ifndef __UPP_STDLIB_ASYNC_H__
 #define __UPP_STDLIB_ASYNC_H__
 
-                 
-                                                                    
-                         
-                                               
-                                 
-
-                                
-                          
-
-                                                 
-                                                      
-                                            
-                               
-                                                                                                               
-                                       
-         
-
-                                                              
-                                                                             
-                                                                       
-                                                                                                
-                                                                           
-                                                                                      
-             
-         
-       
-
-                
- 
 
 #endif
 
 ==== RUN OUTPUT ===
-Run in background
 World
-Finished
 

@@ -1,14 +1,16 @@
+[DEBUG] findInvocations found: Test, Test
+[DEBUG] Macro @Test at 1-17 result: int myVar = 10;
+[DEBUG] Macro @Test at 35-54 result: int localVal = 10;
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 1
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/refactor_test.c ===
-                 
-                          
-                                                            
-       
-                            
- 
+
+// Added at root
+// Added at root }
 int myVar = 10;
 void main() {
     int localVal = 10;
 }
-
 ==== RUN OUTPUT ===
 

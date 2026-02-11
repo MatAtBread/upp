@@ -1,3 +1,12 @@
+[DEBUG] findInvocations found: include, method, method, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-24 result: #include "method.h"
+[DEBUG] Macro @method at 522-546 result: 
+[DEBUG] Macro @method at 604-628 result: 
+[DEBUG] Macro @method at 704-723 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/method_test.c ===
 #include "method.h"
 /* A minimal C stdio/stdlib for upp to make it easy to
@@ -38,7 +47,7 @@ int main() {
     int val1 = _Base_method_getX(&b);
     // Usage 2
     _BaseTypedef_method_setX(&bt, 50);
-    int val2 = bt.getX();
+    int val2 = _Base_method_getX(&bt);
     // Usage 3
     int val3 = _Unique_method_getY(&u);
     printf("val1: %d\n", val1);
@@ -47,9 +56,11 @@ int main() {
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/method_test.c:40:19: error: no member named 'getX' in 'struct Base'
-   40 |     int val2 = bt.getX();
-      |                ~~ ^
-1 error generated.
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+val1: 10
+val2: 50
+val3: 100
 

@@ -1,3 +1,12 @@
+[DEBUG] findInvocations found: include, include, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 377-401 result: #include "method.h"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 397-420 result: #include "defer.h"
+[DEBUG] Macro @method at 488-511 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/method_test_defer.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -28,6 +37,16 @@ int main() {
     printf("Scope End\n");
     return 0;
 }
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/method.h ===
+
 
 ==== RUN OUTPUT ===
 Scope Start

@@ -1,21 +1,10 @@
+[DEBUG] findInvocations found: Test
+[DEBUG] Macro @Test at 19-30 result: // Macro expanded
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 13
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/deferred_order_test.c ===
-                
-                                                
-                                  
-                                           
-                                            
-                                                    
-       
-                                          
-                                                   
-                                            
-               
-                                               
-                                                                 
-           
-     
-                               
- 
+
 void main() // Start of function
 {
     // Macro expanded }

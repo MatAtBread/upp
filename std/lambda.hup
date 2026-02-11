@@ -6,7 +6,7 @@
     // 1. Peek at the next node (function definition) WITHOUT consuming it yet.
     //    This preserves location data (startIndex/endIndex) for proper analysis.
     let fnNode = upp.nextNode('function_definition');
-    
+
     // Fallback for anonymous block (compound_statement)
     if (!fnNode) {
         fnNode = upp.nextNode('compound_statement');
@@ -30,7 +30,7 @@
     } else {
         sig = upp.getFunctionSignature(fnNode);
     }
-    
+
     const fnName = sig.name;
     const returnType = sig.returnType;
     let paramsText = sig.params;
@@ -63,9 +63,9 @@
                     // 1. Is it a function? Functions are usually static/extern unless they are block-scoped lambdas (which we don't fully support nesting yet in a way that requires capture of the function itself as a value, unless it's a pointer).
                     // If 'def' leads to a function_definition or declaration of a function, we typically don't capture it unless we want to pass it as a callback, but even then, the symbol is available globally if it's not nested.
                     // If it is a nested function (from another lambda), we MIGHT need to capture it if it's closure-based. But for now, standard C functions are global.
-                    
+
                     let isStaticOrExtern = false;
-                    
+
                     // Check declaration storage class
                     let decl = def.parent;
                     while (decl && !['declaration', 'function_definition', 'parameter_declaration'].includes(decl.type)) {
@@ -80,12 +80,12 @@
                         }
                         // Global functions without static/extern are implicitly extern/global
                         if (decl.type === 'function_definition' && !isInsideFn(decl)) {
-                             isStaticOrExtern = true; 
+                            isStaticOrExtern = true;
                         }
                         // Global variables ?
                         if (decl.parent && decl.parent.type === 'translation_unit') {
-                             // If it's a global variable, it's accessible.
-                             isStaticOrExtern = true;
+                            // If it's a global variable, it's accessible.
+                            isStaticOrExtern = true;
                         }
                     } else {
                         // If we can't find a declaration, it might be a builtin or something.
@@ -97,7 +97,7 @@
                         // console.log(`[DEBUG] Capturing ${node.text}`);
                         captureMap.set(node.text, def);
                     } else {
-                         // console.log(`[DEBUG] Ignoring static/extern/global ${node.text}`);
+                        // console.log(`[DEBUG] Ignoring static/extern/global ${node.text}`);
                     }
                 }
             }
@@ -105,7 +105,8 @@
     });
 
     // 3. Generate Context Struct
-    const ctxName = captureMap.size > 0 ? fnName+'_lambda_ctx' : null;
+    const ctxId = upp.createUniqueIdentifier("ctx");
+    const ctxName = captureMap.size > 0 ? fnName + '_lambda_ctx' : null;
     let structDef = "";
     if (ctxName) {
         let structFields = "";
@@ -117,18 +118,18 @@
     }
 
     // 4. Generate Hoisted Implementation (reconstruct body)
-    const implName = upp.createUniqueIdentifier(`${fnName}_lambda`);
+    const implName = `${fnName}_lambda`;
 
     const hoistReplacements = [];
     upp.walk(bodyNode, (node) => {
         if (node.type === 'identifier' && captureMap.has(node.text)) {
             const def = upp.getDefinition(node);
             if (def && !isInsideFn(def)) {
-                 hoistReplacements.push({
-                     start: node.startIndex,
-                     end: node.endIndex,
-                     text: ctxName ? `(*ctx->${node.text})` : node.text
-                 });
+                hoistReplacements.push({
+                    start: node.startIndex,
+                    end: node.endIndex,
+                    text: ctxName ? `(*ctx->${node.text})` : node.text
+                });
             }
         }
     });
@@ -144,8 +145,7 @@
         bodyText = bodyText.slice(0, relStart) + r.text + bodyText.slice(relEnd);
     }
 
-    const ctxId = upp.createUniqueIdentifier("ctx");
-    const ctxParam = ctxName ? `struct ${ctxName} *${ctxId}` : "";
+    const ctxParam = ctxName ? `struct ${ctxName} *ctx` : "";
     let finalParams = paramsText;
     if (ctxParam) {
         finalParams = ctxParam + (paramsText.startsWith(",") ? paramsText : (paramsText ? ", " + paramsText : ""));
@@ -161,7 +161,7 @@
         hoistCode += structDef + "\n";
     }
     hoistCode += forwardDecl + "\n";
-    hoistCode += implCode + "\n";
+    hoistCode += implCode + "\n\n";
 
     // Find enclosing function to insert before
     let enclosingFn = fnNode.parent;
@@ -173,78 +173,38 @@
     const knownInvocations = upp.context.invocations || [];
 
     upp.atRoot((root, helpers) => {
-         
-         // 1. Identify valid target function in the new tree
-         // The 'enclosingFn' from the outer scope is from the old tree.
-         // We need to match it to a node in 'root' (the current tree).
-         let targetNode = null;
-         
-         if (enclosingFn) {
-            // Because we are atRoot, and the tree structure above the function hasn't changed significantly
-            // other than previous macro expansions, we can try to find the function by ID if it's stable,
-            // or by signature matching.
-             const targetSig = upp.getFunctionSignature(enclosingFn);
-             const targetName = targetSig ? targetSig.name : null;
-             
-             // Simple linear scan at root level (since we expect top-level functions)
-             for (let i = 0; i < helpers.childCount(root); i++) {
-                 const child = helpers.child(root, i);
-                 if (child.id === enclosingFn.id || 
+        // Find the enclosing function definition in the CURRENT tree
+        let targetNode = null;
+
+        if (enclosingFn) {
+            const targetSig = upp.getFunctionSignature(enclosingFn);
+            const targetName = targetSig ? targetSig.name : null;
+
+            // Scan top-level children of the root
+            for (let i = 0; i < helpers.childCount(root); i++) {
+                const child = helpers.child(root, i);
+                if (child.id === enclosingFn.id ||
                     (child.type === 'function_definition' && upp.getFunctionSignature(child)?.name === targetName)) {
-                     targetNode = child;
-                     break;
-                 }
-             }
-         }
-         
-         if (!targetNode && helpers.childCount(root) > 0) {
-             // Fallback: if we can't find the function, maybe just append to end?
-             // But usually we should find it.
-             // console.log("[DEBUG] precise target function not found, using last child");
-             // targetNode = helpers.child(root, helpers.childCount(root) - 1);
-         }
+                    targetNode = child;
+                    break;
+                }
+            }
+        }
 
-         if (targetNode) {
-             // 2. Adjust for overlapping predecessor macros
-             // Only if we detect an overlap do we adjust.
-             // Since we have 'insertBefore', we can just use that on targetNode,
-             // UNLESS there is a macro that ends *inside* or *after* targetNode's start.
-             
-             let overlapAdjusted = false;
-             // console.log(`[DEBUG] enclosingFn: ${enclosingFn.id}, targetNode: ${targetNode.id} start: ${targetNode.startIndex}`);
-             // console.log(`[DEBUG] currentStart: ${currentStart}`);
-             for (const inv of knownInvocations) {
-                 // console.log(`[DEBUG] Checking inv @${inv.name} ${inv.startIndex}-${inv.endIndex}`);
-                 // Skip the current invocation itself!
-                 if (inv.startIndex === currentStart) continue;
+        if (targetNode) {
+            // Simply insert before the function. Node API handles indices.
+            targetNode.insertBefore("\n" + hoistCode + "\n");
+        } else {
+            // Fallback to start of file if no enclosing function found
+            root.insertBefore("\n" + hoistCode + "\n");
+        }
 
-                 // If inv ends after targetNode starts, we have an overlap limit.
-                 // We want to insert *after* that overlap.
-                 if (inv.endIndex > targetNode.startIndex && inv.endIndex < targetNode.endIndex) {
-                     // console.log(`[DEBUG] Handling overlap with @${inv.name} (ends ${inv.endIndex})`);
-                     helpers.replace({ start: inv.endIndex, end: inv.endIndex }, "\n" + hoistCode + "\n");
-                     overlapAdjusted = true;
-                     break;
-                 }
-             }
-             
-             if (!overlapAdjusted) {
-                 // console.log(`[DEBUG] Using targetNode.insertBefore at ${targetNode.startIndex}`);
-                 // Use SourceNode.insertBefore directly as requested
-                 targetNode.insertBefore("\n" + hoistCode + "\n");
-             }
-         } else {
-             // console.log(`[DEBUG] targetNode not found, falling back to 0-0`);
-             // Absolute fallback if no function found (e.g. global lambda, or script mode)
-             helpers.replace({ start: 0, end: 0 }, "\n" + hoistCode + "\n");
-         }
-         
-         // 5. Replace Usage & Recursively Handle Aliases
-         
-         // 5. Replace Usage & Recursively Handle Aliases
-         const contextArg = ctxName ? `(&${ctxId})` : "";
-         
-         function processReferences(targetDefName, isOriginal) {
+        // 5. Replace Usage & Recursively Handle Aliases
+
+        // 5. Replace Usage & Recursively Handle Aliases
+        const contextArg = ctxName ? `(&${ctxId})` : "";
+
+        function processReferences(targetDefName, isOriginal) {
             // console.log(`[DEBUG] processReferences for ${targetDefName} (original: ${isOriginal})`);
             helpers.walk(root, (ref) => {
                 if (ref.type !== 'identifier') return;
@@ -255,62 +215,62 @@
 
                 // Usage Type 1: Function Call -> target(...)
                 if (refParent.type === 'call_expression' && helpers.childForFieldName(refParent, 'function') === ref) {
-                     const call = refParent;
-                     const args = helpers.childForFieldName(call, 'arguments');
-                     let newArgs = "";
+                    const call = refParent;
+                    const args = helpers.childForFieldName(call, 'arguments');
+                    let newArgs = "";
 
-                     if (contextArg) {
+                    if (contextArg) {
                         newArgs = contextArg;
                         if (helpers.childCount(args) > 2) {
                             const inner = args.text.slice(1, -1);
                             newArgs = `(${contextArg.slice(1, -1)}, ${inner})`;
                         }
-                     } else {
+                    } else {
                         newArgs = args.text;
-                     }
+                    }
 
-                     const replacementName = isOriginal ? implName : ref.text;
-                     helpers.replace(call, `${replacementName}${newArgs}`);
-                     return;
+                    const replacementName = isOriginal ? implName : ref.text;
+                    helpers.replace(call, `${replacementName}${newArgs}`);
+                    return;
                 }
 
                 // Usage Type 2: Alias Initialization / Declaration
                 if (refParent.type === 'init_declarator' && helpers.childForFieldName(refParent, 'value') === ref) {
-                     const initDecl = refParent;
-                     const declStmt = helpers.parent(initDecl);
-                     const decl = helpers.childForFieldName(initDecl, 'declarator');
-                     let foundAlias = null;
-                     helpers.walk(decl, n => { if (n.type === 'identifier' && !foundAlias) foundAlias = n; });
-                     let aliasId = foundAlias;
-                     
-                     if (isOriginal && aliasId && declStmt && declStmt.type === 'declaration') {
-                          // Cache text before replacement!
-                          const aliasName = aliasId.text; 
-                          let prefix = "";
-                          for(let i=0; i<helpers.childCount(declStmt); i++) {
-                              const c = helpers.child(declStmt, i);
-                              if (c.type === 'storage_class_specifier' || c.type === 'type_qualifier') {
-                                  prefix += c.text + " ";
-                              }
-                          }
-                          const newDecl = `${prefix}typeof(&${implName}) ${aliasName} = ${implName};`;
-                          helpers.replace(declStmt, newDecl);
-                          // Use cached name
-                          if (aliasName) processReferences(aliasName, false);
-                          return;
-                     } else if (aliasId) {
-                          processReferences(aliasId.text, false);
-                     }
+                    const initDecl = refParent;
+                    const declStmt = helpers.parent(initDecl);
+                    const decl = helpers.childForFieldName(initDecl, 'declarator');
+                    let foundAlias = null;
+                    helpers.walk(decl, n => { if (n.type === 'identifier' && !foundAlias) foundAlias = n; });
+                    let aliasId = foundAlias;
+
+                    if (isOriginal && aliasId && declStmt && declStmt.type === 'declaration') {
+                        // Cache text before replacement!
+                        const aliasName = aliasId.text;
+                        let prefix = "";
+                        for (let i = 0; i < helpers.childCount(declStmt); i++) {
+                            const c = helpers.child(declStmt, i);
+                            if (c.type === 'storage_class_specifier' || c.type === 'type_qualifier') {
+                                prefix += c.text + " ";
+                            }
+                        }
+                        const newDecl = `${prefix}typeof(&${implName}) ${aliasName} = ${implName};`;
+                        helpers.replace(declStmt, newDecl);
+                        // Use cached name
+                        if (aliasName) processReferences(aliasName, false);
+                        return;
+                    } else if (aliasId) {
+                        processReferences(aliasId.text, false);
+                    }
                 }
                 // Usage Type 3: Assignment
                 else if (refParent.type === 'assignment_expression' && helpers.childForFieldName(refParent, 'right') === ref) {
-                     const left = helpers.childForFieldName(refParent, 'left');
-                     let aliasId = null;
-                     if (left.type === 'identifier') aliasId = left;
-                     if (isOriginal) helpers.replace(ref, implName);
-                     if (aliasId) {
-                         processReferences(aliasId.text, false);
-                     }
+                    const left = helpers.childForFieldName(refParent, 'left');
+                    let aliasId = null;
+                    if (left.type === 'identifier') aliasId = left;
+                    if (isOriginal) helpers.replace(ref, implName);
+                    if (aliasId) {
+                        processReferences(aliasId.text, false);
+                    }
                 }
                 else if (isOriginal) {
                     helpers.replace(ref, implName);
@@ -327,7 +287,7 @@
         let initFields = captureList.map(name => `.${name} = &${name}`).join(', ');
         initCode = `struct ${ctxName} ${ctxId} = { ${initFields} };`;
     }
-    
+
     upp.replace(fnNode, "");
 
     return initCode;

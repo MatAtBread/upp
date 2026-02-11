@@ -1,3 +1,25 @@
+[DEBUG] findInvocations found: include, include, trace
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 756-780 result: #include "lambda.h"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 776-799 result: #include "defer.h"
+[DEBUG] Macro @trace at 796-806 result: int my_function(int x) {
+    fputs("Entering: my_function\n", stderr);
+    @defer { fputs("Exiting: my_function\n", stderr); };
+    int g = 1;
+	for (int i=1; i < x; i++) {
+        g = g * i;
+        if (g>100) {
+            return -1;
+        }
+    }
+	return g;
+}
+[DEBUG] findInvocations found: defer
+[DEBUG] Macro @defer at 871-881 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 819
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_1.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -23,38 +45,47 @@ extern char *strcpy(char *dest, const char *src);
 
 #include "lambda.h"
 #include "defer.h"
-                 
-                                                                                              
-                                                                          
-                                                       
-               
-                       
-                                 
-                                          
-                                                     
-                                                                                                     
-   
-     
- 
-{
-    fputs("Entering: \n", stderr);
+
+int my_function(int x) {
+    fputs("Entering: my_function\n", stderr);
      ;
-    
-	
-	
-{ fputs("Exiting: \n", stderr); } }
+    int g = 1;
+	for (int i=1; i < x; i++) {
+        g = g * i;
+        if (g>100) {
+            { fputs("Exiting: my_function\n", stderr); }
+return -1;
+        }
+    }
+	{ fputs("Exiting: my_function\n", stderr); }
+return g;
+}
 
 int main() {
     printf("magic number %d\n", my_function(10));
     return 0;
 }
 
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/lambda.h ===
+#ifndef __UPP_STDLIB_LAMBDA_H__
+#define __UPP_STDLIB_LAMBDA_H__
+
+
+#endif
+
 ==== COMPILATION ERROR ===
-./examples/trace_1.c:38:1: error: expected identifier or '('
-   38 | {
-      | ^
-./examples/trace_1.c:47:33: error: call to undeclared function 'my_function'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-   47 |     printf("magic number %d\n", my_function(10));
-      |                                 ^
-2 errors generated.
+Undefined symbols for architecture arm64:
+  "_stderr", referenced from:
+      _my_function in trace_1-b12da8.o
+      _my_function in trace_1-b12da8.o
+      _my_function in trace_1-b12da8.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
 

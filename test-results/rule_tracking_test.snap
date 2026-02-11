@@ -1,3 +1,14 @@
+[DEBUG] findInvocations found: include, method, testMacro
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 124-148 result: #include "method.h"
+[DEBUG] Macro @method at 184-209 result: 
+[DEBUG] Macro @testMacro at 252-268 result: 
+        Point p = {10, 20};
+        int val = p.getX();
+    
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/rule_tracking_test.c ===
 // Test transformation rule tracking
 // This tests if rules registered by withReferences get re-evaluated on generated code
@@ -9,32 +20,30 @@ struct Point {
  int _Point_method_getX() {
     return this->x;
 }
-                     
-                                                            
-                                                      
-                           
-                           
-                           
-       
-                           
- 
+
 int main() {
     Point p = {10, 20};
-        int val = p.getX();
+        int val = _Point_method_getX(&p);
     
     return 0;
 }
+
+==== std/method.h ===
+
 
 ==== COMPILATION ERROR ===
 ./examples/rule_tracking_test.c:9:12: error: use of undeclared identifier 'this'
     9 |     return this->x;
       |            ^
-./examples/rule_tracking_test.c:21:5: error: must use 'struct' tag to refer to type 'Point'
-   21 |     Point p = {10, 20};
+./examples/rule_tracking_test.c:13:5: error: must use 'struct' tag to refer to type 'Point'
+   13 |     Point p = {10, 20};
       |     ^
       |     struct 
-./examples/rule_tracking_test.c:22:21: error: no member named 'getX' in 'struct Point'
-   22 |         int val = p.getX();
-      |                   ~ ^
-3 errors generated.
+./examples/rule_tracking_test.c:14:40: warning: too many arguments in call to '_Point_method_getX'
+   14 |         int val = _Point_method_getX(&p);
+      |                   ~~~~~~~~~~~~~~~~~~   ^
+./examples/rule_tracking_test.c:14:37: warning: passing arguments to '_Point_method_getX' without a prototype is deprecated in all versions of C and is not supported in C23 [-Wdeprecated-non-prototype]
+   14 |         int val = _Point_method_getX(&p);
+      |                                     ^
+2 warnings and 2 errors generated.
 

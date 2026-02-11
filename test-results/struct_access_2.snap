@@ -1,3 +1,10 @@
+[DEBUG] findInvocations found: include, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-24 result: #include "method.h"
+[DEBUG] Macro @method at 117-135 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/struct_access_2.c ===
 #include "method.h"
 struct Point {
@@ -11,13 +18,12 @@ typedef struct Point Point;
 }
 int main() {
     Point p;
-    int r = p.distance();
+    int r = _Point_method_distance(&p);
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/struct_access_2.c:13:15: error: no member named 'distance' in 'struct Point'
-   13 |     int r = p.distance();
-      |             ~ ^
-1 error generated.
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
 

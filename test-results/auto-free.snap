@@ -1,29 +1,27 @@
+[DEBUG] findInvocations found: include, allocate, allocate, allocate
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 [DEBUG] Macro @include at 378-401 result: #include "defer.h"
-[DEBUG] Macro @allocate at 1160-1178 result: 
+[DEBUG] Macro @allocate at 435-453 result: 
                     char *str1 = malloc(100 * sizeof(char));
                     @defer { free(str1); str1 = ((void*)0); }
                 
-[DEBUG] Macro @defer at 82-92 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 21
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @allocate at 1245-1263 result: 
+[DEBUG] findInvocations found: defer
+[DEBUG] Macro @defer at 476-486 result: 
+[DEBUG] Macro @allocate at 483-501 result: 
                     char *str2 = malloc(100 * sizeof(char));
                     @defer { free(str2); str2 = ((void*)0); }
                 
-[DEBUG] Macro @defer at 82-92 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 21
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @allocate at 1340-1358 result: 
+[DEBUG] findInvocations found: defer
+[DEBUG] Macro @defer at 524-534 result: 
+[DEBUG] Macro @allocate at 541-559 result: 
                     char *nested = malloc(100 * sizeof(char));
                     @defer { free(nested); nested = ((void*)0); }
                 
-[DEBUG] Macro @defer at 84-94 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 21
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] findInvocations found: defer
+[DEBUG] Macro @defer at 584-594 result: 
+[DEBUG] executeDeferredMarkers: found 2 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 429
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 531
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/auto-free.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
@@ -38,94 +36,37 @@ extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 
 #include "defer.h"
-                     
-                                              
-                                                                 
-                                                    
-                                                                                 
-                         
-                                                                   
-                       
-                                      
-                                                                                
-                                                                               
-                  
-                            
-             
-         
-     
-                                                         
- 
+
 int some_condition;
 int main() {
     char *str1 = malloc(100 * sizeof(char));
-                     
-                 
+
+ 
     char *str2 = malloc(100 * sizeof(char));
-                     
-                 
+
+ 
     {
         char *nested = malloc(100 * sizeof(char));
-                     
-                 
+
+ 
         if (some_condition) {
             // should defer here, str1
-            return 1;
+            { free(nested); nested = ((void*)0); }
+{ free(str1); str1 = ((void*)0); }
+{ free(str2); str2 = ((void*)0); }
+return 1;
         }
-    }
+    { free(nested); nested = ((void*)0); }}
     // should defer here, str2 then str1
-    return 0;
+    { free(str1); str1 = ((void*)0); }
+{ free(str2); str2 = ((void*)0); }
+return 0;
 }
 
 ==== std/defer.h ===
 #ifndef __UPP_STDLIB_DEFER_H__
 #define __UPP_STDLIB_DEFER_H__
 
-                 
-                                                                             
-                                                                                       
-    
-                           
-
-                                       
-                                    
-                                                                                              
-        
-                                     
-                                                       
-                                        
-                                     
-                                                                      
-                                               
-         
-
-                                                         
-                                                               
-                                                                                                   
-                                                                    
-                                                               
-                                                                                                     
-                                                                                    
-                                    
-                                                                  
-                                                
-                                             
-                                                                                         
-                
-                                                        
-                                       
-                 
-                      
-             
-
-                               
-                                                                   
-             
-         
-       
-
-                
- 
 
 #endif
 

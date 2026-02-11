@@ -1,28 +1,15 @@
-==== examples/nested_macros_5.c ===
+[DEBUG] findInvocations found: define
+Macro @define failed: Error: Macro @define not found
+    at Registry.evaluateMacro (file://./src/registry.js:355:31)
+    at Registry.transformNode (file://./src/registry.js:236:41)
+    at Registry.transformNode (file://./src/registry.js:290:18)
+    at Registry.transform (file://./src/registry.js:199:14)
+    at file://./index.js:157:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
+    at async Promise.all (index 0)
+    at async ESMLoader.import (node:internal/modules/esm/loader:530:24)
+    at async loadESM (node:internal/process/esm_loader:91:5)
+    at async handleMainPromise (node:internal/modules/run_main:65:12)
+[31m./examples/nested_macros_5.cup:1:1: error: [0] Macro @define failed: Macro @define not found[0m
 /* A minimal C stdio/stdlib for upp to make it easy to
-   see the output of the examples but permit compilation
-*/
-extern int puts (const char *s);
-extern int printf (const char *format, ...);
-extern int fputs (const char *s, void *stream);
-extern void* stderr;
-extern void *malloc(unsigned long n);
-extern void free(void *p);
-extern char *strcpy(char *dest, const char *src);
-
-static int expanded_inner = 5;
-                  
-                                           
- 
-                  
-                                             
- 
-int main() {
-    int n = expanded_inner + 10 + 20 ;
-    printf("%d\n", n);
-    return 0;
-}
-
-==== RUN OUTPUT ===
-35
-
+[31m^[0m

@@ -1,3 +1,28 @@
+[DEBUG] findInvocations found: include, include, trace
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 378-402 result: #include "lambda.h"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 398-421 result: #include "defer.h"
+[DEBUG] Macro @trace at 418-428 result: int my_function(int x) {
+    fputs("Entering: my_function\n", stderr);
+    @lambda void _exit() { fputs("Exiting: my_function\n", stderr); };
+    @defer _exit();
+    int g = 1;
+	for (int i=1; i < x; i++) {
+        g = g * i;
+        if (g>100) {
+            return -1;
+        }
+    }
+	return g;
+}
+[DEBUG] findInvocations found: lambda, defer
+[DEBUG] Macro @lambda at 493-504 result: 
+[DEBUG] Macro @defer at 500-510 result: 
+[DEBUG] executeDeferredMarkers: found 2 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 441
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_2.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -12,23 +37,25 @@ extern char *strcpy(char *dest, const char *src);
 
 #include "lambda.h"
 #include "defer.h"
-                 
-                                                                                              
-                                                                          
-                                                       
-               
-                       
-                                 
-                                          
-                                                                   
-                   
-                                                                                                     
-   
+
+void _exit_lambda();
+void _exit_lambda() { fputs("Exiting: my_function\n", stderr); }
+
+
+int my_function(int x) {
+    fputs("Entering: my_function\n", stderr);
+     ;
      
- 
-{
-    fputs("Entering: \n", stderr);
-    
+    int g = 1;
+	for (int i=1; i < x; i++) {
+        g = g * i;
+        if (g>100) {
+            _exit_lambda();
+return -1;
+        }
+    }
+	_exit_lambda();
+return g;
 }
 
 int main() {
@@ -36,12 +63,25 @@ int main() {
     return 0;
 }
 
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/lambda.h ===
+#ifndef __UPP_STDLIB_LAMBDA_H__
+#define __UPP_STDLIB_LAMBDA_H__
+
+
+#endif
+
 ==== COMPILATION ERROR ===
-./examples/trace_2.c:28:1: error: expected identifier or '('
-   28 | {
-      | ^
-./examples/trace_2.c:34:33: error: call to undeclared function 'my_function'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-   34 |     printf("magic number %d\n", my_function(10));
-      |                                 ^
-2 errors generated.
+Undefined symbols for architecture arm64:
+  "_stderr", referenced from:
+      __exit_lambda in trace_2-1ea50e.o
+      _my_function in trace_2-1ea50e.o
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
 

@@ -1,18 +1,13 @@
+[DEBUG] findInvocations found: rename_type
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/type_refs_test.c ===
-                              
-                                 
-                                                            
-                                          
-                             
-                                  
-     
- 
+
 /*@rename_type(RealPoint)*/
 typedef struct PointAlias {
     int x;
     int y;
 } PointAlias;
-/*@rename_type(PointTag)*/
+@rename_type(PointTag)
 struct PointTagDef {
     int x;
 };
@@ -24,5 +19,15 @@ int main() {
     return 0;
 }
 
-==== RUN OUTPUT ===
+==== COMPILATION ERROR ===
+./examples/type_refs_test.c:7:1: error: expected identifier or '('
+    7 | @rename_type(PointTag)
+      | ^
+./examples/type_refs_test.c:13:24: error: variable has incomplete type 'struct PointTagDef'
+   13 |     struct PointTagDef p2;
+      |                        ^
+./examples/type_refs_test.c:13:12: note: forward declaration of 'struct PointTagDef'
+   13 |     struct PointTagDef p2;
+      |            ^
+2 errors generated.
 

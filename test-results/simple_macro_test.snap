@@ -1,7 +1,8 @@
+[DEBUG] findInvocations found: simple
+[DEBUG] Macro @simple at 18-31 result: int x = 5;
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/simple_macro_test.c ===
-                  
-                        
- 
+
 int main() {
     int x = 5;
     return x;

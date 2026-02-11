@@ -1,14 +1,30 @@
-Macro @import failed: TypeError: Cannot read properties of undefined (reading 'type')
-    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:4:14)
-    at Registry.evaluateMacro (file://./src/registry.js:363:20)
-    at Registry.transformNode (file://./src/registry.js:234:41)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transform (file://./src/registry.js:197:14)
-    at file://./index.js:157:37
-    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
-    at async Promise.all (index 0)
-    at async ESMLoader.import (node:internal/modules/esm/loader:530:24)
-    at async loadESM (node:internal/process/esm_loader:91:5)
-[31m./examples/import.cup:1:1: error: [0] Macro @import failed: Cannot read properties of undefined (reading 'type')[0m
+[DEBUG] findInvocations found: include, import, import
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-24 result: #include "import.h"
+[DEBUG] Macro @import at 20-35 result: 
+#include "io-lite.h"
+[DEBUG] Macro @import at 42-58 result: 
+#include "string.h"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+==== examples/import.c ===
 #include "import.h"
-[31m^[0m
+#include "io-lite.h" 
+#include "string.h" 
+int main() {
+    io.printf("Hello, World!\n");
+    str.strlen("Hello");
+    return 0;
+}
+
+==== examples/import.h ===
+
+
+==== COMPILATION ERROR ===
+./examples/import.c:5:5: error: use of undeclared identifier 'io'
+    5 |     io.printf("Hello, World!\n");
+      |     ^
+./examples/import.c:6:5: error: use of undeclared identifier 'str'
+    6 |     str.strlen("Hello");
+      |     ^
+2 errors generated.
+

@@ -1,3 +1,42 @@
+[DEBUG] findInvocations found: include, method, method
+[DEBUG] findInvocations found: include, method, method
+[DEBUG] findInvocations found: include, method, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-24 result: #include "method.h"
+[DEBUG] Macro @method at 80-96 result: 
+[DEBUG] Macro @method at 113-129 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 377-409 result: #include "extern_methods.h"
+[DEBUG] Macro @method at 405-421 result: 
+[DEBUG] Macro @method at 471-487 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] findInvocations found: include
+[DEBUG] findInvocations found: include, method, method
+[DEBUG] findInvocations found: include, method, method
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-24 result: #include "method.h"
+[DEBUG] Macro @method at 80-96 result: 
+[DEBUG] Macro @method at 113-129 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 0-32 result: #include "extern_methods.h"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+==== examples/extern_methods/extern_methods.h ===
+#include "method.h"
+
+struct Foo {
+    int x;
+};
+typedef struct Foo Foo;
+
+extern  void _Foo_method_print(Foo *f);
+ void _Foo_method_increment(Foo *f);
+
 ==== examples/extern_methods/extern_methods_impl.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -22,13 +61,13 @@ extern char *strcpy(char *dest, const char *src);
 int main() {
     Foo f = { .x = 1 };
     _Foo_method_increment(&f);
-    f.print();
+    _Foo_method_print(&f);
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/extern_methods/extern_methods_main.c:5:7: error: no member named 'print' in 'struct Foo'
-    5 |     f.print();
-      |     ~ ^
-1 error generated.
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+Foo 2
 

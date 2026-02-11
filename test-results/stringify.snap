@@ -1,14 +1,12 @@
-Macro @stringify failed: Error: @stringify expected 1 arguments, found 4
-    at Registry.evaluateMacro (file://./src/registry.js:360:23)
-    at Registry.transformNode (file://./src/registry.js:234:41)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transform (file://./src/registry.js:197:14)
-    at file://./index.js:157:37
-    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
-[31m./examples/stringify.cup:1:1: error: [0] Macro @stringify failed: @stringify expected 1 arguments, found 4[0m
-                             
-[31m^[0m
+[DEBUG] findInvocations found: stringify
+[DEBUG] Macro @stringify at 34-73 result: "Hello World from UPP"
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+==== examples/stringify.c ===
+
+int main() {
+    const char *s = "Hello World from UPP";
+    return 0;
+}
+
+==== RUN OUTPUT ===
+

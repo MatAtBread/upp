@@ -1,15 +1,22 @@
-[DEBUG] Macro @choice at 224-238 result: if (x) {
+[DEBUG] findInvocations found: choice
+[DEBUG] Macro @choice at 407-421 result: if (x) {
     printf("True\n");
   } else {
     printf("False\n");
   }
 [DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/choice_test.c ===
-                           
-                                                  
-                                                  
-                                                              
- 
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts (const char *s);
+extern int printf (const char *format, ...);
+extern int fputs (const char *s, void *stream);
+extern void* stderr;
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+
 void main() {
   int x = 1;
   if (x) {
@@ -19,17 +26,6 @@ void main() {
   }  
 }
 
-==== COMPILATION ERROR ===
-./examples/choice_test.c:6:1: warning: return type of 'main' is not 'int' [-Wmain-return-type]
-    6 | void main() {
-      | ^
-./examples/choice_test.c:6:1: note: change return type to 'int'
-    6 | void main() {
-      | ^~~~
-      | int
-./examples/choice_test.c:9:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-    9 |     printf("True\n");
-      |     ^
-./examples/choice_test.c:9:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
-1 warning and 1 error generated.
+==== RUN OUTPUT ===
+True
 

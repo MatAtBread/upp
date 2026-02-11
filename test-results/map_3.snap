@@ -1,59 +1,30 @@
-Macro @map failed: Error: @map expected compound_statement, but found expression_statement
-    at UppHelpersC.error (file://./src/upp_helpers_base.js:383:21)
-    at reportFailure (file://./src/upp_helpers_base.js:228:18)
-    at UppHelpersC.consume (file://./src/upp_helpers_base.js:238:66)
-    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:3:23)
-    at Registry.evaluateMacro (file://./src/registry.js:363:20)
-    at Registry.transformNode (file://./src/registry.js:234:41)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18) {
-  isUppError: true,
-  node: SourceNode {
-    tree: SourceTree {
-      source: '\n' +
-        '    for (int _i = 0; _i < sizeof(arr)/sizeof(arr[0]); _i++) {\n' +
-        '        int z = arr[_i];\n' +
-        '        if (_i % 2 == 0) {\n' +
-        '            { z = z + 100; }\n' +
-        '        } else {\n' +
-        '            {\n' +
-        '    int arr[] = {1, 2, 3, 4};\n' +
-        '    /*@map(arr, z)*/  ;\n' +
-        '    return 0;\n' +
-        '}\n' +
-        '        }\n' +
-        '        arr[_i] = z;\n' +
-        '    }',
-      language: [Object],
-      parser: [Parser],
-      tree: [Tree],
-      nodeCache: [Map],
-      root: [SourceNode]
-    },
-    id: 5358345680,
-    type: 'expression_statement',
-    startIndex: 227,
-    endIndex: 228,
-    children: [ [SourceNode] ],
-    parent: SourceNode {
-      tree: [SourceTree],
-      id: 5358346400,
-      type: 'compound_statement',
-      startIndex: 173,
-      endIndex: 244,
-      children: [Array],
-      parent: [SourceNode],
-      fieldName: null,
-      markers: [],
-      data: {}
-    },
-    fieldName: null,
-    markers: [],
-    data: {}
-  }
-}
-[31mresult-of-@map:1:1: error: [0] Macro @map failed: @map expected compound_statement, but found expression_statement[0m
+[DEBUG] findInvocations found: map
+[DEBUG] Macro @map at 48-64 result: 
+    for (int _i = 0; _i < sizeof(arr)/sizeof(arr[0]); _i++) {
+        int z = arr[_i];
+        if (_i % 2 == 0) {
+            { z = z + 10; }
+        } else {
+            { z = z + 100; }
+        }
+        arr[_i] = z;
+    }
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+==== examples/map_3.c ===
 
-[31m^[0m
+int main() {
+    int arr[] = {1, 2, 3, 4};
+    for (int _i = 0; _i < sizeof(arr)/sizeof(arr[0]); _i++) {
+        int z = arr[_i];
+        if (_i % 2 == 0) {
+            { z = z + 10; }
+        } else {
+            { z = z + 100; }
+        }
+        arr[_i] = z;
+    }  ;
+    return 0;
+}
+
+==== RUN OUTPUT ===
+

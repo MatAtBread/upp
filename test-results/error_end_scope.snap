@@ -1,11 +1,12 @@
+[DEBUG] findInvocations found: defer, defer
 Macro @defer failed: TypeError: fn.childForFieldName is not a function
-    at eval (eval at createMacroFunction (file://./src/registry.js:388:20), <anonymous>:10:31)
-    at Registry.evaluateMacro (file://./src/registry.js:363:20)
-    at Registry.transformNode (file://./src/registry.js:234:41)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transformNode (file://./src/registry.js:274:18)
-    at Registry.transform (file://./src/registry.js:197:14)
+    at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:10:31)
+    at Registry.evaluateMacro (file://./src/registry.js:387:20)
+    at Registry.transformNode (file://./src/registry.js:236:41)
+    at Registry.transformNode (file://./src/registry.js:290:18)
+    at Registry.transformNode (file://./src/registry.js:290:18)
+    at Registry.transformNode (file://./src/registry.js:290:18)
+    at Registry.transform (file://./src/registry.js:199:14)
     at file://./index.js:157:37
     at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
     at async Promise.all (index 0)

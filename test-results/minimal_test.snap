@@ -1,3 +1,4 @@
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/minimal_test.c ===
 // Minimal test - no macros
 int main() {

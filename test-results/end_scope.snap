@@ -1,3 +1,13 @@
+[DEBUG] findInvocations found: include, defer, defer, defer
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 378-401 result: #include "defer.h"
+[DEBUG] Macro @defer at 464-474 result: 
+[DEBUG] Macro @defer at 532-542 result: 
+[DEBUG] Macro @defer at 669-679 result: 
+[DEBUG] executeDeferredMarkers: found 2 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 428
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 486
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/end_scope.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -26,7 +36,7 @@ int main() {
 { free(str2); str2 = ((void*)0); }
 return 1;
         }
-    { free(nested); nested = ((void*)0); }
+    { free(nested); nested = ((void*)0); }}
     str2 = malloc(100);
      
     // should defer here, str2 then str1
@@ -35,12 +45,12 @@ return 1;
 return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/end_scope.c:35:2: error: expected '}'
-   35 | }
-      |  ^
-./examples/end_scope.c:14:12: note: to match this '{'
-   14 | int main() {
-      |            ^
-1 error generated.
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
 

@@ -1,3 +1,10 @@
+[DEBUG] findInvocations found: include, defer
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 378-401 result: #include "defer.h"
+[DEBUG] Macro @defer at 471-481 result: 
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 408
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/minimal_defer.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -20,6 +27,13 @@ int main() {
     { free(str1); str1 = ((void*)0); printf("deferred\n"); }
 return 0;
 }
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
 
 ==== RUN OUTPUT ===
 allocated

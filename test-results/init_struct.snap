@@ -1,3 +1,13 @@
+[DEBUG] findInvocations found: include, method, method, Point, Point
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
+[DEBUG] Macro @include at 378-402 result: #include "method.h"
+[DEBUG] Macro @method at 447-465 result: 
+[DEBUG] Macro @method at 530-548 result: 
+[DEBUG] Macro @Point at 639-649 result: Point p = {0}; p.Create();
+[DEBUG] Macro @Point at 686-696 result: Point q  = { .x = 5, .y = 9 }; q.Create();
+[DEBUG] executeDeferredMarkers: found 1 nodes with markers
+[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/init_struct.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -15,25 +25,7 @@ typedef struct {
     int x;
     int y;
 } Point;
-                 
-                             
-                   
-                                  
-                                                                        
-                    
-                       
-            
-                                                              
-                    
-                            
-                                                      
-                
-                                                
-                           
-         
-     
-                                                      
- 
+
  void _Point_method_print(Point *p) {
     printf("Point(%d, %d)\n", p->x, p->y);
 }
@@ -42,22 +34,22 @@ typedef struct {
 }
 int main() {
     Point p = {0};
-p.Create(); ;
+_Point_method_Create(&p); ;
     Point q  = { .x = 5, .y = 9 };
-q.Create(); 
+_Point_method_Create(&q); 
     _Point_method_print(&p);
     _Point_method_print(&q);
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/init_struct.c:44:3: error: no member named 'Create' in 'Point'
-   44 | p.Create(); ;
-      | ~ ^
-./examples/init_struct.c:46:3: error: no member named 'Create' in 'Point'
-   46 | q.Create(); 
-      | ~ ^
-2 errors generated.
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+Point created(0, 0)
+Point created(5, 9)
+Point(0, 0)
+Point(5, 9)
 
 ./examples/init_struct.cup:22:51: warning: empty character constant [-Winvalid-pp-token]
    22 |             init = ' = ' + match[2].replace(/;$/, '');

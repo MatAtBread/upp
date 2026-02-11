@@ -1,17 +1,9 @@
+[DEBUG] findInvocations found: renameVar
+[DEBUG] Macro @renameVar at 81-108 result: int renamedX = 10;
+[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/with_references_test.c ===
 // Simple test for withReferences transformation rule tracking
-                                     
-                                   
-                                               
-                            
-                                                     
-                                                             
-                       
-       
-                                    
-                                                            
-                             
- 
+
 int main() {
     int renamedX = 10;
     
@@ -21,14 +13,14 @@ int main() {
 }
 
 ==== COMPILATION ERROR ===
-./examples/with_references_test.c:17:13: error: use of undeclared identifier 'x'
-   17 |     int y = x + 5; // This should become: int y = renamedX + 5
+./examples/with_references_test.c:6:13: error: use of undeclared identifier 'x'
+    6 |     int y = x + 5; // This should become: int y = renamedX + 5
       |             ^
-./examples/with_references_test.c:18:13: error: use of undeclared identifier 'x'
-   18 |     int z = x * 2; // This should become: int z = renamedX * 2
+./examples/with_references_test.c:7:13: error: use of undeclared identifier 'x'
+    7 |     int z = x * 2; // This should become: int z = renamedX * 2
       |             ^
-./examples/with_references_test.c:19:12: error: use of undeclared identifier 'x'
-   19 |     return x; // This should become: return renamedX;
+./examples/with_references_test.c:8:12: error: use of undeclared identifier 'x'
+    8 |     return x; // This should become: return renamedX;
       |            ^
 3 errors generated.
 
