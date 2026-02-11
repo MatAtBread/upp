@@ -13,7 +13,7 @@ int main() {
     name = "Fabio";
     hello(2);
     direction = 0;
-    hello(3 );
+    hello(3);
 
     typeof(hello) z = hello;
     z(4);

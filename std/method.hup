@@ -39,7 +39,27 @@
             let objType = helpers.getType(objDef);
             let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
 
-            return cleanObjType === cleanTarget;
+            if (cleanObjType === cleanTarget) return true;
+
+            // Try to resolve typedef
+            // findDefinition defaults to { variable: true, tag: true }, and 'variable' covers typedefs in our helper
+            const typeDefId = helpers.findDefinition(cleanObjType);
+            if (typeDefId && typeDefId.parent && typeDefId.parent.type === 'type_definition') {
+                 const typeNode = typeDefId.parent.children.find(c => 
+                    c.type !== 'type_identifier' && 
+                    c.type !== 'storage_class_specifier' && 
+                    c.text !== 'typedef' && // Explicitly check for typedef text just in case
+                    c.type !== ';' &&
+                    c.id !== typeDefId.id
+                 );
+                 
+                 if (typeNode) {
+                     let resolvedType = typeNode.text;
+                     let cleanResolved = resolvedType.replace(/\*/g, '').replace(/struct /g, '').trim();
+                     return cleanResolved === cleanTarget;
+                 }
+            }
+            return false;
         },
         (callNode, helpers) => {
             const funcNode = helpers.childForFieldName(callNode, 'function');

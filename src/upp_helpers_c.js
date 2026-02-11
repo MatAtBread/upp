@@ -256,14 +256,16 @@ class UppHelpersC extends UppHelpersBase {
 
                     // Variable/Function/Typedef check
                     if (options.variable) {
-                        if (p.type === 'init_declarator' || p.type === 'parameter_declaration' || p.type === 'field_declaration') {
+                        let d = p;
+                        while (d && (d.type.endsWith('_declarator') || d.type === 'declarator')) {
+                            d = d.parent;
+                        }
+                        if (d && (d.type === 'init_declarator' || d.type === 'parameter_declaration' || d.type === 'field_declaration' || d.type === 'declaration')) {
+                            // Make sure we are in the 'declarator' field or position
                             return idNode;
                         }
-                        if (p.type === 'function_declarator') {
+                        if (d && d.type === 'type_definition') {
                             return idNode;
-                        }
-                        if (p.type === 'type_definition') {
-                            return idNode; // The typedef name
                         }
                     }
                 }

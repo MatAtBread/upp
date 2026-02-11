@@ -376,8 +376,12 @@ class Registry {
                 isTransformer = true;
             }
 
-            if (args.length !== macro.params.length) {
+            const hasRest = macro.params.length > 0 && macro.params[macro.params.length - 1].startsWith('...');
+            if (!hasRest && args.length !== macro.params.length) {
                 throw new Error(`@${invocation.name} expected ${isTransformer ? macro.params.length - 1 : macro.params.length} arguments, found ${invocation.args.length}`);
+            }
+            if (hasRest && args.length < macro.params.length - 1) {
+                throw new Error(`@${invocation.name} expected at least ${macro.params.length - 1} arguments, found ${invocation.args.length}`);
             }
 
             return macroFn(upp, console, ...args);
@@ -437,7 +441,16 @@ class Registry {
 
             const fullMatchLength = match[0].length + body.length + 1;
             const original = source.slice(match.index, match.index + fullMatchLength);
-            const replaced = original.replace(/[^\n]/g, ' ');
+
+            let replaced = "";
+            if (this.config.comments) {
+                // Remove the '@' from the start to prevent re-parsing
+                const commentContent = original.replace(/^(\s*)@/, '$1');
+                replaced = `/* ${commentContent} */`;
+            } else {
+                replaced = "";
+            }
+
             cleanSource = cleanSource.slice(0, match.index) + replaced + cleanSource.slice(match.index + fullMatchLength);
         }
 
@@ -537,6 +550,9 @@ class Registry {
                 line: (source.slice(0, match.index).match(/\n/g) || []).length + 1,
                 col: match.index - source.lastIndexOf('\n', match.index)
             });
+        }
+        if (invs.length > 0) {
+            console.log(`[DEBUG] findInvocations found: ${invs.map(i => i.name).join(', ')}`);
         }
         return invs;
     }

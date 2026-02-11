@@ -283,6 +283,11 @@ export class SourceNode {
         return named[idx] || null;
     }
 
+    /** @returns {SourceNode|null} */
+    get firstNamedChild() {
+        return this.namedChild(0);
+    }
+
     toString() {
         return this.text;
     }
@@ -506,7 +511,7 @@ export class SourceNode {
     /**
      * Inserts a node or text before this node.
      * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-     * @returns {SourceNode|SourceNode[]}
+     * @returns {SourceNode|SourceNode[]}You o
      */
     insertBefore(newNode) {
         if (typeof newNode === 'string') {

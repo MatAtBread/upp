@@ -16,8 +16,8 @@
     const node = upp.consume('declaration');
 
     // 2. Find internal identifier to get the original name
-    const declarator = node.childForFieldName('declarator');
-    const identifier = declarator.childForFieldName('declarator');
+    const declarator = node.findChildByFieldName('declarator');
+    const identifier = declarator.findChildByFieldName('declarator');
     const originalName = identifier.text;
 
     // 3. Find external references
