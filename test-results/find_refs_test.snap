@@ -1,5 +1,3 @@
-[DEBUG] findInvocations found: rename
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/find_refs_test.c ===
 
 /*@rename(y)*/

@@ -1,13 +1,3 @@
-[DEBUG] findInvocations found: include, method, method, Point, Point
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 397-421 result: #include "method.h"
-[DEBUG] Macro @method at 466-484 result: 
-[DEBUG] Macro @method at 549-567 result: 
-[DEBUG] Macro @Point at 658-668 result: Point p = {0}; p.Create();
-[DEBUG] Macro @Point at 705-715 result: Point q  = { .x = 5, .y = 9 }; q.Create();
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/init_struct.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation

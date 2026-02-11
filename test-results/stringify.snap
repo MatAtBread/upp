@@ -1,6 +1,3 @@
-[DEBUG] findInvocations found: stringify
-[DEBUG] Macro @stringify at 34-73 result: "Hello World from UPP"
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/stringify.c ===
 
 int main() {

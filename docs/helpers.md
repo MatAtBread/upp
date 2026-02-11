@@ -28,7 +28,7 @@ These utilities are always available in any UPP environment.
 ### Infrastructure
 - `upp.loadDependency(file)`: Loads and processes another file as a dependency.
 - `upp.isConsumed(node)`: Returns `true` if the node has been removed via `upp.consume`.
-- `upp.createUniqueIdentifier(prefix)`: Generates a unique random identifier (e.g., `v_6f3a1z`).
+- `upp.createUniqueIdentifier(prefix)`: Generates a unique identifier (e.g., `v_6f3a1z`).
 - `upp.childCount(node)` / `upp.child(node, i)`: AST traversal helpers.
 - `upp.childForFieldName(node, name)`: Safe access to field children.
 

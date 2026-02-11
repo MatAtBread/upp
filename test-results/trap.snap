@@ -1,6 +1,3 @@
-[DEBUG] findInvocations found: include, trap, trap, trap
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 0-22 result: #include "trap.h"
 Macro @trap failed: TypeError: Cannot read properties of undefined (reading 'root')
     at UppHelpersC.hoist (file://./src/upp_helpers_c.js:135:35)
     at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:50:13)

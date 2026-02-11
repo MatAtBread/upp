@@ -1,4 +1,3 @@
-[DEBUG] findInvocations found: define, define, Replace, Delet
 Macro @define failed: Error: Macro @define not found
     at Registry.evaluateMacro (file://./src/registry.js:355:31)
     at Registry.transformNode (file://./src/registry.js:236:41)

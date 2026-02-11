@@ -1,13 +1,3 @@
-[DEBUG] findInvocations found: include, fieldsof, fieldsof
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 396-422 result: #include "fieldsof.h"
-[DEBUG] Macro @fieldsof at 567-593 result: int x;
-    int y;
-    
-[DEBUG] Macro @fieldsof at 618-641 result: float lat;
-    float lon;
-    
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/fieldsof.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation

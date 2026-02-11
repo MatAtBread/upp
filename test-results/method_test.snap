@@ -1,12 +1,3 @@
-[DEBUG] findInvocations found: include, method, method, method
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 0-24 result: #include "method.h"
-[DEBUG] Macro @method at 541-565 result: 
-[DEBUG] Macro @method at 623-647 result: 
-[DEBUG] Macro @method at 723-742 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/method_test.c ===
 #include "method.h"
 /* A minimal C stdio/stdlib for upp to make it easy to

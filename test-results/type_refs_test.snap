@@ -1,5 +1,3 @@
-[DEBUG] findInvocations found: rename_type
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/type_refs_test.c ===
 
 /*@rename_type(RealPoint)*/

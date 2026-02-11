@@ -1,28 +1,3 @@
-[DEBUG] findInvocations found: include, include, trace
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 397-421 result: #include "lambda.h"
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 417-440 result: #include "defer.h"
-[DEBUG] Macro @trace at 437-447 result: int my_function(int x) {
-    fputs("Entering: my_function\n", stderr);
-    @lambda void _exit() { fputs("Exiting: my_function\n", stderr); };
-    @defer _exit();
-    int g = 1;
-	for (int i=1; i < x; i++) {
-        g = g * i;
-        if (g>100) {
-            return -1;
-        }
-    }
-	return g;
-}
-[DEBUG] findInvocations found: lambda, defer
-[DEBUG] Macro @lambda at 512-523 result: 
-[DEBUG] Macro @defer at 519-529 result: 
-[DEBUG] executeDeferredMarkers: found 2 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 460
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_2.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -81,8 +56,8 @@ int main() {
 ==== COMPILATION ERROR ===
 Undefined symbols for architecture arm64:
   "_stderr", referenced from:
-      __exit_lambda in trace_2-77ad0f.o
-      _my_function in trace_2-77ad0f.o
+      __exit_lambda in trace_2-4bbaf3.o
+      _my_function in trace_2-4bbaf3.o
 ld: symbol(s) not found for architecture arm64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 

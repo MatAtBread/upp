@@ -1,6 +1,3 @@
-[DEBUG] findInvocations found: include, forward
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 0-25 result: #include "forward.h"
 Macro @forward failed: TypeError: Cannot read properties of undefined (reading 'root')
     at UppHelpersC.hoist (file://./src/upp_helpers_c.js:135:35)
     at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:21:13)

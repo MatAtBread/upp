@@ -1,15 +1,3 @@
-[DEBUG] findInvocations found: map
-[DEBUG] Macro @map at 48-64 result: 
-    for (int _i = 0; _i < sizeof(arr)/sizeof(arr[0]); _i++) {
-        int z = arr[_i];
-        if (_i % 2 == 0) {
-            { z = z + 10; }
-        } else {
-            { z = z + 100; }
-        }
-        arr[_i] = z;
-    }
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/map_4.c ===
 
 int main() {

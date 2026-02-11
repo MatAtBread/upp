@@ -1,4 +1,3 @@
-[DEBUG] findInvocations found: define, break, goto, defer, ret, method
 ./examples/recursive_macros_2.cup:35:81: warning: empty character constant [-Winvalid-pp-token]
    35 |                 const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
       |                                                                                 ^

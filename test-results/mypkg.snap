@@ -1,16 +1,10 @@
-[DEBUG] findInvocations found: include
-[DEBUG] findInvocations found: include, package
-[DEBUG] findInvocations found: define
-[DEBUG] findInvocations found: include, package
-[DEBUG] findInvocations found: define
-[DEBUG] findInvocations found: define
 Macro @define failed: Error: Macro @define not found
     at Registry.evaluateMacro (file://./src/registry.js:355:31)
     at Registry.transformNode (file://./src/registry.js:236:41)
     at Registry.transformNode (file://./src/registry.js:290:18)
     at Registry.transform (file://./src/registry.js:199:14)
     at Registry.loadDependency (file://./src/registry.js:126:40)
-    at UppHelpersC.loadDependency (file://./src/upp_helpers_base.js:164:23)
+    at UppHelpersC.loadDependency (file://./src/upp_helpers_base.js:163:23)
     at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:3:5)
     at Registry.evaluateMacro (file://./src/registry.js:387:20)
     at Registry.transformNode (file://./src/registry.js:236:41)

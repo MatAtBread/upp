@@ -1,4 +1,3 @@
-[DEBUG] findInvocations found: define, define, RefRelease, method, RefPtr, RefPtr, RefPtr, RefPtr, RefPtr
 ./examples/refptr.cup:123:5: warning: empty character constant [-Winvalid-pp-token]
   123 | ` : ''}
       |     ^

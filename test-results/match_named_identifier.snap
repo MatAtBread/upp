@@ -1,5 +1,3 @@
-[DEBUG] findInvocations found: retype
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/match_named_identifier.c ===
 
 /*@retype*/;

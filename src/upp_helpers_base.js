@@ -1,5 +1,4 @@
-import path from 'path';
-import fs from 'fs';
+let uniqueIdCounter = 1;
 
 /**
  * Base helper class providing general-purpose macro utilities.
@@ -381,7 +380,7 @@ class UppHelpersBase {
     }
 
     createUniqueIdentifier(prefix = 'v') {
-        const id = Math.random().toString(36).slice(2, 8);
+        const id = uniqueIdCounter++;
         return `${prefix}_${id}`;
     }
 

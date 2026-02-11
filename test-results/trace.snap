@@ -1,4 +1,3 @@
-[DEBUG] findInvocations found: trace
 Macro @trace failed: TypeError: fnNode.childForFieldName is not a function
     at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:5:25)
     at Registry.evaluateMacro (file://./src/registry.js:387:20)

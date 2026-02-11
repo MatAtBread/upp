@@ -1,6 +1,3 @@
-[DEBUG] findInvocations found: renameVar
-[DEBUG] Macro @renameVar at 81-108 result: int renamedX = 10;
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/with_references_test.c ===
 // Simple test for withReferences transformation rule tracking
 

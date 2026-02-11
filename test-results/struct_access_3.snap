@@ -1,10 +1,3 @@
-[DEBUG] findInvocations found: include, method
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 0-24 result: #include "method.h"
-[DEBUG] Macro @method at 88-106 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/struct_access_3.c ===
 #include "method.h"
 struct Point {

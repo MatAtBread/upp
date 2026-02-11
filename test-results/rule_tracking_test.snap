@@ -1,14 +1,3 @@
-[DEBUG] findInvocations found: include, method, testMacro
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 124-148 result: #include "method.h"
-[DEBUG] Macro @method at 184-209 result: 
-[DEBUG] Macro @testMacro at 252-268 result: 
-        Point p = {10, 20};
-        int val = p.getX();
-    
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on translation_unit at 0
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/rule_tracking_test.c ===
 // Test transformation rule tracking
 // This tests if rules registered by withReferences get re-evaluated on generated code

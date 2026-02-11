@@ -1,25 +1,3 @@
-[DEBUG] findInvocations found: include, include, trace
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 794-818 result: #include "lambda.h"
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
-[DEBUG] Macro @include at 814-837 result: #include "defer.h"
-[DEBUG] Macro @trace at 834-844 result: int my_function(int x) {
-    fputs("Entering: my_function\n", stderr);
-    @defer { fputs("Exiting: my_function\n", stderr); };
-    int g = 1;
-	for (int i=1; i < x; i++) {
-        g = g * i;
-        if (g>100) {
-            return -1;
-        }
-    }
-	return g;
-}
-[DEBUG] findInvocations found: defer
-[DEBUG] Macro @defer at 909-919 result: 
-[DEBUG] executeDeferredMarkers: found 1 nodes with markers
-[DEBUG] executeDeferredMarkers: executing markers on compound_statement at 857
-[DEBUG] executeDeferredMarkers: found 0 nodes with markers
 ==== examples/trace_1.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
@@ -85,9 +63,9 @@ int main() {
 ==== COMPILATION ERROR ===
 Undefined symbols for architecture arm64:
   "_stderr", referenced from:
-      _my_function in trace_1-748e19.o
-      _my_function in trace_1-748e19.o
-      _my_function in trace_1-748e19.o
+      _my_function in trace_1-41bb8c.o
+      _my_function in trace_1-41bb8c.o
+      _my_function in trace_1-41bb8c.o
 ld: symbol(s) not found for architecture arm64
 clang: error: linker command failed with exit code 1 (use -v to see invocation)
 
