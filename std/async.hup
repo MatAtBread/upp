@@ -11,7 +11,7 @@
     const name = sig.name;
 
     // Use withReferences to transform call sites
-    upp.withReferences(idNode, (refNode, helpers) => {
+    upp.withReferences(node, (refNode, helpers) => {
         // Find the call_expression ancestor
         let callNode = refNode;
         while (callNode && callNode.type !== 'call_expression' && callNode.startIndex === refNode.startIndex) {

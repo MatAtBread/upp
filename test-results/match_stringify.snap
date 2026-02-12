@@ -1,4 +1,4 @@
-==== examples/match_longify.c ===
+==== examples/match_stringify.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -12,31 +12,31 @@ extern void *stderr;
 extern void *_stderr;
 
 
-/*@longify(bar)*/;
-/*@longify(baz)*/;
+/*@longify(bar)*/
+/*@longify(baz)*/
 int foo = 100;
-long bar = 200L;
-long baz = 5L;
+char *bar = "200";
+char *baz = "5";
 void f() {
-    long bar = 4L;
+    char *bar = "4";
 }
 void global() {
     printf("global\n");
-    printf("bar is of type " "long" "\nbaz is of type " "long" "\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "char *", "char *");
 }
 int main() {
-    long bar = 5L;
+    char *bar = "5";
     printf("main\n");
-    printf("bar is of type %s\nbaz is of type %s\n", "long", "long");
+    printf("bar is of type %s\nbaz is of type %s\n", "char *", "char *");
     global();
     return 0;
 }
 
 ==== RUN OUTPUT ===
 main
-bar is of type long
-baz is of type long
+bar is of type char *
+baz is of type char *
 global
-bar is of type long
-baz is of type long
+bar is of type char *
+baz is of type char *
 

@@ -1,3 +1,9 @@
-[31m./examples/match_int.cup:1:1: error: [0] Macro @transform_int failed: upp.registerTransform is not a function[0m
+==== examples/match_int.c ===
 
-[31m^[0m
+/*@transform_int()*/
+long foo_long = 100;
+long bar_long = 200;
+int main() { return 0; }
+
+==== RUN OUTPUT ===
+

@@ -2,34 +2,33 @@
 #define __UPP_STDLIB_LAMBDA_H__
 
 @define lambda(...args) {
-
     // 1. Peek at the next node (function definition) WITHOUT consuming it yet.
     //    This preserves location data (startIndex/endIndex) for proper analysis.
     let fnNode = upp.nextNode('function_definition');
 
     // Fallback for anonymous block (compound_statement)
-    if (!fnNode) {
-        fnNode = upp.nextNode('compound_statement');
-    }
+    // if (!fnNode) {
+    //     fnNode = upp.nextNode('compound_statement');
+    // }
 
-    if (!fnNode) {
-        throw new Error("lambda expected function_definition or compound_statement");
-    }
+    // if (!fnNode) {
+    //     throw new Error("lambda expected function_definition or compound_statement");
+    // }
 
     // 2. Analyze Signature & Identifiers (while node is still in tree)
     let sig;
-    if (fnNode.type === 'compound_statement') {
-        sig = {
-            name: upp.createUniqueIdentifier('lambda_anon'),
-            returnType: 'void',
-            params: '()',
-            bodyNode: fnNode,
-            node: fnNode,
-            nameNode: null
-        };
-    } else {
-        sig = upp.getFunctionSignature(fnNode);
-    }
+    // if (fnNode.type === 'compound_statement') {
+    //     sig = {
+    //         name: upp.createUniqueIdentifier('lambda_anon'),
+    //         returnType: 'void',
+    //         params: '()',
+    //         bodyNode: fnNode,
+    //         node: fnNode,
+    //         nameNode: null
+    //     };
+    // } else {
+    sig = upp.getFunctionSignature(fnNode);
+    // }
 
     const fnName = sig.name;
     const returnType = sig.returnType;
@@ -54,7 +53,7 @@
 
     upp.walk(bodyNode, (node) => {
         if (node.type === 'identifier') {
-            const def = upp.getDefinition(node);
+            const def = upp.findDefinitionOrNull(node);
             if (def) {
                 if (isInsideFn(def)) {
                     // Local variable, no capture needed (it's in scope)
@@ -66,8 +65,8 @@
 
                     let isStaticOrExtern = false;
 
-                    // Check declaration storage class
-                    let decl = def.parent;
+                    let decl = def;
+                    // If it's still not a top-level container, walk up
                     while (decl && !['declaration', 'function_definition', 'parameter_declaration'].includes(decl.type)) {
                         decl = decl.parent;
                     }
@@ -94,10 +93,7 @@
                     }
 
                     if (!isStaticOrExtern) {
-
                         captureMap.set(node.text, def);
-                    } else {
-
                     }
                 }
             }
@@ -123,7 +119,7 @@
     const hoistReplacements = [];
     upp.walk(bodyNode, (node) => {
         if (node.type === 'identifier' && captureMap.has(node.text)) {
-            const def = upp.getDefinition(node);
+            const def = upp.findDefinitionOrNull(node);
             if (def && !isInsideFn(def)) {
                 hoistReplacements.push({
                     start: node.startIndex,

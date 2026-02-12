@@ -21,7 +21,7 @@ void os_start(void (*fn)()) {
     printf("World\n");
 }
 int main() {
-    afn();
+    os_start(afn);
     return 0;
 }
 
@@ -33,5 +33,7 @@ int main() {
 #endif
 
 ==== RUN OUTPUT ===
+Run in background
 World
+Finished
 

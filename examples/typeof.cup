@@ -1,0 +1,26 @@
+#include "io-lite.h"
+
+struct x {
+    int a;
+};
+
+@define typeOf(id) {
+    const node = upp.findDefinition(id);
+    const type = upp.getType(node);
+    return upp.code`"${type}"`;
+}
+
+struct x myX = { 0 };
+
+static unsigned int staticVar;
+extern struct x * exVar[];
+int main(int argc, char * argv[]) {
+    long local;
+    printf("local is of type " @typeOf(local) "\n");
+    printf("argc is of type " @typeOf(argc) "\n");
+    printf("argv is of type " @typeOf(argv) "\n");
+    printf("staticVar is of type " @typeOf(staticVar) "\n");
+    printf("myX is of type " @typeOf(myX) "\n");
+    printf("exVar is of type " @typeOf(exVar) "\n");
+    return 0;
+}

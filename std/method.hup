@@ -33,7 +33,7 @@
             if (!objectNode || !methodNode) return false;
             if (methodNode.text !== originalName) return false;
 
-            const objDef = helpers.findDefinition(objectNode);
+            const objDef = helpers.findDefinitionOrNull(objectNode);
             if (!objDef) return false;
 
             let objType = helpers.getType(objDef);
@@ -42,15 +42,13 @@
             if (cleanObjType === cleanTarget) return true;
 
             // Try to resolve typedef
-            // findDefinition defaults to { variable: true, tag: true }, and 'variable' covers typedefs in our helper
-            const typeDefId = helpers.findDefinition(cleanObjType);
-            if (typeDefId && typeDefId.parent && typeDefId.parent.type === 'type_definition') {
-                 const typeNode = typeDefId.parent.children.find(c => 
+            const typeDef = helpers.findDefinition(cleanObjType);
+            if (typeDef && typeDef.type === 'type_definition') {
+                 const typeNode = typeDef.children.find(c => 
                     c.type !== 'type_identifier' && 
                     c.type !== 'storage_class_specifier' && 
-                    c.text !== 'typedef' && // Explicitly check for typedef text just in case
-                    c.type !== ';' &&
-                    c.id !== typeDefId.id
+                    c.text !== 'typedef' && 
+                    c.type !== ';'
                  );
                  
                  if (typeNode) {

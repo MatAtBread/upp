@@ -106,6 +106,23 @@ export class SourceTree {
      * @returns {SourceNode}
      */
     static fragment(code, language) {
+        if (typeof code !== 'string') return code;
+
+        const trimmed = code.trim();
+        // Special case: If it's a single valid identifier, parse it as such to avoid statement wrappers/errors
+        const idRegex = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+        const keywords = ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return', 'break', 'continue', 'void', 'int', 'char', 'float', 'double', 'struct', 'union', 'enum', 'typedef', 'static', 'extern', 'const', 'volatile', 'inline'];
+        if (idRegex.test(trimmed) && !keywords.includes(trimmed)) {
+            const dummy = `void* __tmp = (void*)${trimmed};`;
+            const fragTree = new SourceTree(dummy, language);
+            // We want the identifier that matches our text, not the dummy '__tmp'
+            const idNode = fragTree.root.find(n => (n.type === 'identifier' || n.type === 'type_identifier') && n.text === trimmed)[0];
+            if (idNode) {
+                // Return the identifier node directly. It will be migrated during attachment.
+                return idNode;
+            }
+        }
+
         const parser = new Parser();
         parser.setLanguage(language);
         let tree = parser.parse((index) => {
@@ -293,9 +310,18 @@ export class SourceNode {
 
     /** @returns {string} */
     get text() {
-        if (this._capturedText !== undefined) return this._capturedText;
         if (this.startIndex === -1) return "";
         return this.tree.source.slice(this.startIndex, this.endIndex);
+    }
+
+    /** 
+     * Returns the name to use for symbol resolution. 
+     * Prioritizes _capturedText to allow resolution by original name after a rename.
+     * @returns {string} 
+     */
+    get searchableText() {
+        if (this._capturedText !== undefined) return this._capturedText.trim();
+        return this.text.trim();
     }
 
     /** @param {string} value */
@@ -426,14 +452,43 @@ export class SourceNode {
      * @param {SourceNode|SourceTree|string} newNode The node or text to replace with.
      * @returns {SourceNode}
      */
-    replaceWith(newNode) {
+    replaceWith(newNodeContent) {
+        const isNewObject = newNodeContent instanceof SourceNode || (newNodeContent && newNodeContent.constructor && newNodeContent.constructor.name === 'SourceTree');
+        let newNode = newNodeContent;
+        const originalText = this.text;
+        const oldCaptured = this._capturedText;
+
+        if (Array.isArray(newNode)) {
+            // Handle array of nodes/text
+            const textParts = newNode.map(n => typeof n === 'string' ? n : n.text);
+            const combinedText = textParts.join('');
+            const start = this.startIndex;
+            const end = this.endIndex;
+            this.tree.edit(start, end, combinedText);
+
+            const attached = this._attachNewNode(newNode, start);
+            const attachedList = Array.isArray(attached) ? attached : (attached ? [attached] : []);
+
+            // If we have parent, update it
+            const parent = this.parent;
+            if (parent) {
+                const idx = parent.children.indexOf(this);
+                if (idx > -1) {
+                    attachedList.forEach(n => n.parent = parent);
+                    parent.children.splice(idx, 1, ...attachedList);
+                }
+            }
+            this.startIndex = -1; // Invalidate self
+            return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList);
+        }
+
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment(newNode, this.tree.language);
         }
 
         const start = this.startIndex;
         const end = this.endIndex;
-        const newText = newNode.text;
+        const newText = newNode.text || "";
 
         // Capture parent before we are detached
         const parent = this.parent;
@@ -444,16 +499,11 @@ export class SourceNode {
 
         this.tree.edit(start, end, newText);
 
-        // Deeply invalidate children, but keep self reference stable if we can
-        for (const child of this.children) {
-            child._invalidateRecursively();
-        }
-
         const attached = this._attachNewNode(newNode, start);
         const attachedList = Array.isArray(attached) ? attached : (attached ? [attached] : []);
 
         // re-point current node if there is at least one new node
-        if (attachedList.length > 0) {
+        if (attachedList.length > 0 && !isNewObject) {
             const firstNew = attachedList[0];
             const oldId = this.id;
 
@@ -468,22 +518,61 @@ export class SourceNode {
             this.startIndex = newStartIndex;
             this.endIndex = newEndIndex;
             this.type = newType;
+            // Recursive identity transfer (important for structural morphing like renames)
+            const transferIdentity = (oldNodes, newNodes) => {
+                // Heuristic: If we have exactly one identifier in both, it's likely a rename
+                const oldIds = oldNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
+                const newIds = newNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
+                if (oldIds.length === 1 && newIds.length === 1) {
+                    const oldIdNode = oldIds[0];
+                    const newIdNode = newIds[0];
+                    if (newIdNode._capturedText === undefined) {
+                        newIdNode._capturedText = oldIdNode.text;
+                    }
+                }
+                // Also match by fieldName?
+                for (const oldChild of oldNodes) {
+                    if (!oldChild.fieldName) continue;
+                    const newChild = newNodes.find(c => c.fieldName === oldChild.fieldName);
+                    if (newChild && newChild.type === oldChild.type) {
+                        transferIdentity(oldChild.children, newChild.children);
+                    }
+                }
+            };
+
+            const oldChildren = this.children;
             this.children = newChildren;
             this.data = newData;
-            // Preserve captured text if it was explicitly set (e.g. by consume)
-            if (firstNew._capturedText !== undefined) this._capturedText = firstNew._capturedText;
+            transferIdentity(oldChildren, this.children);
 
-            // Markers: Should we keep old ones or take new ones?
-            // Usually take new ones as this is a new identity.
+            // Preserve captured text (important for stable symbol resolution during renames)
+            if (oldCaptured !== undefined) {
+                this._capturedText = oldCaptured;
+            } else if (firstNew._capturedText !== undefined) {
+                this._capturedText = firstNew._capturedText;
+            } else if (originalText !== newText && (this.type === 'identifier' || this.type === 'type_identifier')) {
+                // If it's a rename of an identifier, capture the old name for symbol resolution continuity
+                this._capturedText = originalText;
+            }
+
+            // Markers: Should we take new ones? Usually yes as this is a new identity.
             this.markers = firstNew.markers;
 
             // Update children parent pointers to this (morphed) node
             for (const child of this.children) {
                 child.parent = this;
             }
-            // Ensure even if ID changed (it shouldn't if we don't assign it), we are in cache
+
+            // Ensure ID is updated so we match the new tree-sitter node in subsequent wraps
+            if (firstNew.id !== oldId) {
+                this.tree.nodeCache.delete(oldId);
+                this.id = firstNew.id;
+            }
             this.tree.nodeCache.set(this.id, this);
-        } else {
+
+            // Crucially, the survivor in the tree must be 'this', not 'firstNew'
+            attachedList[0] = this;
+        } else if (attachedList.length === 0) {
             // If we replaced with nothing, THEN we invalidate self
             this.startIndex = -1;
         }
@@ -494,7 +583,7 @@ export class SourceNode {
             parent.children.splice(idx, 1, ...attachedList);
         }
 
-        return attached;
+        return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList);
     }
 
     /**
@@ -529,7 +618,7 @@ export class SourceNode {
     /**
      * Inserts a node or text before this node.
      * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-     * @returns {SourceNode|SourceNode[]}You o
+     * @returns {SourceNode|SourceNode[]}
      */
     insertBefore(newNode) {
         if (typeof newNode === 'string') {
@@ -555,28 +644,42 @@ export class SourceNode {
         return attached;
     }
 
-    /**
-     * Attaches a new node at a given offset within this node's tree,
-     * @param {number} insertionOffset The absolute offset where to attach.
-     * @returns {SourceNode|SourceNode[]}
-     * @private
-     */
     _attachNewNode(newNode, insertionOffset) {
+        if (Array.isArray(newNode)) {
+            let currentOffset = insertionOffset;
+            const results = [];
+            for (const item of newNode) {
+                const attached = this._attachNewNode(item, currentOffset);
+                if (Array.isArray(attached)) {
+                    results.push(...attached);
+                    attached.forEach(n => currentOffset += n.text.length);
+                } else if (attached) {
+                    results.push(attached);
+                    currentOffset += attached.text.length;
+                } else if (typeof item === 'string') {
+                    currentOffset += item.length;
+                }
+            }
+            return results;
+        }
+
         let rootNode = null;
         if (newNode instanceof SourceNode) {
             const delta = insertionOffset - newNode.startIndex;
 
             const migrate = (n) => {
-                if (n.tree && n.tree !== this.tree) {
-                    n.tree.nodeCache.delete(n.id);
-                }
-                if (n.tree !== this.tree) {
-                    this.tree.nodeCache.set(n.id, n);
-                }
+                const oldTree = n.tree;
+                const oldId = n.id;
+
+                // If moving between trees or if ID changed, update cache
+                // We always update to be safe during complex migrations
+                if (oldTree) oldTree.nodeCache.delete(oldId);
 
                 n.tree = this.tree;
                 n.startIndex += delta;
                 n.endIndex += delta;
+
+                this.tree.nodeCache.set(n.id, n);
                 n.children.forEach(migrate);
             };
 
@@ -635,6 +738,10 @@ export class SourceNode {
             }
         }
         return current;
+    }
+
+    childForFieldName(fieldName) {
+        return this.findChildByFieldName(fieldName);
     }
 
     /**

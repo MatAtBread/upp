@@ -48,6 +48,14 @@ class UppHelpersBase {
         return this.withNode(this.findRoot(), callback);
     }
 
+    registerTransform(callback) {
+        return this.atRoot(callback);
+    }
+
+    registerTransformRule(rule) {
+        this.registry.registerTransformRule(rule);
+    }
+
     replace(n, newContent) {
         if (!n) return "";
         if (n.replaceWith) {
@@ -243,7 +251,7 @@ class UppHelpersBase {
         const nextSearchIndex = node.startIndex;
 
         if (!isHoisted) {
-            this.replace(node, "");
+            node.remove();
         }
 
         this.consumedIds.add(node.id);
@@ -365,7 +373,8 @@ class UppHelpersBase {
     }
 
     findScope() {
-        return this.findEnclosing(this.lastConsumedNode || this.contextNode, ['compound_statement', 'translation_unit']);
+        const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
+        return this.findEnclosing(startNode, ['compound_statement', 'translation_unit']);
     }
 
     findEnclosing(node, types) {

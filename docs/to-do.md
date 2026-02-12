@@ -1,0 +1,3 @@
+1. Update JS Doctypes. Make SourceNode generic, with a parameter that represents the type of the node. This should be used to generate the correct type for the node.
+2. Determine test coverage. Mark any code path that is not exercised and make it throw an exception. If it is not reachable, mark it as dead code and comment it out.
+3. Consider eliminating SourceNode.tree as a data member, and make it a getter that walks up the parent chain until it reaches the root translation_unit node.

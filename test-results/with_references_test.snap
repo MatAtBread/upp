@@ -4,20 +4,10 @@
 int main() {
     int renamedX = 10;
     
-    int y = x + 5; // This should become: int y = renamedX + 5
-    int z = x * 2; // This should become: int z = renamedX * 2
-    return x; // This should become: return renamedX;
+    int y = renamedX + 5; // This should become: int y = renamedX + 5
+    int z = renamedX * 2; // This should become: int z = renamedX * 2
+    return renamedX; // This should become: return renamedX;
 }
 
-==== COMPILATION ERROR ===
-./examples/with_references_test.c:6:13: error: use of undeclared identifier 'x'
-    6 |     int y = x + 5; // This should become: int y = renamedX + 5
-      |             ^
-./examples/with_references_test.c:7:13: error: use of undeclared identifier 'x'
-    7 |     int z = x * 2; // This should become: int z = renamedX * 2
-      |             ^
-./examples/with_references_test.c:8:12: error: use of undeclared identifier 'x'
-    8 |     return x; // This should become: return renamedX;
-      |            ^
-3 errors generated.
+==== RUN OUTPUT ===
 

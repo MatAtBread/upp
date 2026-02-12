@@ -11,29 +11,24 @@ extern char *strcpy(char *dest, const char *src);
 extern void *stderr;
 extern void *_stderr;
 
-/*@rename(y)*/
-int x = 10;
-void print_x() {
-    printf("Global x: %d\n", x);
-}
-void local_rename() {
-    /*@rename(a)*/ int b = 10;
-    {
-        // Shadowed
-        int b = 40;
-    }
-    return b;
+/*@rename(y)*/ int y = 10;
+void print_x() { printf("Global x: %d\n", y); }
+int local_rename() {
+  /*@rename(a)*/ int a = 10;
+  {
+    // Shadowed
+    int b = 40;
+  }
+  return a;
 }
 int main() {
-    print_x();
-    x = 20;
-    print_x();
-    return 0;
+  print_x();
+  y = 20;
+  print_x();
+  return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/find_refs_test.c:24:5: error: void function 'local_rename' should not return a value [-Wreturn-mismatch]
-   24 |     return b;
-      |     ^      ~
-1 error generated.
+==== RUN OUTPUT ===
+Global x: 10
+Global x: 20
 

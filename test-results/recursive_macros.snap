@@ -21,7 +21,7 @@ typedef struct String String;
     printf("%s\n", s->data);
 }
  void _String_method_Defer(String *s) {
-    _String_method_print(&s);
+    s->print();
     free(s->data);
 }
 int main() {
@@ -44,5 +44,9 @@ int main() {
 ==== std/method.h ===
 
 
-==== RUN OUTPUT ===
+==== COMPILATION ERROR ===
+./examples/recursive_macros.c:23:8: error: no member named 'print' in 'struct String'
+   23 |     s->print();
+      |     ~  ^
+1 error generated.
 

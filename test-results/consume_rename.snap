@@ -14,15 +14,15 @@ extern void *_stderr;
 
 // 1. Using context (Safe, recommended for refactoring)
 /*@rename_context(y_ctx)*/
-int x_ctx = 10;
+int y_ctx = 10;
 void test_ctx() {
-    x_ctx = 20;
+    y_ctx = 20;
 }
 // 2. Using consume (Requires manual reconstruction)
-int x_cons = 100;
+int y_cons = 100;
 
 void test_cons() {
-    x_cons = 200;
+    y_cons = 200;
 }
 int main() {
     return 0;

@@ -75,7 +75,7 @@ Macro authors interact with the system through the `upp` object passed to the ma
 | Method | Description |
 | :--- | :--- |
 | `match(node, pattern, callback)` | Matches a pattern string against a node. Supports named captures. |
-| `matchReplaceAll(node, pat, cb)` | Recursively finds and replaces all matches of a pattern within a node. |
+| `matchReplace(node, pat, cb)` | Recursively finds and replaces all matches of a pattern within a node. |
 | `getDefinition(target)` | Finds the definition node for an identifier or call expression. |
 | `findReferences(node)` | Finds all references to a specific definition node. |
 | `getType(node)` | Extracts the C type string (e.g., `int`, `char *`) for a variable or expression. |
@@ -102,6 +102,6 @@ Macro authors interact with the system through the `upp` object passed to the ma
 ## Best Practices for Macro Authors
 
 1. **Use `upp.code`**: Always use the `code` tagged template for generating replacements to ensure embedded nodes are handled correctly.
-2. **Prefer Pattern Matching**: Use `upp.match` and `upp.matchReplaceAll` instead of manual tree traversal where possible.
+2. **Prefer Pattern Matching**: Use `upp.match` and `upp.matchReplace` instead of manual tree traversal where possible.
 3. **Be Specific with `consume`**: Provide clear error messages when `consume` fails to help users debug their code.
 4. **Idempotency**: Ensure that your macros can be run multiple times or in nested contexts without side effects (unless intentional).

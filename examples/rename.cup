@@ -2,8 +2,8 @@
 
 @define rename_context(newName) {
     const node = upp.nextNode('declaration');
-    if (!node) return;
     upp.withReferences(node, (ref) => newName);
+    return null; // Delete the macro invocation from the source
 }
 
 @define rename_consume(newName) {
@@ -12,20 +12,31 @@
     return node;
 }
 
+@define rename_modify(newName) {
+    const node = upp.nextNode('declaration');
+    upp.withReferences(node, (ref) => { ref.text = newName; });
+    return null; // Delete the macro invocation from the source
+}
+
 // 1. Using context (Safe, recommended for refactoring)
-@rename_context(y_ctx)
-int x_ctx = 10;
+@rename_context(y_ctx) int x_ctx = 10;
 
 void test_ctx() {
     x_ctx = 20;
 }
 
 // 2. Using consume (Requires manual reconstruction)
-@rename_consume(y_cons)
-int x_cons = 100;
+@rename_consume(y_cons) int x_cons = 100;
 
 void test_cons() {
     x_cons = 200;
+}
+
+// 3. Using node modification
+@rename_modify(y_mod) int x_mod = 1000;
+
+void test_mod() {
+    x_mod = 2000;
 }
 
 int main() {

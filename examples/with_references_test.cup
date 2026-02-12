@@ -11,9 +11,9 @@
     });
 
     // Rename the declaration itself
-    const declText = varDecl.text.replace(oldName, newName);
+    varDecl.find('identifier')[0].text = newName;
 
-    return declText + marker;
+    return [varDecl, marker];
 }
 
 int main() {

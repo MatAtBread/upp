@@ -1,8 +1,4 @@
-==== examples/forward.c ===
-void foo();
-void bar();
-
-#include "forward.h"
+==== examples/rename.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -15,27 +11,26 @@ extern char *strcpy(char *dest, const char *src);
 extern void *stderr;
 extern void *_stderr;
 
-;
-void foo() {
-    printf("Foo calls bar\n");
-    bar();
+
+
+// 1. Using context (Safe, recommended for refactoring)
+ int y_ctx = 10;
+void test_ctx() {
+    y_ctx = 20;
 }
-void bar() {
-    printf("Bar called\n");
+// 2. Using consume (Requires manual reconstruction)
+int y_cons = 100; 
+void test_cons() {
+    y_cons = 200;
+}
+// 3. Using node modification
+ int y_mod = 1000;
+void test_mod() {
+    y_mod = 2000;
 }
 int main() {
-    foo();
     return 0;
 }
 
-==== std/forward.h ===
-#ifndef __UPP_STDLIB_FORWARD_H__
-#define __UPP_STDLIB_FORWARD_H__
-
-
-#endif
-
 ==== RUN OUTPUT ===
-Foo calls bar
-Bar called
 

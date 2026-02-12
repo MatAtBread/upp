@@ -10,12 +10,16 @@ typedef struct Point Point;
 }
 int main() {
     Point p;
-    int r = _Point_method_distance(&p);
+    int r = p.distance();
     return 0;
 }
 
 ==== std/method.h ===
 
 
-==== RUN OUTPUT ===
+==== COMPILATION ERROR ===
+./examples/struct_access.c:12:15: error: no member named 'distance' in 'struct Point'
+   12 |     int r = p.distance();
+      |             ~ ^
+1 error generated.
 

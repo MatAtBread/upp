@@ -8,12 +8,12 @@
 
 @define longify(name) {
     upp.matchReplace(upp.root, `int ${name} = $val__number_literal;`, ({ val }) => {
-        return upp.code`long ${name} = ${val}L;`;
+        return upp.code`char *${name} = "${val}";`;
     }, { deep: true });
 }
 
-@longify(bar);
-@longify(baz);
+@longify(bar)
+@longify(baz)
 
 int foo = 100;
 int bar = 200;
@@ -25,7 +25,7 @@ void f() {
 
 void global() {
     printf("global\n");
-    printf("bar is of type " @typeOf(bar) "\nbaz is of type " @typeOf(baz) "\n");
+    printf("bar is of type %s\nbaz is of type %s\n", @typeOf(bar), @typeOf(baz));
 }
 
 int main() {

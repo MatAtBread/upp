@@ -12,12 +12,16 @@ int main() {
     Point p;
     p.x = 10;
     p.y = 20;
-    int r = _Point_method_distance(&p);
+    int r = p.distance();
     return 0;
 }
 
 ==== std/method.h ===
 
 
-==== RUN OUTPUT ===
+==== COMPILATION ERROR ===
+./examples/struct_access_3.c:14:15: error: no member named 'distance' in 'struct Point'
+   14 |     int r = p.distance();
+      |             ~ ^
+1 error generated.
 

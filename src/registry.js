@@ -252,14 +252,19 @@ class Registry {
                     }, context.tree.source, helpers, context.originPath);
 
                     if (result !== undefined) {
-                        let finalResult = (result === null) ? "" : String(result);
+                        const isNode = result instanceof SourceNode;
+                        const isArray = Array.isArray(result);
 
+                        let finalResult = result;
 
-                        // Pre-process the result to wrap nested macros in comments (like prepareSource does)
-                        // otherwise they will be parsed as invalid syntax or identifiers
-                        if (typeof finalResult === 'string' && finalResult.includes('@')) {
-                            const prepared = this.prepareSource(finalResult, context.originPath);
-                            finalResult = prepared.cleanSource;
+                        if (!isNode && !isArray) {
+                            finalResult = (result === null) ? "" : String(result);
+
+                            // Pre-process string results to wrap nested macros in comments
+                            if (typeof finalResult === 'string' && finalResult.includes('@')) {
+                                const prepared = this.prepareSource(finalResult, context.originPath);
+                                finalResult = prepared.cleanSource;
+                            }
                         }
 
                         const newNodes = helpers.replace(node, finalResult);
