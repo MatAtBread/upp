@@ -1,0 +1,9 @@
+==== examples/code_tree_stability.c ===
+
+int wrapper() { int x = 10; return 0; } 
+int main() {
+    return wrapper();
+}
+
+==== RUN OUTPUT ===
+

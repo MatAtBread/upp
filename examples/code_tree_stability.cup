@@ -29,8 +29,12 @@
     return newTree;
 }
 
+#include "io-lite.h"
+
 @assertStability int x = 10
 
 int main() {
-    return wrapper();
+    int r = wrapper();
+    printf("Stable node test: %s\n", r ? "Failure" : "Success");
+    return r;
 }
