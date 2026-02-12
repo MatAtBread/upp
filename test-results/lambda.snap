@@ -12,7 +12,7 @@ extern void *stderr;
 extern void *_stderr;
 #include "lambda.h"
 struct hello_lambda_ctx {
-    int  *direction;
+    int *direction;
     char * *name;
 
 }

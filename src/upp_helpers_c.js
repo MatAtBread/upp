@@ -146,7 +146,7 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {string} The C type string (e.g. "char *").
      */
     getType(defNode) {
-        if (!defNode) return "void *";
+        if (!defNode) throw new Error("helpers.getType: Invalid node");//return "void *";
 
         // Walk up to find declaration
         let declNode = defNode;
@@ -158,7 +158,9 @@ class UppHelpersC extends UppHelpersBase {
             declNode = declNode.parent;
         }
 
-        if (!declNode) return "void *";
+        if (!declNode) {
+            throw new Error("helpers.getType: Node is not a declaration");
+        }
 
         let suffix = "";
         // Check for pointer declarators in children
@@ -178,7 +180,7 @@ class UppHelpersC extends UppHelpersBase {
         }
         const baseType = typeNode ? typeNode.text : "void";
 
-        return baseType + " " + suffix;
+        return (baseType + " " + suffix).trim();
     }
 
     /**

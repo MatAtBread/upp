@@ -1,3 +1,42 @@
-[31m./examples/match_longify.cup:1:1: error: [0] Macro @longify failed: upp.registerTransform is not a function[0m
+==== examples/match_longify.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
-[31m^[0m
+
+/*@longify(bar)*/
+/*@longify(baz)*/
+int foo = 100;
+long bar = 200L;
+void f() {
+    int bar = 4;
+}
+void global() {
+    printf("global\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "long", "long");
+}
+int main() {
+    int bar = 5;
+    long baz = 5L;
+    printf("main\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "int", "long");
+    global();
+    return 0;
+}
+
+==== RUN OUTPUT ===
+main
+bar is of type int
+baz is of type long
+global
+bar is of type long
+baz is of type long
+
