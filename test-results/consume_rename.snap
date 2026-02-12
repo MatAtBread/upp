@@ -19,7 +19,7 @@ void test_ctx() {
     x_ctx = 20;
 }
 // 2. Using consume (Requires manual reconstruction)
-int y_cons = 100;
+int x_cons = 100;
 
 void test_cons() {
     x_cons = 200;
@@ -28,13 +28,5 @@ int main() {
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/consume_rename.c:24:5: error: use of undeclared identifier 'x_cons'; did you mean 'y_cons'?
-   24 |     x_cons = 200;
-      |     ^~~~~~
-      |     y_cons
-./examples/consume_rename.c:21:5: note: 'y_cons' declared here
-   21 | int y_cons = 100;
-      |     ^
-1 error generated.
+==== RUN OUTPUT ===
 

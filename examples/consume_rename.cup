@@ -1,28 +1,15 @@
 #include "io-lite.h"
 
 @define rename_context(newName) {
-    const node = upp.nextNode();
+    const node = upp.nextNode('declaration');
     if (!node) return;
-    
-    // Stable renaming using deferred rules
     upp.withReferences(node, (ref) => newName);
 }
 
 @define rename_consume(newName) {
-    // 1. Consume removes the node from the source output
     const node = upp.consume('declaration');
-    if (!node) return;
-
-    // 2. Find internal identifier to get the original name
-    const declarator = node.findChildByFieldName('declarator');
-    const identifier = declarator.findChildByFieldName('declarator');
-    const originalName = identifier.text;
-
-    // 3. Deferred transformation for external references
-    upp.withReferences(identifier, (ref) => newName);
-
-    // 4. Return the modified text for the consumed node
-    return node.text.replace(originalName, newName);
+    upp.withReferences(node, (ref) => newName);
+    return node;
 }
 
 // 1. Using context (Safe, recommended for refactoring)

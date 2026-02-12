@@ -308,6 +308,25 @@ export class SourceNode {
         return this.children.length;
     }
 
+    get named() {
+        return Object.fromEntries(this.children.filter(c => c.isNamed).map(c => [c.fieldName, c]));
+    }
+    /**
+     * @returns {Object}
+     */
+    toJSON() {
+        return {
+            id: this.id,
+            type: this.type,
+            fieldName: this.fieldName,
+            startIndex: this.startIndex,
+            endIndex: this.endIndex,
+            text: this.text,
+            children: this.children.map(c => c.toJSON()),
+            named: this.named
+        };
+    }
+
     /** 
      * @param {number} idx 
      * @returns {SourceNode} 
@@ -625,22 +644,6 @@ export class SourceNode {
      */
     findChildByFieldName(fieldName) {
         return this.children.find(c => c.fieldName === fieldName) || null;
-    }
-
-    /**
-     * Serializes the node to JSON, avoiding circular references (`tree` and `parent`).
-     * @returns {Object}
-     */
-    toJSON() {
-        return {
-            id: this.id,
-            type: this.type,
-            fieldName: this.fieldName,
-            startIndex: this.startIndex,
-            endIndex: this.endIndex,
-            text: this.text,
-            children: this.children
-        };
     }
 
     /**
