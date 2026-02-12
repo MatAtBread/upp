@@ -8,8 +8,8 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const EXAMPLES_DIR = path.join(__dirname, 'examples');
-const RESULTS_DIR = path.join(__dirname, 'test-results');
+const EXAMPLES_DIR = path.join(__dirname, '../examples');
+const RESULTS_DIR = path.join(__dirname, '../test-results');
 const UPDATE_FLAG = process.argv.includes('--update');
 
 if (!fs.existsSync(RESULTS_DIR)) {

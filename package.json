@@ -25,15 +25,14 @@
   "type": "module",
   "main": "index.js",
   "bin": {
-    "upp": "index.js",
-    "upp-transpile": "transpile.js"
+    "upp": "index.js"
   },
   "directories": {
     "example": "examples",
     "test": "test"
   },
   "scripts": {
-    "test": "node test_runner.js && ./test/run.sh",
+    "test": "node test/runner.js && ./test/run.sh",
     "clean": "rm -rf test-results/*"
   },
   "dependencies": {
