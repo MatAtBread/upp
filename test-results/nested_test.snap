@@ -1,20 +1,23 @@
 ==== examples/nested_test.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 
-void main() {
-    int result = @Inner(5) + @Inner(10);
+int main() {
+    int result = (5 * 2) + (10 * 2);
+    printf("Result: %d\n", result);
+    return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/nested_test.c:3:1: warning: return type of 'main' is not 'int' [-Wmain-return-type]
-    3 | void main() {
-      | ^
-./examples/nested_test.c:3:1: note: change return type to 'int'
-    3 | void main() {
-      | ^~~~
-      | int
-./examples/nested_test.c:4:18: error: expected expression
-    4 |     int result = @Inner(5) + @Inner(10);
-      |                  ^
-1 warning and 1 error generated.
+==== RUN OUTPUT ===
+Result: 30
 

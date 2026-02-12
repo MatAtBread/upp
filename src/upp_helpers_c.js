@@ -145,30 +145,68 @@ class UppHelpersC extends UppHelpersBase {
      * @param {SourceNode} defNode - The definition identifier node.
      * @returns {string} The C type string (e.g. "char *").
      */
-    getType(defNode) {
-        if (!defNode) throw new Error("helpers.getType: Invalid node");//return "void *";
+    getType(node) {
+        if (!node) throw new Error("helpers.getType: Invalid node");
 
-        // Walk up to find declaration
-        let declNode = defNode;
-        while (declNode &&
-            declNode.type !== 'declaration' &&
-            declNode.type !== 'parameter_declaration' &&
-            declNode.type !== 'field_declaration' &&
-            declNode.type !== 'type_definition') {
-            declNode = declNode.parent;
+        let idNode = (node.type === 'identifier' || node.type === 'type_identifier') ? node : null;
+        let declNode = node;
+
+        if (!idNode) {
+            // Find the declaration/parameter/field/typedef container if not already one
+            while (declNode &&
+                declNode.type !== 'declaration' &&
+                declNode.type !== 'parameter_declaration' &&
+                declNode.type !== 'field_declaration' &&
+                declNode.type !== 'type_definition' &&
+                declNode.type !== 'function_definition' &&
+                declNode.type !== 'struct_specifier' &&
+                declNode.type !== 'union_specifier' &&
+                declNode.type !== 'enum_specifier') {
+                declNode = declNode.parent;
+            }
+
+            if (!declNode) throw new Error("helpers.getType: Node is not a declaration");
+
+            // Find the primary identifier in this declaration to trace declarators
+            const ids = declNode.find(n => n.type === 'identifier' || n.type === 'type_identifier');
+            idNode = ids.find(id => {
+                let p = id.parent;
+                while (p && p !== declNode) {
+                    if (p.type.endsWith('declarator') || p.type === 'init_declarator') return true;
+                    p = p.parent;
+                }
+                return false;
+            }) || ids[0];
+        } else {
+            // Identifier provided, find its declaration container
+            while (declNode &&
+                declNode.type !== 'declaration' &&
+                declNode.type !== 'parameter_declaration' &&
+                declNode.type !== 'field_declaration' &&
+                declNode.type !== 'type_definition' &&
+                declNode.type !== 'function_definition' &&
+                declNode.type !== 'struct_specifier' &&
+                declNode.type !== 'union_specifier' &&
+                declNode.type !== 'enum_specifier') {
+                declNode = declNode.parent;
+            }
         }
 
-        if (!declNode) {
-            throw new Error("helpers.getType: Node is not a declaration");
-        }
+        if (!declNode) throw new Error("helpers.getType: Could not find declaration container");
 
+        let prefix = "";
         let suffix = "";
-        // Check for pointer declarators in children
-        const ptrs = declNode.find('pointer_declarator');
-        for (const p of ptrs) {
-            // Validate it wraps our identifier?
-            if (this.isDescendant(declNode, p)) {
-                suffix += "*";
+
+        // Walk up from the identifier to the declaration to collect pointers and arrays
+        if (idNode) {
+            let p = idNode;
+            while (p && p !== declNode) {
+                if (p.type === 'pointer_declarator') {
+                    prefix += "*";
+                } else if (p.type === 'array_declarator') {
+                    suffix += "[]";
+                }
+                p = p.parent;
             }
         }
 
@@ -177,10 +215,70 @@ class UppHelpersC extends UppHelpersBase {
             typeNode = declNode.children.find(c =>
                 ['primitive_type', 'type_identifier', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(c.type)
             );
+            // If declNode is a specifier itself, it's the type
+            if (!typeNode && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
+                typeNode = declNode;
+            }
         }
-        const baseType = typeNode ? typeNode.text : "void";
 
-        return (baseType + " " + suffix).trim();
+        let baseType = typeNode ? typeNode.text : "void";
+        if (typeNode && (typeNode.type === 'struct_specifier' || typeNode.type === 'union_specifier' || typeNode.type === 'enum_specifier')) {
+            // For complex specifiers, just get the tag part if possible
+            const tag = typeNode.child(1);
+            const kind = typeNode.type.split('_')[0];
+            baseType = tag ? `${kind} ${tag.text}` : typeNode.text;
+        }
+
+        let result = baseType;
+        if (prefix) result += " " + prefix;
+        if (suffix) result += suffix;
+
+        return result.trim();
+    }
+
+    /**
+     * Returns the number of array dimensions wrapping an identifier.
+     * @param {SourceNode} defNode - The definition node.
+     * @returns {number} Array depth.
+     */
+    getArrayDepth(defNode) {
+        if (!defNode) return 0;
+        let depth = 0;
+        let p = defNode;
+        while (p) {
+            if (p.type === 'array_declarator') depth++;
+            // Stop at declaration boundary
+            if (['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition'].includes(p.type)) break;
+            p = p.parent;
+        }
+        return depth;
+    }
+
+    /**
+     * Determines the lexical scope node for a given identifier.
+     * @param {SourceNode} node - The identifier node.
+     * @returns {SourceNode|null} The scope node.
+     */
+    getEnclosingScope(node) {
+        if (!node) return null;
+        let p = node.parent;
+        while (p) {
+            if (['compound_statement', 'translation_unit', 'field_declaration_list', 'enumerator_list'].includes(p.type)) {
+                return p;
+            }
+            if (p.type === 'function_definition') {
+                // If the identifier is the function name, its scope is the PARENT scope
+                // If it's a parameter, its scope is the function_definition itself.
+                const sig = this.getFunctionSignature(p);
+                if (sig.nameNode && (sig.nameNode === node || this.isDescendant(sig.nameNode, node))) {
+                    p = p.parent;
+                    continue;
+                }
+                return p;
+            }
+            p = p.parent;
+        }
+        return null;
     }
 
     /**
@@ -271,16 +369,10 @@ class UppHelpersC extends UppHelpersBase {
 
         if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
 
-        const findInScope = (node) => {
-            let results = [];
-            for (const child of node.children) {
-                if (child.type === 'identifier' || child.type === 'type_identifier') {
-                    results.push(child);
-                } else if (child.type !== 'compound_statement' && child.type !== 'function_definition' && child.type !== 'lambda_expression') {
-                    results = results.concat(findInScope(child));
-                }
-            }
-            return results;
+        const findInScope = (scope) => {
+            return scope.find(n => n.type === 'identifier' || n.type === 'type_identifier').filter(idNode => {
+                return this.getEnclosingScope(idNode) === scope;
+            });
         };
 
         let current = startScope;
@@ -296,7 +388,27 @@ class UppHelpersC extends UppHelpersBase {
 
                     while (p && p !== current) {
                         if (p.type.endsWith('declarator') || p.type === 'init_declarator') {
-                            isDeclarator = true;
+                            // If we hit an init_declarator, we must ensure we are in the 'declarator' branch, not 'value'
+                            if (p.type === 'init_declarator') {
+                                // idNode.parent might be the declarator, or deep below it.
+                                // We check if the path up from idNode to p goes through p.childForFieldName('value')
+                                let isInsideValue = false;
+                                let walk = idNode;
+                                while (walk && walk !== p) {
+                                    if (walk.parent === p && walk.fieldName === 'value') {
+                                        isInsideValue = true;
+                                        break;
+                                    }
+                                    walk = walk.parent;
+                                }
+                                if (isInsideValue) {
+                                    // Usage in initializer, not a declarator occurrence
+                                    break;
+                                }
+                                isDeclarator = true;
+                            } else {
+                                isDeclarator = true;
+                            }
                         }
                         if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
                             if (finalOptions.tag && p.child(1) && p.child(1).id === idNode.id) {
@@ -308,6 +420,7 @@ class UppHelpersC extends UppHelpersBase {
                         if (p.type === 'parameter_declaration' || p.type === 'declaration' || p.type === 'type_definition' || p.type === 'field_declaration' || p.type === 'function_definition') {
                             declaratorOwner = p;
                             // Check if we hit the declaration via a declarator or direct child (except 'type' field)
+                            // For parameter_declaration/field_declaration, we also check fieldName
                             if (isDeclarator || (idNode.parent === p && idNode.fieldName !== 'type')) {
                                 if (finalOptions.variable) return p;
                             }

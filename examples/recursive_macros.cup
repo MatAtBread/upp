@@ -2,30 +2,31 @@
 @include(method.hup)
 @include(defer.hup)
 
-int some_condition = 1;
+int some_condition = 0;
 
 struct String {
-    char *data;
+    char * data;
 };
 typedef struct String String;
 
-@method(String) void print(String *s) {
-    printf("%s\n", s->data);
+@method(String) void print(String * s) {
+    printf("%s\n", s -> data);
 }
 
-@method(String) void Defer(String *s) {
-    s->print();
-    free(s->data);
+@method(String) void Defer(String * s) {
+    s -> print();
+    free(s -> data);
 }
 
 int main() {
     String s1;
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
+    s1.print();
 
     if (some_condition) {
-        return 0;
+        return 1;
     }
 
-    return 1;
+    return 0;
 }

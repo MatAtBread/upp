@@ -1,0 +1,42 @@
+==== examples/typeof.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+struct x {
+    int a;
+};
+
+struct x myX = { 0 };
+static unsigned int staticVar;
+extern struct x * exVar[];
+int main(int argc, char * argv[]) {
+    long local;
+    int multi[10][20];
+    printf("local is of type " "long" "\n");
+    printf("argc is of type " "int" "\n");
+    printf("argv is of type " "char *[]" "\n");
+    printf("multi is of type " "int[][]" "\n");
+    printf("staticVar is of type " "unsigned int" "\n");
+    printf("myX is of type " "struct x" "\n");
+    printf("exVar is of type " "struct x *[]" "\n");
+    return 0;
+}
+
+==== RUN OUTPUT ===
+local is of type long
+argc is of type int
+argv is of type char *[]
+multi is of type int[][]
+staticVar is of type unsigned int
+myX is of type struct x
+exVar is of type struct x *[]
+
