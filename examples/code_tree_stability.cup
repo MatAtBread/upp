@@ -1,0 +1,36 @@
+@define assertStability(node) {
+    // 1. Get a node from the code
+    const decl = upp.consume('declaration');
+    if (!decl) throw new Error("Expected declaration");
+
+    const originalId = decl.id;
+    const originalText = decl.text;
+
+    // 2. Interpolate into a new tree using codeTree
+    const newTree = upp.codeTree`int wrapper() { ${decl}; return -1; }`;
+
+    // 3. Find the node in the new tree
+    const found = newTree.find('declaration')[0];
+
+    if (!found) throw new Error("Node not found in new tree");
+
+    // 4. Verify referential stability (ID should be the same)
+    if (found.id !== originalId) {
+        throw new Error(`Referential stability failed: original.id=${originalId}, found.id=${found.id}`);
+    }
+
+    // 5. Verify it was removed from source (decl.tree should be different from upp.registry.tree, or startIndex -1)
+    if (decl.tree === upp.registry.tree && decl.startIndex !== -1) {
+        throw new Error("Node still belongs to source tree after interpolation");
+    }
+
+    // On success, change the return statement to 0 and return the new tree
+    newTree.find('return_statement')[0].child(1).text = "0";
+    return newTree;
+}
+
+@assertStability int x = 10
+
+int main() {
+    return wrapper();
+}

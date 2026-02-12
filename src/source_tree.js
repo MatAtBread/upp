@@ -370,6 +370,13 @@ export class SourceNode {
     handleEdit(editStart, editEnd, delta) {
         if (this.startIndex === -1) return;
 
+
+        // Case: Edit completely contains this node. Invalidate.
+        if (editStart <= this.startIndex && editEnd >= this.endIndex) {
+            this._invalidateRecursively();
+            return;
+        }
+
         // Case 1: Edit is completely AFTER this node. No change.
         if (this.endIndex <= editStart) return;
 

@@ -32,6 +32,55 @@ class UppHelpersBase {
         return result;
     }
 
+    codeTree(strings, ...values) {
+        let text = "";
+        const nodeMap = new Map();
+
+        for (let i = 0; i < strings.length; i++) {
+            text += strings[i];
+            if (i < values.length) {
+                const val = values[i];
+                if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
+                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                    nodeMap.set(placeholder, val);
+                    text += placeholder;
+                } else if (val === null || val === undefined) {
+                    throw new Error(`upp.codeTree: Invalid null or undefined value at index ${i}`);
+                } else {
+                    text += String(val);
+                }
+            }
+        }
+
+        const SourceTree = this.registry.tree.constructor;
+        const fragment = SourceTree.fragment(text, this.registry.language);
+        if (!fragment) {
+            throw new Error("upp.codeTree: Failed to parse code fragment");
+        }
+
+        // Walk and replace placeholders with actual nodes
+        const placeholders = Array.from(nodeMap.keys());
+        for (const placeholder of placeholders) {
+            const placeholderNodes = fragment.find(n => n.text === placeholder);
+            if (placeholderNodes.length === 0) {
+                // This might happen if the placeholder was somehow mangled or in a comment (though unlikely with our naming)
+                throw new Error(`upp.codeTree: Placeholder ${placeholder} not found in parsed fragment`);
+            }
+
+            const originalNode = nodeMap.get(placeholder);
+
+            // Move node from its source tree
+            originalNode.remove();
+
+            // Replace placeholder with original node
+            for (const pNode of placeholderNodes) {
+                pNode.replaceWith(originalNode);
+            }
+        }
+
+        return fragment;
+    }
+
     atRoot(callback) {
         const root = this.findRoot();
         if (!root) return "";
