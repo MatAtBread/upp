@@ -1,14 +1,64 @@
-Macro @define failed: Error: Macro @define not found
-    at Registry.evaluateMacro (file://./src/registry.js:355:31)
-    at Registry.transformNode (file://./src/registry.js:236:41)
-    at Registry.transformNode (file://./src/registry.js:290:18)
-    at Registry.transform (file://./src/registry.js:199:14)
-    at Registry.loadDependency (file://./src/registry.js:126:40)
-    at UppHelpersC.loadDependency (file://./src/upp_helpers_base.js:163:23)
-    at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:3:5)
-    at Registry.evaluateMacro (file://./src/registry.js:387:20)
-    at Registry.transformNode (file://./src/registry.js:236:41)
-    at Registry.transformNode (file://./src/registry.js:290:18)
-[31m./std/package.hup:1:1: error: [0] Macro @define failed: Macro @define not found[0m
+==== examples/mypkg/main.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+#include "mypkg.h"
+// This 'add' should NOT be renamed because we are a consumer, not the implementation.
+// There is no @implements(mypkg) here.
+int add(int a, int b) {
+    return (a + b) * 10;
+}
+int main() {
+    int x = add(1, 2); // Should call local add -> 30
+    int y = mypkg_add(1, 2); // Should call pkg add -> 3
+    printf("Local add: %d\n", x);
+    printf("Pkg add: %d\n", y);
+    if (x == 30 && y == 3) {
+        printf("SUCCESS\n");
+        return 0;
+    }
+    printf("FAILURE\n");
+    return 1;
+}
 
-[31m^[0m
+==== examples/mypkg/mypkg.c ===
+/*@implements(mypkg)*/
+#include "mypkg.h"
+int mypkg_add(int a, int b) {
+    return a + b;
+}
+int mypkg_sub(int a, int b) {
+    return mypkg_add(a, -b);
+}
+static int helper() {
+    return 42;
+}
+int mypkg_use_helper() {
+    return helper();
+}
+
+==== examples/mypkg/mypkg.h ===
+#include "std/package.h"
+extern int mypkg_add(int a, int b);
+extern int mypkg_sub(int a, int b);
+extern int mypkg_use_helper();
+
+#define TEST 123
+extern const char *thing;
+==== std/package.h ===
+
+
+
+==== RUN OUTPUT ===
+Local add: 30
+Pkg add: 3
+SUCCESS
+

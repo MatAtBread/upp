@@ -141,7 +141,7 @@ export class PatternMatcher {
      * @returns {boolean}
      */
     structuralMatch(target, pattern, captures, constraints) {
-        console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
+        // console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
         const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
         if (match) {
             let name = match[1];

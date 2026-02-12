@@ -2,17 +2,6 @@
   123 | ` : ''}
       |     ^
 1 warning generated.
-Macro @define failed: Error: Macro @define not found
-    at Registry.evaluateMacro (file://./src/registry.js:355:31)
-    at Registry.transformNode (file://./src/registry.js:236:41)
-    at Registry.transformNode (file://./src/registry.js:290:18)
-    at Registry.transform (file://./src/registry.js:199:14)
-    at file://./index.js:157:37
-    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
-    at async Promise.all (index 0)
-    at async ESMLoader.import (node:internal/modules/esm/loader:530:24)
-    at async loadESM (node:internal/process/esm_loader:91:5)
-    at async handleMainPromise (node:internal/modules/run_main:65:12)
-[31m./examples/refptr.cup:1:1: error: [0] Macro @define failed: Macro @define not found[0m
+[31m./examples/refptr.cup:1:1: error: [0] Macro @RefPtr failed: Complex S-expression queries not yet supported on stable SourceTree[0m
 
 [31m^[0m

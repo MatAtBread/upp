@@ -83,6 +83,13 @@ class Registry {
     }
 
     registerTransformRule(rule) {
+        if (typeof rule === 'function') {
+            rule = {
+                active: true,
+                matcher: () => true,
+                callback: rule
+            };
+        }
         this.transformRules.push(rule);
         if (this.parentRegistry) {
             this.parentRegistry.registerTransformRule(rule);
@@ -158,7 +165,11 @@ class Registry {
 
         // Update tree with clean source if it changed
         if (cleanSource !== source) {
-            this.tree = new SourceTree(cleanSource, this.language);
+            if (!cleanSource) {
+                this.tree = new SourceTree("", this.language);
+            } else {
+                this.tree = new SourceTree(cleanSource, this.language);
+            }
             this.helpers.root = this.tree.root; // Update helpers root
         }
         const sourceTree = this.tree;
@@ -246,7 +257,7 @@ class Registry {
 
                         // Pre-process the result to wrap nested macros in comments (like prepareSource does)
                         // otherwise they will be parsed as invalid syntax or identifiers
-                        if (finalResult.includes('@')) {
+                        if (typeof finalResult === 'string' && finalResult.includes('@')) {
                             const prepared = this.prepareSource(finalResult, context.originPath);
                             finalResult = prepared.cleanSource;
                         }
@@ -386,7 +397,7 @@ class Registry {
 
             return macroFn(upp, console, ...args);
         } catch (err) {
-            console.error(`Macro @${invocation.name} failed:`, err);
+            // console.error(`Macro @${invocation.name} failed:`, err);
             this.diagnostics.reportError(0, `Macro @${invocation.name} failed: ${err.message}`, filePath, invocation.line || 1, invocation.col || 1, source);
             return undefined;
         } finally {
@@ -420,8 +431,13 @@ class Registry {
     prepareSource(source, originPath) {
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
+        const tree = this.parser.parse((index) => {
+            if (index >= source.length) return null;
+            return source.slice(index, index + 4096);
+        });
+
+        const defines = [];
         let match;
-        const tree = this.parser.parse(source);
         while ((match = definerRegex.exec(source)) !== null) {
             const node = tree.rootNode.descendantForIndex(match.index);
             let shouldSkip = false;
@@ -440,21 +456,26 @@ class Registry {
             this.registerMacro(name, params, body, 'js', originPath, match.index);
 
             const fullMatchLength = match[0].length + body.length + 1;
-            const original = source.slice(match.index, match.index + fullMatchLength);
-
-            let replaced = "";
-            if (this.config.comments) {
-                // Remove the '@' from the start to prevent re-parsing
-                const commentContent = original.replace(/^(\s*)@/, '$1');
-                replaced = `/* ${commentContent} */`;
-            } else {
-                replaced = "";
-            }
-
-            cleanSource = cleanSource.slice(0, match.index) + replaced + cleanSource.slice(match.index + fullMatchLength);
+            defines.push({ index: match.index, length: fullMatchLength, original: source.slice(match.index, match.index + fullMatchLength) });
         }
 
-        const invocations = this.findInvocations(cleanSource, tree);
+        // Apply defines in reverse to keep indices stable
+        for (let i = defines.length - 1; i >= 0; i--) {
+            const def = defines[i];
+            let replaced = "";
+            if (this.config.comments) {
+                const commentContent = def.original.replace(/^(\s*)@/, '$1');
+                replaced = `/* ${commentContent} */`;
+            }
+            cleanSource = cleanSource.slice(0, def.index) + replaced + cleanSource.slice(def.index + def.length);
+        }
+
+        // Must re-parse after cleaning defines to find invocations correctly
+        const cleanTree = this.parser.parse((index) => {
+            if (index >= cleanSource.length) return null;
+            return cleanSource.slice(index, index + 4096);
+        });
+        const invocations = this.findInvocations(cleanSource, cleanTree);
         for (let i = invocations.length - 1; i >= 0; i--) {
             const inv = invocations[i];
             const original = cleanSource.slice(inv.startIndex, inv.endIndex);
@@ -525,7 +546,10 @@ class Registry {
         const invs = [];
         const regex = /(?<![\/*])@(\w+)(\s*\(([^)]*)\))?/g;
         let match;
-        const currentTree = tree || this.parser.parse(source);
+        const currentTree = tree || this.parser.parse((index) => {
+            if (index >= source.length) return null;
+            return source.slice(index, index + 4096);
+        });
 
         while ((match = regex.exec(source)) !== null) {
             if (this.isInsideInvocation(match.index, match.index + match[0].length)) continue;

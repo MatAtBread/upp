@@ -7,7 +7,7 @@
 
     if (body) {
         return upp.code`${returnType} ${name}${params} {
-    fputs("Entering ${name}\\n", stderr);
+    puts("Entering ${name}\\n");
     ${body.children.slice(1, -1).map(c => c.text).join('\n\t')}
 }`;
     }

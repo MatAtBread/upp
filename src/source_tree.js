@@ -20,7 +20,17 @@ export class SourceTree {
 
         // Initial parse
         /** @type {import('tree-sitter').Tree} */
-        this.tree = this.parser.parse(source);
+        if (typeof source !== 'string') {
+            throw new Error(`SourceTree expects string source, got ${typeof source}`);
+        }
+        try {
+            this.tree = this.parser.parse((index) => {
+                if (index >= source.length) return null;
+                return source.slice(index, index + 4096);
+            });
+        } catch (e) {
+            throw e;
+        }
 
         /** @type {Map<string, SourceNode>} Map of TreeSitterNode.id -> SourceNode */
         this.nodeCache = new Map();
@@ -98,7 +108,10 @@ export class SourceTree {
     static fragment(code, language) {
         const parser = new Parser();
         parser.setLanguage(language);
-        let tree = parser.parse(code);
+        let tree = parser.parse((index) => {
+            if (index >= code.length) return null;
+            return code.slice(index, index + 4096);
+        });
 
         let hasError = false;
         if (typeof tree.rootNode.hasError === 'function') {
@@ -197,43 +210,29 @@ export class SourceNode {
      * @param {import('tree-sitter').SyntaxNode} [tsNode] The Tree-sitter node to wrap.
      */
     constructor(tree, tsNode) {
+        if (!tsNode || !tree) {
+            throw new Error("SourceNode must be created with a Tree-sitter node.");
+        }
         /** @type {SourceTree} */
         this.tree = tree;
-        if (tsNode) {
-            /** @type {string|number} */
-            this.id = tsNode.id;
-            /** @type {string} */
-            this.type = tsNode.type;
-            /** @type {number} */
-            this.startIndex = tsNode.startIndex;
-            /** @type {number} */
-            this.endIndex = tsNode.endIndex;
-            /** @type {SourceNode[]} */
-            this.children = [];
-            /** @type {SourceNode|null} */
-            this.parent = null;
-            /** @type {string|null} */
-            this.fieldName = null;
-            for (let i = 0; i < tsNode.childCount; i++) {
-                const child = tsNode.child(i);
-                const fieldName = tsNode.fieldNameForChild(i);
-                this.children.push(tree.wrap(child, this, fieldName));
-            }
-        } else {
-            /** @type {string} */
-            this.id = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-            /** @type {string} */
-            this.type = 'fragment';
-            /** @type {string|null} */
-            this.fieldName = null;
-            /** @type {number} */
-            this.startIndex = 0;
-            /** @type {number} */
-            this.endIndex = 0;
-            /** @type {SourceNode[]} */
-            this.children = [];
-            /** @type {SourceNode|null} */
-            this.parent = null;
+        /** @type {string|number} */
+        this.id = tsNode.id;
+        /** @type {string} */
+        this.type = tsNode.type;
+        /** @type {number} */
+        this.startIndex = tsNode.startIndex;
+        /** @type {number} */
+        this.endIndex = tsNode.endIndex;
+        /** @type {SourceNode[]} */
+        this.children = [];
+        /** @type {SourceNode|null} */
+        this.parent = null;
+        /** @type {string|null} */
+        this.fieldName = null;
+        for (let i = 0; i < tsNode.childCount; i++) {
+            const child = tsNode.child(i);
+            const fieldName = tsNode.fieldNameForChild(i);
+            this.children.push(tree.wrap(child, this, fieldName));
         }
 
         /** @type {Array<{callback: Function, data: any}>} */

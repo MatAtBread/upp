@@ -13,8 +13,8 @@
     if (body) {
         return upp.code
 `${returnType} ${name}${params} {
-    fputs("Entering: ${name}\\n", stderr);
-    @defer { fputs("Exiting: ${name}\\n", stderr); };
+    puts("Entering: ${name}\\n");
+    @defer { puts("Exiting: ${name}\\n"); };
     ${Array.from({length: upp.childCount(body)-2}, (_, i) => upp.child(body, i+1).text).join('\n\t')}
 }`;
     }

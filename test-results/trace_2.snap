@@ -15,11 +15,11 @@ extern void *_stderr;
 #include "defer.h"
 
 void _exit_lambda();
-void _exit_lambda() { fputs("Exiting: my_function\n", stderr); }
+void _exit_lambda() { puts("Exiting: my_function\n"); }
 
 
 int my_function(int x) {
-    fputs("Entering: my_function\n", stderr);
+    puts("Entering: my_function\n");
      ;
      
     int g = 1;
@@ -53,11 +53,10 @@ int main() {
 
 #endif
 
-==== COMPILATION ERROR ===
-Undefined symbols for architecture arm64:
-  "_stderr", referenced from:
-      __exit_lambda in trace_2-4bbaf3.o
-      _my_function in trace_2-4bbaf3.o
-ld: symbol(s) not found for architecture arm64
-clang: error: linker command failed with exit code 1 (use -v to see invocation)
+==== RUN OUTPUT ===
+Entering: my_function
+
+Exiting: my_function
+
+magic number -1
 

@@ -132,9 +132,12 @@ class UppHelpersC extends UppHelpersBase {
      * @param {number} [hoistIndex=0] - The index to hoist to.
      */
     hoist(content, hoistIndex = 0) {
-        const root = this.helpers.root; // Stable root
-        //Prepend to root
-        this.replace(root, content + "\n" + root.text);
+        const root = this.root; // Stable root
+        if (root.children.length > 0) {
+            root.children[0].insertBefore(content + "\n");
+        } else {
+            this.replace(root, content + "\n");
+        }
     }
 
     /**

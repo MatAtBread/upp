@@ -1,10 +1,11 @@
+#include "io-lite.h"
+
 @define rename(newName) {
-    const node = upp.contextNode;
-    // We expect the macro to be applied to an identifier (declaration)
-    const refs = upp.findReferences(node);
-    for (const ref of refs) {
-        upp.replace(ref, newName);
-    }
+    const node = upp.nextNode();
+    if (!node) return;
+    
+    // Use withReferences for stable renaming across the whole tree
+    upp.withReferences(node, (ref) => newName);
 }
 
 @rename(y)

@@ -1,14 +1,32 @@
-Macro @forward failed: TypeError: Cannot read properties of undefined (reading 'root')
-    at UppHelpersC.hoist (file://./src/upp_helpers_c.js:135:35)
-    at eval (eval at createMacroFunction (file://./src/registry.js:412:20), <anonymous>:21:13)
-    at Registry.evaluateMacro (file://./src/registry.js:387:20)
-    at Registry.transformNode (file://./src/registry.js:236:41)
-    at Registry.transformNode (file://./src/registry.js:290:18)
-    at Registry.transform (file://./src/registry.js:199:14)
-    at file://./index.js:157:37
-    at ModuleJob.run (node:internal/modules/esm/module_job:193:25)
-    at async Promise.all (index 0)
-    at async ESMLoader.import (node:internal/modules/esm/loader:530:24)
-[31m./examples/forward.cup:1:1: error: [0] Macro @forward failed: Cannot read properties of undefined (reading 'root')[0m
+==== examples/forward.c ===
+void foo();
+void bar();
+
 #include "forward.h"
-[31m^[0m
+;
+void foo() {
+    printf("Foo calls bar\n");
+    bar();
+}
+void bar() {
+    printf("Bar called\n");
+}
+int main() {
+    foo();
+    return 0;
+}
+
+==== std/forward.h ===
+#ifndef __UPP_STDLIB_FORWARD_H__
+#define __UPP_STDLIB_FORWARD_H__
+
+
+#endif
+
+==== COMPILATION ERROR ===
+./examples/forward.c:7:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    7 |     printf("Foo calls bar\n");
+      |     ^
+./examples/forward.c:7:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
+1 error generated.
+
