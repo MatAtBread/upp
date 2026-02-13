@@ -1,4 +1,4 @@
-==== examples/match_block.c ===
+==== examples/match_block_2.c ===
 
 /*@transform_if()*/
 int main() {

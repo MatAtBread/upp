@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { UppHelpersC } from './upp_helpers_c.js';
 import { UppHelpersBase } from './upp_helpers_base.js';
-import { DiagnosticCodes, DiagnosticsManager } from './diagnostics.js';
+import { DiagnosticsManager } from './diagnostics.js';
 import { SourceTree, SourceNode } from './source_tree.js';
 
 export const RECURSION_LIMITER_ENABLED = false;
@@ -107,17 +107,30 @@ class Registry {
 
         const isDiscoveryOnly = parentHelpers === null;
         const previousPass = this.loadedDependencies.get(targetPath);
-
         if (previousPass === 'full') return;
         if (isDiscoveryOnly && previousPass === 'discovery') return;
 
         if (!fs.existsSync(targetPath)) {
-            const stdPath = path.resolve(process.cwd(), 'std', file);
+            const stdDir = this.stdPath || path.resolve(process.cwd(), 'std');
+            const stdPath = path.resolve(stdDir, file);
             if (fs.existsSync(stdPath)) {
                 targetPath = stdPath;
             } else {
                 throw new Error(`Dependency not found: ${file} (tried ${targetPath} and ${stdPath})`);
             }
+        }
+
+        if (this.config.cache && this.config.cache.has(targetPath) && !isDiscoveryOnly) {
+            const cached = this.config.cache.get(targetPath);
+            // Replay macros
+            for (const macro of cached.macros) {
+                this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
+            }
+            // Replay transforms
+            for (const rule of cached.transformRules) {
+                this.registerTransformRule(rule);
+            }
+            return;
         }
 
         this.loadedDependencies.set(targetPath, isDiscoveryOnly ? 'discovery' : 'full');
@@ -131,6 +144,15 @@ class Registry {
             depRegistry.prepareSource(source, targetPath);
         } else {
             const output = depRegistry.transform(source, targetPath, parentHelpers);
+
+            // Store in cache
+            if (this.config.cache && !isDiscoveryOnly) {
+                this.config.cache.set(targetPath, {
+                    macros: Array.from(depRegistry.macros.values()),
+                    transformRules: depRegistry.transformRules,
+                    output: output
+                });
+            }
 
             if (depRegistry.shouldMaterializeDependency) {
                 let outputPath = null;

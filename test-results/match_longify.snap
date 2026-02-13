@@ -22,7 +22,7 @@ void f() {
 }
 void global() {
     printf("global\n");
-    printf("bar is of type %s\nbaz is of type %s\n", "long", "long");
+    printf("bar is of type " "long" "\nbaz is of type " "long" "\n");
 }
 int main() {
     long bar = 5L;

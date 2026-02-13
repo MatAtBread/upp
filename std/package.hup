@@ -34,7 +34,7 @@
                 const originalName = name;
                 
                 // Immediately rename all existing references in the tree
-                const refs = upp.parentHelpers.findReferences(nameNode);
+                const refs = upp.parentHelpers.findReferences(fn);
                 for (const ref of refs) {
                     ref.text = nameSpace + originalName;
                 }

@@ -78,7 +78,7 @@ class UppHelpersC extends UppHelpersBase {
      * @returns {Array<Object>} Matches.
      */
     matchAll(node, src, callback, options = {}) {
-        if (!node) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
+        if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true || (options.deep !== false && node.type === 'translation_unit');

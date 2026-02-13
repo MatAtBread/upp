@@ -11,27 +11,25 @@
         // Just match context node? Or look for specific node?
         // Let's iterate function definitions.
 
-        const funcs = helpers.query('(function_definition) @f', root);
-        for (const m of funcs) {
-             const func = m.captures.f;
-             // Search inside function body for if statements
-             const ifs = helpers.query('(if_statement) @i', func);
-             for (const ifMatch of ifs) {
-                 const ifNode = ifMatch.captures.i;
+        const funcs = root.find('function_definition');
+        for (const func of funcs) {
+            // Search inside function body for if statements
+            const ifs = func.find('if_statement');
+            for (const ifNode of ifs) {
 
-                 helpers.match(ifNode, "if ($cond) $then;", (captures) => {
-                     // Check if it already has braces?
-                     // If $then is compound_statement, captures.then.type === compound_statement.
-                     // We only want to wrap single statements.
-                     // But placeholders match EVERYTHING.
-                     // So we check type manually or use constraint?
-                     if (captures.then.type !== 'compound_statement') {
-                         helpers.replace(captures.node,
-                             helpers.code`if (${captures.cond}) { ${captures.then} }`
-                         );
-                     }
-                 });
-             }
+                helpers.match(ifNode, "if ($cond) $then;", (captures) => {
+                    // Check if it already has braces?
+                    // If $then is compound_statement, captures.then.type === compound_statement.
+                    // We only want to wrap single statements.
+                    // But placeholders match EVERYTHING.
+                    // So we check type manually or use constraint?
+                    if (captures.then.type !== 'compound_statement') {
+                        helpers.replace(captures.node,
+                            helpers.code`if (${captures.cond}) { ${captures.then} }`
+                        );
+                    }
+                });
+            }
         }
     });
 }

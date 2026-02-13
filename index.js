@@ -19,6 +19,8 @@ if (!command.isUppCommand) {
 }
 
 // Global state across transpilations
+const projectRoot = path.dirname(new URL(import.meta.url).pathname);
+const stdPath = path.join(projectRoot, 'std');
 const cache = new DependencyCache();
 let extraDeps = []; // Collected from -M flags during preprocessing
 
@@ -117,9 +119,6 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
 
         let mainOutput = "";
 
-        const projectRoot = path.dirname(new URL(import.meta.url).pathname);
-        const stdPath = path.join(projectRoot, 'std');
-
         for (const absSource of expandedFiles) {
             const preProcessed = preprocess(absSource, command.depFlags || []);
             const loadedConfig = resolveConfig(absSource);
@@ -138,6 +137,9 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
                 onMaterialize: (p, content) => {
+                    if (materializations.has(p)) {
+                        throw new Error(`Duplicate materialization detected for ${p}. This indicates a bug in the Global Dependency Cache.`);
+                    }
                     materializations.set(p, content);
                 },
                 preprocess: (file) => preprocess(file)
@@ -219,7 +221,11 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             }
             process.exit(0);
         } else {
-            // Transpile mode: just output the FIRST file's content
+            // Transpile mode: output all materialized files to disk
+            for (const [p, content] of materializations) {
+                fs.writeFileSync(p, content);
+            }
+            // Also output the main file content to stdout (current behavior preserved)
             process.stdout.write(mainOutput);
             process.exit(0);
         }
@@ -255,6 +261,7 @@ for (const source of command.sources) {
             const config = {
                 cache,
                 includePaths: finalIncludePaths,
+                stdPath,
                 diagnostics: new DiagnosticsManager({}),
                 preprocess: (file) => {
                     // Same preprocess logic as before...
