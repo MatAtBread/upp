@@ -34,6 +34,9 @@ class Registry {
         this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
         this.parentTree = parentRegistry ? parentRegistry.tree : null;
 
+        this.materializedFiles = new Set();
+        this.isAuthoritative = false;
+
         this.macros = new Map();
 
         this.registerMacro('__deferred_task', ['id'], '/* handled internally */', 'js', 'internal');
@@ -122,15 +125,23 @@ class Registry {
 
         if (this.config.cache && this.config.cache.has(targetPath) && !isDiscoveryOnly) {
             const cached = this.config.cache.get(targetPath);
-            // Replay macros
-            for (const macro of cached.macros) {
-                this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
+
+            // Only use cache if it's authoritative, or if we don't care about authority (isDiscoveryOnly handled above)
+            if (cached.isAuthoritative) {
+                // Replay macros
+                for (const macro of cached.macros) {
+                    this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
+                }
+                // Replay transforms
+                for (const rule of cached.transformRules) {
+                    this.registerTransformRule(rule);
+                }
+                // Re-emit materialization if needed
+                if (cached.shouldMaterialize && this.config.onMaterialize) {
+                    this.config.onMaterialize(targetPath, cached.output, { isAuthoritative: cached.isAuthoritative });
+                }
+                return;
             }
-            // Replay transforms
-            for (const rule of cached.transformRules) {
-                this.registerTransformRule(rule);
-            }
-            return;
         }
 
         this.loadedDependencies.set(targetPath, isDiscoveryOnly ? 'discovery' : 'full');
@@ -147,11 +158,17 @@ class Registry {
 
             // Store in cache
             if (this.config.cache && !isDiscoveryOnly) {
-                this.config.cache.set(targetPath, {
-                    macros: Array.from(depRegistry.macros.values()),
-                    transformRules: depRegistry.transformRules,
-                    output: output
-                });
+                const existing = this.config.cache.get(targetPath);
+                // Only overwrite if new is authoritative or existing is NOT authoritative
+                if (!existing || depRegistry.isAuthoritative || !existing.isAuthoritative) {
+                    this.config.cache.set(targetPath, {
+                        macros: Array.from(depRegistry.macros.values()),
+                        transformRules: depRegistry.transformRules,
+                        output: output,
+                        shouldMaterialize: depRegistry.shouldMaterializeDependency,
+                        isAuthoritative: depRegistry.isAuthoritative
+                    });
+                }
             }
 
             if (depRegistry.shouldMaterializeDependency) {
@@ -159,12 +176,8 @@ class Registry {
                 if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
                 else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
 
-                if (outputPath) {
-                    if (this.onMaterialize) {
-                        this.onMaterialize(outputPath, output);
-                    } else {
-                        fs.writeFileSync(outputPath, output);
-                    }
+                if (outputPath && this.config.onMaterialize) {
+                    this.config.onMaterialize(outputPath, output, { isAuthoritative: depRegistry.isAuthoritative });
                 }
             }
         }

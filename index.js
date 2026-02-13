@@ -93,6 +93,7 @@ function transpileOne(sourceFile, outputCFile = null) {
 if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === 'test') {
     try {
         const materializations = new Map();
+        const authoritativeMaterials = new Set();
         const expandedFiles = [];
 
         // 1. Expand directories into .cup files
@@ -136,11 +137,29 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                 includePaths: finalIncludePaths,
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p, content) => {
+                onMaterialize: (p, content, options = {}) => {
                     if (materializations.has(p)) {
-                        throw new Error(`Duplicate materialization detected for ${p}. This indicates a bug in the Global Dependency Cache.`);
+                        const existing = materializations.get(p);
+                        if (existing === content) return;
+
+                        // Authoritative Win Logic:
+                        // If the new content is authoritative, it can overwrite non-authoritative content.
+                        // We need to keep track of WHICH files are authoritative.
+                        if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
+                            materializations.set(p, content);
+                            authoritativeMaterials.add(p);
+                            return;
+                        }
+
+                        if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
+                            // Ignored: a consumer pass trying to overwrite an already-established authoritative version
+                            return;
+                        }
+
+                        throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
                     }
                     materializations.set(p, content);
+                    if (options.isAuthoritative) authoritativeMaterials.add(p);
                 },
                 preprocess: (file) => preprocess(file)
             };

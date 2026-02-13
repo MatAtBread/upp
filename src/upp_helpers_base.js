@@ -5,10 +5,16 @@ let uniqueIdCounter = 1;
  * @class
  */
 class UppHelpersBase {
+    get parentHelpers() { return this._parentHelpers; }
+    set parentHelpers(v) { this._parentHelpers = v; }
+
+    get isAuthoritative() { return this.registry.isAuthoritative; }
+    set isAuthoritative(v) { this.registry.isAuthoritative = v; }
+
     constructor(root, registry, parentHelpers = null) {
         this.root = root;
         this.registry = registry;
-        this.parentHelpers = parentHelpers;
+        this.parentHelpers = parentHelpers; // Initial assignment will use the setter
         this.contextNode = null;
         this.invocation = null;
         this.lastConsumedNode = null;
@@ -132,55 +138,6 @@ class UppHelpersBase {
             // but lambda.hup only uses {start:0, end:0}.
         }
         return "";
-    }
-
-    query(queryString, node = null) {
-        // let target = node || this.root;
-        // if (!target && this.registry) {
-        //     target = this.registry.tree ? this.registry.tree.root : null;
-        // }
-
-        // if (!target) return [];
-
-        // // If it's a SourceNode with a valid tsNode, we can use Tree-sitter's query engine
-        // if (target.tsNode && this.registry.language) {
-        //     try {
-        //         const query = new Query(this.registry.language, queryString);
-        //         const matches = query.matches(target.tsNode);
-        //         return matches.map(m => {
-        //             const captures = {};
-        //             for (const c of m.captures) {
-        //                 captures[c.name] = this.registry.tree.nodeCache.get(c.node.id) || c.node;
-        //             }
-        //             return {
-        //                 node: captures.node || captures[Object.keys(captures)[0]],
-        //                 captures
-        //             };
-        //         });
-        //     } catch (e) {
-        //         console.error(`[UPP DEBUG] Native query failed again: ${e.message}`);
-        //         // If native query fails, fallback to simple matching
-        //     }
-        // }
-
-        // // Simple type-based or functional query fallback if queryString is just a type
-        // if (!queryString.includes('(')) {
-        //     return target.find(queryString).map(n => ({ node: n, captures: { node: n } }));
-        // }
-
-        // // Support simple S-expressions like (function_definition) @f
-        // const simpleMatch = queryString.match(/^\((\w+)\)\s*@(\w+)$/);
-        // if (simpleMatch) {
-        //     const type = simpleMatch[1];
-        //     const cap = simpleMatch[2];
-        //     return target.find(type).map(n => ({
-        //         node: n,
-        //         captures: { [cap]: n }
-        //     }));
-        // }
-
-        // For complex S-expressions without tsNode, we'd need a stable matcher.
-        throw new Error(`Complex S-expression queries not yet supported on stable SourceTree: ${queryString}`);
     }
 
     findRoot() {

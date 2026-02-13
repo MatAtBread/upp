@@ -584,24 +584,6 @@ class UppHelpersC extends UppHelpersBase {
     }
 
     /**
-     * Transforms nodes matching an S-expression query.
-     * @param {SourceNode} scope - The search scope.
-     * @param {string} queryString - The S-expression query.
-     * @param {function(SourceNode, UppHelpersC): (string|null|undefined)} callback - Transformation callback.
-     */
-    withQuery(scope, queryString, callback) {
-        const matches = this.query(queryString, scope);
-        for (const match of matches) {
-            // Usually we want to transform the main capture or all caps?
-            // Query matches return named captures. If there's only one, use it.
-            const captureNames = Object.keys(match.captures);
-            if (captureNames.length > 0) {
-                this.withNode(match.captures[captureNames[0]], (node, helpers) => callback(node, helpers));
-            }
-        }
-    }
-
-    /**
      * Transforms nodes matching a source fragment pattern.
      * @param {SourceNode} scope - The search scope.
      * @param {string} pattern - The source fragment pattern.

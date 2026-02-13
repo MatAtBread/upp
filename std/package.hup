@@ -16,6 +16,7 @@
     const isImpl = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
 
     if (isImpl) {
+        upp.isAuthoritative = true;
         upp.registry.shouldMaterializeDependency = true;
         if (upp.parentHelpers.registry) {
             upp.parentHelpers.registry.shouldMaterializeDependency = true;
