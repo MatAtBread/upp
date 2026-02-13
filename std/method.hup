@@ -69,7 +69,12 @@
             const separator = (argsText === "()") ? "" : ", ";
             const innerArgs = (argsText === "()") ? "" : argsText.slice(1, -1);
             
-            return `${newName}(&${targetNode.text}${separator}${innerArgs})`;
+            const objDef = helpers.findDefinitionOrNull(targetNode);
+            const objType = objDef ? helpers.getType(objDef) : "";
+            const isPointer = objType.includes('*');
+            const prefix = isPointer ? "" : "&";
+
+            return `${newName}(${prefix}${targetNode.text}${separator}${innerArgs})`;
         }
     );
 

@@ -21,7 +21,7 @@ typedef struct String String;
     printf("%s\n", s -> data);
 }
  void _String_method_Defer(String * s) {
-    _String_method_print(&s);
+    _String_method_print(s);
     free(s -> data);
 }
 int main() {
