@@ -335,7 +335,7 @@ export class SourceNode {
     }
 
     get named() {
-        return Object.fromEntries(this.children.filter(c => c.isNamed).map(c => [c.fieldName, c]));
+        return Object.fromEntries(this.children.filter(c => c.isNamed).map((c, idx) => [c.fieldName ?? idx, c]));
     }
     /**
      * @returns {Object}

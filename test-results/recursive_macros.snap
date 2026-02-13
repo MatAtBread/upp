@@ -12,26 +12,27 @@ extern void *stderr;
 extern void *_stderr;
 #include "method.h"
 #include "defer.h"
-int some_condition = 1;
+int some_condition = 0;
 struct String {
-    char *data;
+    char * data;
 };
 typedef struct String String;
- void _String_method_print(String *s) {
-    printf("%s\n", s->data);
+ void _String_method_print(String * s) {
+    printf("%s\n", s -> data);
 }
- void _String_method_Defer(String *s) {
-    s->print();
-    free(s->data);
+ void _String_method_Defer(String * s) {
+    _String_method_print(&s);
+    free(s -> data);
 }
 int main() {
     String s1;
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
+    _String_method_print(&s1);
     if (some_condition) {
-        return 0;
+        return 1;
     }
-    return 1;
+    return 0;
 }
 
 ==== std/defer.h ===
@@ -44,9 +45,6 @@ int main() {
 ==== std/method.h ===
 
 
-==== COMPILATION ERROR ===
-./examples/recursive_macros.c:23:8: error: no member named 'print' in 'struct String'
-   23 |     s->print();
-      |     ~  ^
-1 error generated.
+==== RUN OUTPUT ===
+Hello
 

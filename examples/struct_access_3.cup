@@ -1,3 +1,5 @@
+#include "io-lite.h"
+
 @include(method.hup)
 
 struct Point {
@@ -6,8 +8,8 @@ struct Point {
 };
 typedef struct Point Point;
 
-@method(Point) int distance(Point *p) {
-    return p->x * p->x + p->y * p->y;
+@method(Point) int distance(Point * p) {
+    return p -> x * p -> x + p -> y * p -> y;
 }
 
 int main() {
@@ -15,5 +17,6 @@ int main() {
     p.x = 10;
     p.y = 20;
     int r = p.distance();
+    printf("distance: %d\n", r);
     return 0;
 }

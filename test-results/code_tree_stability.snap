@@ -1,9 +1,26 @@
 ==== examples/code_tree_stability.c ===
 
-int wrapper() { int x = 10; return 0; } 
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+int fn1() { int x = 10;; return 0; } 
+int y;
+int fn2() { y = 10; return 0; } 
 int main() {
-    return wrapper();
+    int r = fn1();
+    printf("Stable node test: %s\n", r ? "Failure" : "Success");
+    return r;
 }
 
 ==== RUN OUTPUT ===
+Stable node test: Success
 
