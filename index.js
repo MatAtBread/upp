@@ -110,7 +110,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             const absSource = path.resolve(expandedFiles[0]);
             const preProcessed = preprocess(absSource, command.depFlags || []);
             const registry = new Registry({ diagnostics: new DiagnosticsManager({}) });
-            const tree = registry._parse(preProcessed);
+            const tree = registry.parser.parse(preProcessed);
             console.log(tree.rootNode.toString());
             process.exit(0);
         }

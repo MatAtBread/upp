@@ -12,8 +12,8 @@
     }, { deep: true });
 }
 
-@longify(bar);
-@longify(baz);
+@longify(bar)
+@longify(baz)
 
 int foo = 100;
 int bar = 200;

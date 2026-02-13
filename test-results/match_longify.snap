@@ -12,8 +12,8 @@ extern void *stderr;
 extern void *_stderr;
 
 
-/*@longify(bar)*/;
-/*@longify(baz)*/;
+/*@longify(bar)*/
+/*@longify(baz)*/
 int foo = 100;
 long bar = 200L;
 long baz = 5L;
@@ -22,7 +22,7 @@ void f() {
 }
 void global() {
     printf("global\n");
-    printf("bar is of type " "long" "\nbaz is of type " "long" "\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "long", "long");
 }
 int main() {
     long bar = 5L;

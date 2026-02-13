@@ -465,6 +465,15 @@ export class SourceNode {
         const originalText = this.text;
         const oldCaptured = this._capturedText;
 
+        const oldChildren = this.children;
+        const snapshotIdentity = (nodes) => {
+            for (const n of nodes) {
+                n._snapshotSearchable = n.searchableText;
+                snapshotIdentity(n.children);
+            }
+        };
+        snapshotIdentity(oldChildren);
+
         if (Array.isArray(newNode)) {
             // Handle array of nodes/text
             const textParts = newNode.map(n => typeof n === 'string' ? n : n.text);
@@ -534,7 +543,7 @@ export class SourceNode {
                     const oldIdNode = oldIds[0];
                     const newIdNode = newIds[0];
                     if (newIdNode._capturedText === undefined) {
-                        newIdNode._capturedText = oldIdNode.text;
+                        newIdNode._capturedText = oldIdNode._snapshotSearchable || oldIdNode.text;
                     }
                 }
                 // Also match by fieldName?
