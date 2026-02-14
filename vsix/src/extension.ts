@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 export function activate(context: vscode.ExtensionContext) {
     let debounceTimer: NodeJS.Timeout | undefined;
@@ -68,7 +69,7 @@ export function activate(context: vscode.ExtensionContext) {
             const config = vscode.workspace.getConfiguration('upp');
             const customPath = config.get<string>('path');
             const originalPath = doc.uri.fsPath;
-            const tempPath = path.join(path.dirname(originalPath), `.upp_preview_${path.basename(originalPath)}`);
+            const tempPath = path.join(os.tmpdir(), `.upp_preview_${path.basename(originalPath)}`);
 
             try {
                 fs.writeFileSync(tempPath, doc.getText());
@@ -80,7 +81,7 @@ export function activate(context: vscode.ExtensionContext) {
                     exec(cmd, { cwd: path.dirname(originalPath) }, (err, stdout, stderr) => {
                         // If Strategy 1 fails (upp not in path) and we didn't have a custom path, try auto-detection
                         if (err && !customPath) {
-                            this.fallbackTranspile(tempPath, resolve);
+                            this.fallbackTranspile(tempPath, resolve, originalPath);
                         } else {
                             if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
                             if (err) resolve(`// Transpilation Error:\n${stderr || err.message}`);
@@ -94,7 +95,7 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }
 
-        private fallbackTranspile(tempPath: string, resolve: (value: string) => void) {
+        private fallbackTranspile(tempPath: string, resolve: (value: string) => void, originalPath: string) {
             // Strategy 2: Search for index.js in workspace or dev path
             let rootPath: string | undefined;
             const devPath = path.join(context.extensionUri.fsPath, '..', '..');

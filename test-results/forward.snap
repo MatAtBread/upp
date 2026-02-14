@@ -15,17 +15,17 @@ extern char *strcpy(char *dest, const char *src);
 extern void *stderr;
 extern void *_stderr;
 
-;
+
+int main() {
+    foo();
+    return 0;
+}
 void foo() {
     printf("Foo calls bar\n");
     bar();
 }
 void bar() {
     printf("Bar called\n");
-}
-int main() {
-    foo();
-    return 0;
 }
 
 ==== std/forward.h ===

@@ -28,6 +28,7 @@ const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const os = __importStar(require("os"));
 function activate(context) {
     let debounceTimer;
     const virtualDocumentProvider = new class {
@@ -90,7 +91,7 @@ function activate(context) {
             const config = vscode.workspace.getConfiguration('upp');
             const customPath = config.get('path');
             const originalPath = doc.uri.fsPath;
-            const tempPath = path.join(path.dirname(originalPath), `.upp_preview_${path.basename(originalPath)}`);
+            const tempPath = path.join(os.tmpdir(), `.upp_preview_${path.basename(originalPath)}`);
             try {
                 fs.writeFileSync(tempPath, doc.getText());
                 return new Promise((resolve) => {
@@ -99,7 +100,7 @@ function activate(context) {
                     (0, child_process_1.exec)(cmd, { cwd: path.dirname(originalPath) }, (err, stdout, stderr) => {
                         // If Strategy 1 fails (upp not in path) and we didn't have a custom path, try auto-detection
                         if (err && !customPath) {
-                            this.fallbackTranspile(tempPath, resolve);
+                            this.fallbackTranspile(tempPath, resolve, originalPath);
                         }
                         else {
                             if (fs.existsSync(tempPath))
@@ -118,7 +119,7 @@ function activate(context) {
                 return `// Extension Error: ${e instanceof Error ? e.message : String(e)}`;
             }
         }
-        fallbackTranspile(tempPath, resolve) {
+        fallbackTranspile(tempPath, resolve, originalPath) {
             // Strategy 2: Search for index.js in workspace or dev path
             let rootPath;
             const devPath = path.join(context.extensionUri.fsPath, '..', '..');
