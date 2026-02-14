@@ -1,3 +1,5 @@
+#include "io-lite.h"
+
 @define method(targetType) {
     const node = upp.consume();
     const funcDef = node;
@@ -17,37 +19,37 @@
     const newName = `_${cleanTarget}_method_${originalName}`;
 
     upp.registerTransform((root, helpers) => {
-        const queryText = `
-            (call_expression
-                function: (field_expression
-                    argument: (_) @obj
-                    field: (field_identifier) @field
-                ) @fn
-                arguments: (argument_list) @args
-            ) @call
-        `;
-        const matches = helpers.query(queryText, root);
-        for (const m of matches) {
-            if (m.captures.field.text === originalName) {
-                const operator = m.captures.fn.child(1).text;
-                const objRef = operator === '.' ? `&(${m.captures.obj.text})` : m.captures.obj.text;
-                const argsList = m.captures.args.text.slice(1, -1);
-                const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
-                helpers.replace(m.captures.call, helpers.code`${newName}(${finalArgs})`);
+        const calls = root.find('call_expression');
+        for (const call of calls) {
+            const fn = call.childForFieldName('function');
+            if (fn && fn.type === 'field_expression') {
+                const field = fn.childForFieldName('field');
+                if (field && field.text === originalName) {
+                    const obj = fn.childForFieldName('argument');
+                    const args = call.childForFieldName('arguments');
+                    // Check if dot or arrow
+                    const operator = fn.text.includes('->') ? '->' : '.';
+                    const objRef = operator === '.' ? `&(${obj.text})` : obj.text;
+                    const argsText = args.text.slice(1, -1);
+                    const finalArgs = objRef + (argsText.trim() ? ', ' + argsText : '');
+                    helpers.replace(call, helpers.code`${newName}(${finalArgs})`);
+                }
             }
         }
     });
 
     if (originalName === 'Defer') {
-        const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`, upp.root);
-        for (const m of matches) {
-            if (m.captures.type.text === cleanTarget) {
-                const declNode = m.captures.decl;
-                for (let i = 0; i < declNode.childCount; i++) {
-                    const child = declNode.child(i);
-                    if (child.type === 'identifier') {
-                        const varName = child.text;
-                        upp.replace({ start: declNode.endIndex, end: declNode.endIndex }, upp.code` @defer ${varName}.Defer();`);
+        const declarations = upp.root.find('declaration');
+        for (const declNode of declarations) {
+            const typeNode = declNode.childForFieldName('type');
+            if (typeNode && typeNode.text === cleanTarget) {
+                // Find identifiers in this declaration
+                const ids = declNode.find('identifier');
+                for (const id of ids) {
+                    // Check if it's a declarator (heuristic)
+                    if (id.parent.type.includes('declarator') || id.parent === declNode) {
+                        const varName = id;
+                        declNode.insertAfter(upp.code`@defer ${varName}.Defer();`);
                     }
                 }
             }
@@ -59,46 +61,46 @@
 
 @define defer() {
     const node = upp.consume();
-    const scope = upp.findEnclosing(node, 'compound_statement');
+    const scope = upp.findEnclosing(upp.invocation.invocationNode, 'compound_statement');
     if (!scope) return;
 
     const absStart = (node.tree && node.tree === upp.root.tree) ? node.startIndex : upp.invocation.startIndex;
 
-    const safetyMatches = upp.query(`
-        (break_statement) @break
-        (continue_statement) @continue
-        (goto_statement) @goto
-    `, scope);
-    for (const m of safetyMatches) {
-        if (m.node.startIndex > absStart) {
-            throw new Error(`@defer cannot be used in a scope containing ${m.node.type.replace('_statement', '')}`);
+    upp.registerTransform((root, helpers) => {
+        const functions = root.find('function_definition');
+        let targetBody = null;
+        for (const f of functions) {
+            const sig = helpers.getFunctionSignature(f);
+            if (sig.bodyNode && sig.bodyNode.startIndex <= absStart && sig.bodyNode.endIndex >= absStart) {
+                targetBody = sig.bodyNode;
+                break;
+            }
         }
-    }
 
-    const returnMatches = upp.query(`(return_statement) @ret`, scope);
-    for (const m of returnMatches) {
-        if (m.captures.ret.startIndex > absStart) {
-            upp.replace({ start: m.captures.ret.startIndex, end: m.captures.ret.startIndex }, upp.code`${node.text} `);
+        if (!targetBody) return;
+
+        const matches = targetBody.find('return_statement');
+        for (const m of matches) {
+            if (m.startIndex > absStart) {
+                m.insertBefore(upp.code`${node.text} `);
+            }
         }
-    }
 
-    const lastStmt = scope.lastNamedChild;
-    if (lastStmt && lastStmt.type !== 'return_statement' && lastStmt.startIndex > absStart) {
-        const endBrace = scope.endIndex - 1;
-        upp.replace({ start: endBrace, end: endBrace }, upp.code`${node.text} `);
-    }
-
-    return "";
+        const lastBrace = targetBody.children.find(c => c.text === '}');
+        if (lastBrace) {
+            lastBrace.insertBefore(upp.code`${node.text} `);
+        }
+    });
 }
 
 typedef struct String String;
 struct String {
-    char *data;
+    char * data;
 };
 
-@method(String) void Defer(String *s) {
-    printf("Freeing string: %s\n", s->data);
-    free(s->data);
+@method(String) void Defer(String * s) {
+    printf("Freeing string: %s\n", s -> data);
+    free(s -> data);
 }
 
 int main() {

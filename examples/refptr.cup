@@ -1,8 +1,8 @@
 
 #include "io-lite.h"
-#include <stdlib.h>
+#include < stdlib.h >
 
-@define RefPtr(T) {
+  @define RefPtr(T) {
   let typeName = T.trim();
   if (typeName.startsWith('struct ')) {
     typeName = typeName.slice(7).trim();
@@ -33,8 +33,8 @@
       if (decl) {
         // Look for identifier in declarator tree
         const nameNode = decl.find('identifier')[0];
-        if (nameNode &&nameNode.text == = methodName)
-          return true;
+        if (nameNode && nameNode.text == = methodName)
+        return true;
       }
     }
 
@@ -45,39 +45,39 @@
     `; // RefRetain or RefRelease
     if (upp.registry && upp.registry.invocations) {
       return upp.registry.invocations.some(inv = > {
-        if (inv.name == = targetMacro) {
-          const arg0 = inv.args[0].trim();
-          let argType = arg0;
-          if (argType.startsWith('struct '))
-            argType = argType.slice(7).trim();
-          return argType == = typeName;
-        }
-        return false;
-      });
-    }
-    return false;
-  };
+        if(inv.name == = targetMacro) {
+        const arg0 = inv.args[0].trim();
+        let argType = arg0;
+        if (argType.startsWith('struct '))
+          argType = argType.slice(7).trim();
+        return argType == = typeName;
+      }
+      return false;
+    });
+  }
+  return false;
+};
 
-  const hasRetain = detectCustomMethod('Retain');
-  const hasRelease = detectCustomMethod('Release');
-  const isIntrusive = hasRetain; // Assume if Retain exists, it's intrusive
+const hasRetain = detectCustomMethod('Retain');
+const hasRelease = detectCustomMethod('Release');
+const isIntrusive = hasRetain; // Assume if Retain exists, it's intrusive
 
-  if (!upp.registry.state['RefPtr_' + typeName]) {
-    // console.error(`RefPtr for ${typeName}: Intrusive=${isIntrusive}`);
+if (!upp.registry.state['RefPtr_' + typeName]) {
+  // console.error(`RefPtr for ${typeName}: Intrusive=${isIntrusive}`);
 
-    // Define struct body
-    let structBody = ` ${T} * ptr;
+  // Define struct body
+  let structBody = ` ${T} * ptr;
     int *count;
     `;
-    if (isIntrusive) {
-      structBody = ` ${T} * ptr;
+  if (isIntrusive) {
+    structBody = ` ${T} * ptr;
       `;
-    }
+  }
 
-    // Define Helper Impls
-    let retainImpl = ` if (p.count) { (*p.count)++; }
+  // Define Helper Impls
+  let retainImpl = ` if (p.count) { (*p.count)++; }
     `;
-    let releaseImpl = ` if (p.count) {
+  let releaseImpl = ` if (p.count) {
       (*p.count)--;
       if (*p.count == 0) {
         _${typeName} _method_Defer(p.ptr);
@@ -86,31 +86,31 @@
       }
     }
     `;
-    let wrapImpl = ` int *count = malloc(sizeof(int));
+  let wrapImpl = ` int *count = malloc(sizeof(int));
     *count = 1; /* Starts at 1 */
     return (${refTypeName}){ptr, count};
     `;
 
-    if (isIntrusive) {
-      retainImpl = ` if (p.ptr) { _${typeName} _method_Retain(p.ptr); }
+  if (isIntrusive) {
+    retainImpl = ` if (p.ptr) { _${typeName} _method_Retain(p.ptr); }
       `;
-      if (hasRelease) {
-        releaseImpl = ` if (p.ptr) { _${typeName} _method_Release(p.ptr); }
+    if (hasRelease) {
+      releaseImpl = ` if (p.ptr) { _${typeName} _method_Release(p.ptr); }
         `;
-      } else {
-        // Warning: Retain but no Release?
-        releaseImpl = `/* Warning: Retain defined but no Release detected */`;
-      }
+    } else {
+      // Warning: Retain but no Release?
+      releaseImpl = `/* Warning: Retain defined but no Release detected */`;
+    }
 
-      wrapImpl = `
+    wrapImpl = `
           // Intrusive wrap: assume ptr has count=1 or we adopt it.
           // Standard RefPtr practice acts as "taking ownership".
           // If wrapping a raw pointer from Create(), it has 1.
           return (${refTypeName}){ptr};
       `;
-    }
+  }
 
-    const headerCode = `
+  const headerCode = `
         // Forward declaration of Type
         struct $ {
       typeName
@@ -120,10 +120,10 @@
     void _${typeName} _method_Defer(${T} * f);
     $ {
       isIntrusive ? `
-          // Forward Custom Hooks
-          void _${typeName} _method_Retain(${T} * p);
-      void _${typeName} _method_Release(${T} * p);
-      ` : ''
+  // Forward Custom Hooks
+  void _${ typeName } _method_Retain(${ T } * p);
+  void _${ typeName } _method_Release(${ T } * p);
+  ` : ''
     }
 
     typedef struct {
@@ -166,470 +166,465 @@
     }
 
     `;
-    upp.hoist(headerCode);
-    upp.registry.state['RefPtr_' + typeName] = true;
-  }
+  upp.hoist(headerCode);
+  upp.registry.state['RefPtr_' + typeName] = true;
+}
 
-  // 2. Register Global Transformer (Once)
-  if (!upp.registry.state['RefPtr_Transformer']) {
-    // console.error("Registering RefPtr Transformer"); // Removed debug
-    upp.registerTransform((root, helpers) = > {
-      // console.error("Running RefPtr Transformer"); // Removed debug
+// 2. Register Global Transformer (Once)
+if (!upp.registry.state['RefPtr_Transformer']) {
+  // console.error("Registering RefPtr Transformer"); // Removed debug
+  upp.registerTransform((root, helpers) = > {
+    // console.error("Running RefPtr Transformer"); // Removed debug
 
+    // Fix: ensure we use rootNode if root is a Tree
+    try {
       // Fix: ensure we use rootNode if root is a Tree
-      try {
-        // Fix: ensure we use rootNode if root is a Tree
-        const startNode = root.rootNode || root;
-        // console.error("StartNode: " + startNode); // Debug
+      const startNode = root.rootNode || root;
+      // console.error("StartNode: " + startNode); // Debug
 
-        if (!startNode)
+      if(!startNode)
           return;
 
-        // Debug language mismatch
-        // Accessing internal properties might be restricted, but let's try
-        // The C binding might not expose .language property directly on Tree.
-        // But let's try to construct a query using helpers.TreeSitter if
-        // available.
+      // Debug language mismatch
+      // Accessing internal properties might be restricted, but let's try
+      // The C binding might not expose .language property directly on Tree.
+      // But let's try to construct a query using helpers.TreeSitter if
+      // available.
 
-        // Workaround: Use the language from the helper, but verify if we can
-        // match. If this fails, we try to grab language from elsewhere?
+      // Workaround: Use the language from the helper, but verify if we can
+      // match. If this fails, we try to grab language from elsewhere?
 
-        // Define a robust query function that survives this mess
-        const robustQuery = (pattern, node) => {
-          const results = [];
-                    const typeStr = pattern.match(/\((\w+)/);
-                    if (typeStr) {
-            const targetType = typeStr[1];
-            if (node.type == = targetType)
-              results.push(node);
-            results.push(... node.find(targetType));
-                    }
-                    // Filter duplicates
-                    const uniqueResults = results.filter((n, i) => results.findIndex(m => m.id === n.id) === i);
+      // Define a robust query function that survives this mess
+      const robustQuery = (pattern, node) => {
+        const results = [];
+        const typeStr = pattern.match(/\((\w+)/);
+        if (typeStr) {
+          const targetType = typeStr[1];
+          if (node.type == = targetType)
+  results.push(node);
+  results.push(...node.find(targetType));
+}
+// Filter duplicates
+const uniqueResults = results.filter((n, i) => results.findIndex(m => m.id === n.id) === i);
 
-                    if (pattern.includes('declaration') && !pattern.includes('init_declarator')) {
-            const res =
-                uniqueResults
-                    .map(d = >
-                             {
-                               let decl = d.childForFieldName('declarator');
-                               // If it's an init_declarator, we want its
-                               // declarator (the identifier)
-                               if (decl &&decl.type == = 'init_declarator') {
-                                 decl = decl.childForFieldName('declarator');
-                               }
-                               return {
-                                 captures : {
-                                   type : d.childForFieldName('type'),
-                                   decl : decl,
-                                   declaration : d
-                                 }
-                               };
+if (pattern.includes('declaration') && !pattern.includes('init_declarator')) {
+  const res =
+    uniqueResults
+      .map(d = >
+      {
+        let decl = d.childForFieldName('declarator');
+        // If it's an init_declarator, we want its
+        // declarator (the identifier)
+        if(decl && decl.type == = 'init_declarator') {
+          decl = decl.childForFieldName('declarator');
+}
+return {
+  captures: {
+    type: d.childForFieldName('type'),
+    decl: decl,
+    declaration: d
+  }
+};
                              })
                     .filter(m = > m.captures.type && m.captures.decl);
-            return res;
+return res;
                     }
-                    if (pattern.includes('assignment_expression')) {
-            return uniqueResults.map(a = > {
-              return {
-                captures : {
-                  left : a.childForFieldName('left'),
-                  right : a.childForFieldName('right'),
-                  assign : a
-                }
-              };
-            });
-                    }
-                    if (pattern.includes('field_expression')) {
-            return uniqueResults
-                .map(f = >
-                         {
-                           // Filter for -> operator if pattern specifies it
-                           if (pattern.includes('"->"')) {
-                             if (!f.text.includes('->'))
-                               return null;
-                           }
-                           return {
-                             captures : {
-                               lhs : f.childForFieldName('argument'),
-                               expr : f
-                             }
-                           };
-                         })
+if (pattern.includes('assignment_expression')) {
+  return uniqueResults.map(a = > {
+    return {
+      captures: {
+        left: a.childForFieldName('left'),
+        right: a.childForFieldName('right'),
+        assign: a
+      }
+    };
+  });
+}
+if (pattern.includes('field_expression')) {
+  return uniqueResults
+    .map(f = >
+    {
+      // Filter for -> operator if pattern specifies it
+      if(pattern.includes('"->"')) {
+    if (!f.text.includes('->'))
+      return null;
+  }
+  return {
+    captures: {
+      lhs: f.childForFieldName('argument'),
+      expr: f
+    }
+  };
+})
                 .filter(m = > m != = null && m.captures.lhs != = null);
                     }
-                    if (pattern.includes('pointer_expression')) {
-            return results.map(p = > {
-              return {
-                captures : {arg : p.childForFieldName('argument'), expr : p}
-              };
-            });
+if (pattern.includes('pointer_expression')) {
+  return results.map(p = > {
+    return {
+      captures: { arg: p.childForFieldName('argument'), expr: p }
+    };
+  });
+}
+if (pattern.includes('return_statement')) {
+  return results.map(r = > { return { captures: { ret: r } }; });
+}
+if (pattern.includes('call_expression')) {
+  return results.map(c = > {
+    const fn = c.childForFieldName('function');
+    const argsNode = c.childForFieldName('arguments');
+    let arg = null;
+    if(argsNode && argsNode.namedChildCount > 0) {
+    arg = argsNode.namedChild(0);
+  }
+  return { captures: { fn, arg, call: c } };
+});
                     }
-                    if (pattern.includes('return_statement')) {
-            return results.map(r = > { return {captures : {ret : r}}; });
-                    }
-                    if (pattern.includes('call_expression')) {
-            return results.map(c = > {
-              const fn = c.childForFieldName('function');
-              const argsNode = c.childForFieldName('arguments');
-              let arg = null;
-              if (argsNode && argsNode.namedChildCount > 0) {
-                arg = argsNode.namedChild(0);
-              }
-              return {captures : {fn, arg, call : c}};
-            });
-                    }
-                    if (pattern.includes('init_declarator')) {
-            return results.map(i = > {
-              return {
-                captures : {
-                  decl : i.childForFieldName('declarator'),
-                  val : i.childForFieldName('value'),
-                  declNode : i
-                }
-              };
-            });
-                    }
-                    if (pattern.includes('function_declarator')) {
-            return results.map(f = > {
-              return {
-                captures : {name : f.childForFieldName('declarator'), call : f}
-              };
-            });
-                    }
-                    if (pattern.includes('function_definition')) {
-            return results.map(f = > { return {captures : {def : f}}; });
-                    }
-                    return [];
+if (pattern.includes('init_declarator')) {
+  return results.map(i = > {
+    return {
+      captures: {
+        decl: i.childForFieldName('declarator'),
+        val: i.childForFieldName('value'),
+        declNode: i
+      }
+    };
+  });
+}
+if (pattern.includes('function_declarator')) {
+  return results.map(f = > {
+    return {
+      captures: { name: f.childForFieldName('declarator'), call: f }
+    };
+  });
+}
+if (pattern.includes('function_definition')) {
+  return results.map(f = > { return { captures: { def: f } }; });
+}
+return [];
         };
 
-        const decls =
-            robustQuery(`(declaration type : (type_identifier)
+const decls =
+  robustQuery(`(declaration type : (type_identifier)
                               @type declarator : (_) @decl) @declaration`,
-                        startNode);
-        // console.error("Found " + decls.length + " typed declarations"); //
-        // Removed debug
-        const refPtrVars = new Set();
-        const varTypes = new Map();
+    startNode);
+// console.error("Found " + decls.length + " typed declarations"); //
+// Removed debug
+const refPtrVars = new Set();
+const varTypes = new Map();
 
-        // Pass 1: Collect Variables
-        for (const m of decls) {
-          // Manual Visit Check
-          if (!helpers.visit(m.captures.declaration))
-            continue;
+// Pass 1: Collect Variables
+for (const m of decls) {
+  // Manual Visit Check
+  if (!helpers.visit(m.captures.declaration))
+    continue;
 
-          // If query matches, verify type name
-          const typeText = m.captures.type.text;
-          if (typeText.startsWith('RefPtr_')) {
-            const typeSuffix = typeText.slice(7);
+  // If query matches, verify type name
+  const typeText = m.captures.type.text;
+  if (typeText.startsWith('RefPtr_')) {
+    const typeSuffix = typeText.slice(7);
 
-            // Handle init_declarator vs declarator
-            let varName = m.captures.decl.text;
-            const isInit = m.captures.decl.type == = 'init_declarator';
+    // Handle init_declarator vs declarator
+    let varName = m.captures.decl.text;
+    const isInit = m.captures.decl.type == = 'init_declarator';
 
-            if (isInit) {
-              const res = robustQuery('(init_declarator declarator: (_) @decl)',
-                                      m.captures.decl);
-              if (res.length > 0) {
-                varName = res[0].captures.decl.text;
-              } else {
-                // Fallback
-                varName = m.captures.decl.text;
-              }
-            }
+    if (isInit) {
+      const res = robustQuery('(init_declarator declarator: (_) @decl)',
+        m.captures.decl);
+      if (res.length > 0) {
+        varName = res[0].captures.decl.text;
+      } else {
+        // Fallback
+        varName = m.captures.decl.text;
+      }
+    }
 
-            if (varName.includes('['))
-              continue;
+    if (varName.includes('['))
+      continue;
 
-            refPtrVars.add(varName);
-            varTypes.set(varName, typeSuffix);
+    refPtrVars.add(varName);
+    varTypes.set(varName, typeSuffix);
 
-            const declNode = m.captures.declaration;
+    const declNode = m.captures.declaration;
 
-            // A. Cleanup at Scope Exit
-            const scope = helpers.findEnclosing(declNode, 'compound_statement');
-            if (scope) {
-              const releaseCallCode = `_release_${typeSuffix}(${varName});
+    // A. Cleanup at Scope Exit
+    const scope = helpers.findEnclosing(declNode, 'compound_statement');
+    if (scope) {
+      const releaseCallCode = `_release_${typeSuffix}(${varName});
               `;
 
-              // Check if already inserted at end of scope
-              // Look at the last statement or statements near end
-              let alreadyInserted = false;
-              const closingBrace = scope.child(scope.childCount - 1); // }
-              if (closingBrace) {
-                let prev = closingBrace.previousNamedSibling;
-                while (prev &&prev.startPosition.row ==
+      // Check if already inserted at end of scope
+      // Look at the last statement or statements near end
+      let alreadyInserted = false;
+      const closingBrace = scope.child(scope.childCount - 1); // }
+      if (closingBrace) {
+        let prev = closingBrace.previousNamedSibling;
+        while (prev && prev.startPosition.row ==
                        = closingBrace.startPosition.row) { // Same line? No.
-                  // Just walk back a few nodes or check text
-                  if (prev.text.includes(
-                          releaseCallCode.trim())) { // weak check
-                    alreadyInserted = true;
-                    break;
-                  }
-                  prev = prev.previousNamedSibling;
-                }
-              }
+          // Just walk back a few nodes or check text
+          if (prev.text.includes(
+            releaseCallCode.trim())) { // weak check
+            alreadyInserted = true;
+            break;
+          }
+          prev = prev.previousNamedSibling;
+        }
+      }
 
-              // Better: check if the text range immediately before closure
-              // matches
-              const scopeText = scope.text;
-              if (scopeText.includes(releaseCallCode.trim())) {
-                // This is too broad (could be elsewhere).
-                // We need strict position check or node check.
-                // But strict position is hard because we re-parse.
-                // We can mark the node? No.
-                // We can check if `scope` children include an
-                // expression_statement with the call.
-              }
+      // Better: check if the text range immediately before closure
+      // matches
+      const scopeText = scope.text;
+      if (scopeText.includes(releaseCallCode.trim())) {
+        // This is too broad (could be elsewhere).
+        // We need strict position check or node check.
+        // But strict position is hard because we re-parse.
+        // We can mark the node? No.
+        // We can check if `scope` children include an
+        // expression_statement with the call.
+      }
 
-              // Let's use a specific comment tag? /* @generated */
-              // Or just parse the children.
+      // Let's use a specific comment tag? /* @generated */
+      // Or just parse the children.
 
-              // New approach: query for the release call in the scope
-              // (call_expression function: (identifier) @fn arguments:
-              // (argument_list (identifier) @arg))
-              const cleanupQuery =
-                  robustQuery(`(call_expression function : (identifier)
+      // New approach: query for the release call in the scope
+      // (call_expression function: (identifier) @fn arguments:
+      // (argument_list (identifier) @arg))
+      const cleanupQuery =
+        robustQuery(`(call_expression function : (identifier)
                                     @fn arguments : (argument_list(identifier)
                                                          @arg))`,
-                              scope);
-              for (const match of cleanupQuery) {
-                if (match.captures.fn &&match.captures.fn.text ==
-                    = `_release_$ { typeSuffix }` &&match.captures.arg &&match
-                          .captures.arg.text == = varName) {
-                  // Found a release call. Is it at the end?
-                  // Assume yes if found. (Simplification)
-                  alreadyInserted = true;
-                  break;
-                }
-              }
+          scope);
+      for (const match of cleanupQuery) {
+        if (match.captures.fn && match.captures.fn.text ==
+                    = `_release_$ { typeSuffix }` && match.captures.arg && match
+            .captures.arg.text == = varName) {
+          // Found a release call. Is it at the end?
+          // Assume yes if found. (Simplification)
+          alreadyInserted = true;
+          break;
+        }
+      }
 
-              if (!alreadyInserted) {
-                const endBrace = scope.endIndex - 1;
-                helpers.replace(
-                    {start : endBrace, end : endBrace},
-                    helpers.code`$ { releaseCallCode } `);
-              }
+      if (!alreadyInserted) {
+        const closingBrace = scope.children.find(c => c.text === '}');
+        if (closingBrace) {
+          closingBrace.insertBefore(helpers.code`${releaseCallCode} `);
+        }
+      }
 
-              const returns = robustQuery(`(return_statement) @ret`, scope);
-              for (const ret of returns) {
-                if (ret.captures.ret.startIndex > declNode.startIndex) {
-                  // Check if returning the variable itself
-                  let retArg = ret.captures.ret.childForFieldName('value');
-                  if (!retArg)
-                    retArg = ret.captures.ret.childForFieldName(
-                        'expression'); // Try expression
-                  if (!retArg && ret.captures.ret.childCount > 1)
-                    retArg = ret.captures.ret.child(
-                        1); // Try index 1 (0 is return kw)
+      const returns = robustQuery(`(return_statement) @ret`, scope);
+      for (const ret of returns) {
+        if (ret.captures.ret.startIndex > declNode.startIndex) {
+          // Check if returning the variable itself
+          let retArg = ret.captures.ret.childForFieldName('value');
+          if (!retArg)
+            retArg = ret.captures.ret.childForFieldName(
+              'expression'); // Try expression
+          if (!retArg && ret.captures.ret.childCount > 1)
+            retArg = ret.captures.ret.child(
+              1); // Try index 1 (0 is return kw)
 
-                  let isReturningVar = false;
-                  if (retArg && retArg.text.trim() == = varName) {
-                    isReturningVar = true;
-                  }
+          let isReturningVar = false;
+          if (retArg && retArg.text.trim() == = varName) {
+            isReturningVar = true;
+          }
 
-                  // Also handle `return (p);`
-                  if (retArg &&retArg.type ==
-                      = 'parenthesized_expression' &&retArg.text ==
+          // Also handle `return (p);`
+          if (retArg && retArg.type ==
+                      = 'parenthesized_expression' && retArg.text ==
                       = `(${varName})`) {
-                    isReturningVar = true;
-                  }
+            isReturningVar = true;
+          }
 
-                  if (isReturningVar) {
-                    // Do NOT release. Ownership transfer.
-                    continue;
-                  }
+          if (isReturningVar) {
+            // Do NOT release. Ownership transfer.
+            continue;
+          }
 
-                  // Check if preceded by release (idempotency)
-                  const prev = ret.captures.ret.previousNamedSibling;
-                  let annotated = false;
-                  if (prev &&prev.type ==
+          // Check if preceded by release (idempotency)
+          const prev = ret.captures.ret.previousNamedSibling;
+          let annotated = false;
+          if (prev && prev.type ==
                       = 'expression_statement' &&
-                        prev.text.includes(releaseCallCode.trim())) {
-                    annotated = true;
-                  }
-                  if (!annotated) {
-                    helpers.replace(
-                        {
-                          start : ret.captures.ret.startIndex,
-                          end : ret.captures.ret.startIndex
-                        },
-                        helpers.code`$ { releaseCallCode } `);
-                  }
-                }
-              }
-            }
+              prev.text.includes(releaseCallCode.trim())) {
+            annotated = true;
+          }
+          if (!annotated) {
+            ret.captures.ret.insertBefore(helpers.code`${releaseCallCode} `);
+          }
+        }
+      }
+    }
 
-            // Helper for Init Generic
-            const getInitExpr = (valExpr) => {
-              return `_Generic((${valExpr}),
+    // Helper for Init Generic
+    const getInitExpr = (valExpr) => {
+      return `_Generic((${valExpr}),
                   struct ${typeSuffix} *: _wrap_${typeSuffix},
                   void *: _wrap_${typeSuffix},
                   RefPtr_${typeSuffix}: _copy_${typeSuffix})(${valExpr})`;
-            };
+    };
 
-            // B. Initialization (Ownership Transfer)
-            if (isInit) {
-              // Workaround for tree-sitter crash: avoid childForFieldName
-              let val = null;
-              for (let i = 0; i < m.captures.decl.childCount; i++) {
-                const child = m.captures.decl.child(i);
-                // Need field name? childForFieldName implementation is native.
-                // We can guess: value is usually the last child of
-                // init_declarator? Or use helpers.query again on this node?
-              }
+    // B. Initialization (Ownership Transfer)
+    if (isInit) {
+      // Workaround for tree-sitter crash: avoid childForFieldName
+      let val = null;
+      for (let i = 0; i < m.captures.decl.childCount; i++) {
+        const child = m.captures.decl.child(i);
+        // Need field name? childForFieldName implementation is native.
+        // We can guess: value is usually the last child of
+        // init_declarator? Or use helpers.query again on this node?
+      }
 
-              // Safer: use query
-              const valMatch = robustQuery('(init_declarator value: (_) @val)',
-                                           m.captures.decl);
-              if (valMatch.length > 0 && valMatch[0].captures.val) {
-                val = valMatch[0].captures.val;
-              }
+      // Safer: use query
+      const valMatch = robustQuery('(init_declarator value: (_) @val)',
+        m.captures.decl);
+      if (valMatch.length > 0 && valMatch[0].captures.val) {
+        val = valMatch[0].captures.val;
+      }
 
-              // Use _Generic init macro if not already wrapped
-              if (val && !val.text.includes('Generic(') &&
-                  !val.text.includes('_wrap_') &&
-                  !val.text.includes('_copy_')) {
-                helpers.replace(val, helpers.code`$ { getInitExpr(val.text) }`);
-              }
-            } else {
-              // Empty declaration: @RefPtr(T) p;
+      // Use _Generic init macro if not already wrapped
+      if (val && !val.text.includes('Generic(') &&
+        !val.text.includes('_wrap_') &&
+        !val.text.includes('_copy_')) {
+        helpers.replace(val, helpers.code`$ { getInitExpr(val.text) }`);
+      }
+    } else {
+      // Empty declaration: @RefPtr(T) p;
 
-              // Robustly search for function definition with this name
-              // We query for ANY function_declarator with this name,
-              // and check if it's part of a function_definition.
-              const createFn =
-                  robustQuery(`(function_definition) @def`, startNode)
-                      .find(m = > {
-                        const defNode = m.captures.def;
-                        // Search for the name identifier within the declarator
-                        // subtree
-                        const nameNode =
-                            robustQuery(`(function_declarator declarator : (
+      // Robustly search for function definition with this name
+      // We query for ANY function_declarator with this name,
+      // and check if it's part of a function_definition.
+      const createFn =
+        robustQuery(`(function_definition) @def`, startNode)
+          .find(m = > {
+            const defNode = m.captures.def;
+            // Search for the name identifier within the declarator
+            // subtree
+            const nameNode =
+              robustQuery(`(function_declarator declarator : (
                                             identifier) @name)`,
-                                        defNode);
-                        if (nameNode.length > 0) {
-                          return nameNode[0].captures.name.text ==
+                defNode);
+            if(nameNode.length > 0) {
+              return nameNode[0].captures.name.text ==
                                  = createMethodName;
-                        }
-                        return false;
-                      });
+    }
+    return false;
+  });
 
-              if (createFn) {
-                // Use Create()
-                const callExpr = `${createMethodName}()`;
-                helpers.replace(
-                    m.captures.decl,
-                    helpers.code`${varName} = $ { getInitExpr(callExpr) }`);
-              } else {
-                // Default fallback: calloc
-                helpers.replace(m.captures.decl,
-                                helpers.code`${varName} = _wrap_${typeSuffix}(
+  if (createFn) {
+    // Use Create()
+    const callExpr = `${createMethodName}()`;
+    helpers.replace(
+      m.captures.decl,
+      helpers.code`${varName} = $ { getInitExpr(callExpr) }`);
+  } else {
+    // Default fallback: calloc
+    helpers.replace(m.captures.decl,
+      helpers.code`${varName} = _wrap_${typeSuffix}(
                                     calloc(1, sizeof(struct ${typeSuffix})))`);
-              }
-            }
+  }
+}
           }
         }
 
-        // Pass 2: Assignments
-        const assigns = robustQuery(`(assignment_expression left : (identifier)
+// Pass 2: Assignments
+const assigns = robustQuery(`(assignment_expression left : (identifier)
                                           @left right : (_) @right) @assign`,
-                                    startNode);
-        for (const m of assigns) {
-          if (!helpers.visit(m.captures.assign))
-            continue;
+  startNode);
+for (const m of assigns) {
+  if (!helpers.visit(m.captures.assign))
+    continue;
 
-          const varName = m.captures.left.text;
-          if (refPtrVars.has(varName)) {
-            const typeSuffix = varTypes.get(varName);
-            const rightExpr = m.captures.right.text;
-            const assignmentNode = m.captures.assign;
+  const varName = m.captures.left.text;
+  if (refPtrVars.has(varName)) {
+    const typeSuffix = varTypes.get(varName);
+    const rightExpr = m.captures.right.text;
+    const assignmentNode = m.captures.assign;
 
-            // Check if parent is a parenthesis_expression or comma_expression
-            // that WE generated (retain, release, assignment)
-            const parent = assignmentNode.parent;
-            if (parent &&parent.type == = 'comma_expression') {
-              // Check if siblings are retain/release
-              // This is hard to detect perfectly.
-              // Check text of parent?
-              if (parent.text.includes(`_release_$ { typeSuffix }`)) {
-                continue;
-              }
-            }
-            // Or check if the assignment is wrapped in parens?
-            // ( ... , a = b)
-            // If we generate `(..., a=b)`, the assignment is inside parens?
-            // No, `a=b` is the last element of comma expr.
-            // The comma expr is inside parens.
-            // So `assignmentNode.parent` is comma_expression.
+    // Check if parent is a parenthesis_expression or comma_expression
+    // that WE generated (retain, release, assignment)
+    const parent = assignmentNode.parent;
+    if (parent && parent.type == = 'comma_expression') {
+      // Check if siblings are retain/release
+      // This is hard to detect perfectly.
+      // Check text of parent?
+      if (parent.text.includes(`_release_$ { typeSuffix }`)) {
+        continue;
+      }
+    }
+    // Or check if the assignment is wrapped in parens?
+    // ( ... , a = b)
+    // If we generate `(..., a=b)`, the assignment is inside parens?
+    // No, `a=b` is the last element of comma expr.
+    // The comma expr is inside parens.
+    // So `assignmentNode.parent` is comma_expression.
 
-            // Double check: if parent text starts with `(_retain_...`
-            // helpers.replace replaces the ASSIGNMENT node with `(...)`.
-            // So the NEW tree has `(comma_expr)` instead of `assignment`.
-            // But inside `comma_expr`, there is `assignment`.
-            // So query finds it AGAIN.
-            // We MUST ignore assignments inside our generated comma expression.
+    // Double check: if parent text starts with `(_retain_...`
+    // helpers.replace replaces the ASSIGNMENT node with `(...)`.
+    // So the NEW tree has `(comma_expr)` instead of `assignment`.
+    // But inside `comma_expr`, there is `assignment`.
+    // So query finds it AGAIN.
+    // We MUST ignore assignments inside our generated comma expression.
 
-            const genericAssign = `_Generic((${rightExpr}),
+    const genericAssign = `_Generic((${rightExpr}),
                 struct ${typeSuffix} *: _assign_wrap_${typeSuffix},
                 void *: _assign_wrap_${typeSuffix},
                 RefPtr_${typeSuffix}: _assign_copy_${typeSuffix})(
                 &${varName}, ${rightExpr})`;
 
-            // Replace `p = val` with inline Generic
-            helpers.replace(
-                m.captures.assign, helpers.code`$ { genericAssign }`);
-          }
-        }
+    // Replace `p = val` with inline Generic
+    helpers.replace(
+      m.captures.assign, helpers.code`$ { genericAssign }`);
+  }
+}
 
-        // Pass 3: Member Access Elision (p->x and *p)
-        // Query for field access using ->
-        const fieldAccess =
-            robustQuery(`(field_expression argument : (identifier) @lhs
+// Pass 3: Member Access Elision (p->x and *p)
+// Query for field access using ->
+const fieldAccess =
+  robustQuery(`(field_expression argument : (identifier) @lhs
                           operator: "->" field : (field_identifier)) @expr`,
-                        startNode);
-        for (const m of fieldAccess) {
-          if (!helpers.visit(m.captures.lhs))
-            continue;
+    startNode);
+for (const m of fieldAccess) {
+  if (!helpers.visit(m.captures.lhs))
+    continue;
 
-          const varName = m.captures.lhs.text;
-          if (refPtrVars.has(varName)) {
-            // console.error(`DEBUG Pass 3 (->) match: ${varName} parent:
-            // ${m.captures.lhs.parent.type} range:
-            // ${m.captures.lhs.startIndex}-${m.captures.lhs.endIndex}`);
-            // Rewrite p->x to p.ptr->x
-            helpers.replace(m.captures.lhs, helpers.code`${varName}.ptr`);
-          }
-        }
+  const varName = m.captures.lhs.text;
+  if (refPtrVars.has(varName)) {
+    // console.error(`DEBUG Pass 3 (->) match: ${varName} parent:
+    // ${m.captures.lhs.parent.type} range:
+    // ${m.captures.lhs.startIndex}-${m.captures.lhs.endIndex}`);
+    // Rewrite p->x to p.ptr->x
+    helpers.replace(m.captures.lhs, helpers.code`${varName}.ptr`);
+  }
+}
 
-        // Query for dereference (*p)
-        // Strict check for '*' operator to avoid matching '&' if tree-sitter
-        // confuses them
-        const derefs = robustQuery(`(pointer_expression argument : (identifier)
+// Query for dereference (*p)
+// Strict check for '*' operator to avoid matching '&' if tree-sitter
+// confuses them
+const derefs = robustQuery(`(pointer_expression argument : (identifier)
                                          @arg) @expr`,
-                                   startNode);
-        for (const m of derefs) {
-          if (!helpers.visit(m.captures.arg))
-            continue;
+  startNode);
+for (const m of derefs) {
+  if (!helpers.visit(m.captures.arg))
+    continue;
 
-          const expr = m.captures.expr;
-          const op = helpers.childForFieldName(expr, 'operator');
-          if (!op || op.text != = '*')
-            continue;
+  const expr = m.captures.expr;
+  const op = helpers.childForFieldName(expr, 'operator');
+  if (!op || op.text != = '*')
+  continue;
 
-          const varName = m.captures.arg.text;
-          if (refPtrVars.has(varName)) {
-            helpers.replace(m.captures.arg, helpers.code`${varName}.ptr`);
-          }
-        }
+  const varName = m.captures.arg.text;
+  if (refPtrVars.has(varName)) {
+    helpers.replace(m.captures.arg, helpers.code`${varName}.ptr`);
+  }
+}
       } catch (err) {
-        // console.error("RefPtr Transformer Error: " + err.message);
-      }
+  // console.error("RefPtr Transformer Error: " + err.message);
+}
     });
-    upp.registry.state['RefPtr_Transformer'] = true;
+upp.registry.state['RefPtr_Transformer'] = true;
   }
 
-  return refTypeName;
+return refTypeName;
 }
 
 @define RefRetain(T) {
@@ -665,7 +660,7 @@ struct Node {
 // Intrusive Retain
 @RefRetain(struct Node) {
   if (p) {
-    p->ref_count++;
+    p -> ref_count++;
     // printf("Intrusive Retain: %d\n", p->ref_count);
   }
 }
@@ -673,9 +668,9 @@ struct Node {
 // Intrusive Release
 @RefRelease(struct Node) {
   if (p) {
-    p->ref_count--;
+    p -> ref_count--;
     // printf("Intrusive Release: %d\n", p->ref_count);
-    if (p->ref_count == 0) {
+    if (p -> ref_count == 0) {
       // printf("Intrusive Free\n");
       free(p);
     }
@@ -683,22 +678,22 @@ struct Node {
 }
 
 // Factory
-struct Node *_Node_method_Create() {
-  struct Node *n = calloc(1, sizeof(struct Node));
-  n->ref_count = 1; // Start with 1
+struct Node * _Node_method_Create() {
+  struct Node * n = calloc(1, sizeof(struct Node));
+  n -> ref_count = 1; // Start with 1
   return n;
 }
 
-/* @method(struct Foo) */ void _Foo_method_Defer(struct Foo *f) {
+/* @method(struct Foo) */ void _Foo_method_Defer(struct Foo * f) {
   if (f)
-    printf("Defer Foo: %d\n", f->id);
+    printf("Defer Foo: %d\n", f -> id);
 }
 
 // Custom Create method to test auto-detection
-struct Foo *_Foo_method_Create() {
+struct Foo * _Foo_method_Create() {
   printf("Foo Created via Method!\n");
-  struct Foo *f = malloc(sizeof(struct Foo));
-  f->id = 999; // distinctive value
+  struct Foo * f = malloc(sizeof(struct Foo));
+  f -> id = 999; // distinctive value
   return f;
 }
 
@@ -707,31 +702,31 @@ int main() {
   {
     // 1. Implicit Init with malloc (void*)
     @RefPtr(struct Foo) p1 = malloc(sizeof(struct Foo));
-    p1->id =
-        1; // User requested elision: p->id should work/transform to p.ptr->id
-    printf("  p1 id: %d\n", p1->id);
+    p1 -> id =
+    1; // User requested elision: p->id should work/transform to p.ptr->id
+    printf("  p1 id: %d\n", p1 -> id);
 
     {
       printf("  Scope 2 Start\n");
       // 2. Implicit Copy Init (RefPtr)
       @RefPtr(struct Foo) p2 = p1;
-      printf("  p2 id: %d\n", p2->id); // Elision
+      printf("  p2 id: %d\n", p2 -> id); // Elision
 
       // 3. Implicit Zero Init (Fallback if no Create, but now we have Create!)
       // WAIT: We just added Create. So this test case behavior CHANGES.
       // Old p3 was zero-init (id=0). New p3 should be id=999.
       @RefPtr(struct Foo) p3;
-      printf("  p3 id: %d\n", p3->id);
+      printf("  p3 id: %d\n", p3 -> id);
 
       // 4. Assignment (RefPtr = RefPtr)
       p3 = p2; // p3 now shares p1/p2
-      printf("  p3 assigned from p2, id: %d\n", p3->id);
+      printf("  p3 assigned from p2, id: %d\n", p3 -> id);
 
       // 5. Assignment (RefPtr = malloc)
       @RefPtr(struct Foo) p4;
       p4 = malloc(sizeof(struct Foo));
-      p4->id = 4;
-      printf("  p4 id: %d\n", p4->id);
+      p4 -> id = 4;
+      printf("  p4 id: %d\n", p4 -> id);
     }
     printf("  Scope 2 End\n");
     // p2, p3, p4 released. p1 count should still be valid.
@@ -741,11 +736,11 @@ int main() {
   printf("Scope 3 Start (Intrusive)\n");
   {
     @RefPtr(struct Node) n1; // Use Create
-    n1->value = 10;
-    printf("  n1 value: %d\n", n1->value); // Elision
+    n1 -> value = 10;
+    printf("  n1 value: %d\n", n1 -> value); // Elision
 
     @RefPtr(struct Node) n2 = n1;
-    printf("  n2 shares n1. RefCount: %d\n", n1->ref_count); // Should be 2
+    printf("  n2 shares n1. RefCount: %d\n", n1 -> ref_count); // Should be 2
   }
   printf("Scope 3 End\n");
 

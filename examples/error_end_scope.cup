@@ -3,16 +3,17 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
  */
 @define defer() {
     const node = upp.consume();
-    const fn = upp.findEnclosing(node, 'function_definition');
+    if (!node) return "";
+    const fn = upp.findEnclosing(upp.invocation.invocationNode, 'function_definition');
     if (!fn) upp.error(node, "@defer must be within a function");
 
     // Initialize registry tracking for this function
     const fnId = fn.id;
     if (!upp.registry.deferData) upp.registry.deferData = {};
     if (!upp.registry.deferData[fnId]) {
-        const declarator = fn.childForFieldName('declarator');
-        const fnName = upp.query('(identifier) @id', declarator)[0].captures.id.text;
-        const returnType = fn.childForFieldName('type').text;
+        const sig = upp.getFunctionSignature(fn);
+        const fnName = sig.name;
+        const returnType = sig.returnType;
 
         upp.registry.deferData[fnId] = {
             name: fnName,
@@ -29,16 +30,12 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
             if (data.applied) return;
 
             // Find the specific function body
-            const matches = helpers.query(`
-                (function_definition
-                    declarator: (function_declarator declarator: (identifier) @id)
-                    body: (compound_statement) @body)
-            `, root);
-
+            const functions = root.find('function_definition');
             let targetBody = null;
-            for (const m of matches) {
-                if (m.captures.id.text === data.name) {
-                    targetBody = m.captures.body;
+            for (const f of functions) {
+                const sig = helpers.getFunctionSignature(f);
+                if (sig.name === data.name) {
+                    targetBody = sig.bodyNode;
                     break;
                 }
             }
@@ -48,16 +45,14 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
 
             // 1. Declare return variable at the top of the body
             if (!isVoid) {
-               const insertPos = targetBody.startIndex + 1;
-               helpers.replace({start: insertPos, end: insertPos}, helpers.code` \n    ${data.returnType} ${data.returnVarName};`);
+                targetBody.children[0].insertAfter(helpers.code` \n    ${data.returnType} ${data.returnVarName};`);
             }
 
             // 2. Replace all returns in this body
-            const returns = helpers.query('(return_statement) @ret', targetBody);
+            const returnNodes = targetBody.find('return_statement');
             const sortedBlocks = data.blocks.slice().sort((a, b) => a.pos - b.pos);
 
-            for (const r of returns) {
-                const retNode = r.captures.ret;
+            for (const retNode of returnNodes) {
 
                 // Find all defers that were encountered BEFORE this return
                 const activeDefers = sortedBlocks.filter(b => b.pos < retNode.startIndex);
@@ -74,20 +69,16 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
                 }
             }
 
-            // 3. Append labels and cleanup at the end
-            let cleanup = "";
-            for (let i = sortedBlocks.length - 1; i >= 0; i--) {
-                cleanup += `${data.labelPrefix}_${i}:\n  ${sortedBlocks[i].text}\n`;
+            // 3. Inject the cleanup labels at the end of the body
+            const lastBrace = targetBody.children.find(c => c.text === '}');
+            if (lastBrace) {
+                let cleanup = "";
+                for (let i = sortedBlocks.length - 1; i >= 0; i--) {
+                    cleanup += `${data.labelPrefix}_${i}:\n { ${sortedBlocks[i].text} }\n`;
+                }
+                cleanup += ` return ${isVoid ? '' : data.returnVarName};`;
+                lastBrace.insertBefore(helpers.code`\n${cleanup}`);
             }
-
-            if (isVoid) {
-                cleanup += `  return;\n`;
-            } else {
-                cleanup += `  return ${data.returnVarName};\n`;
-            }
-
-            const lastBrace = targetBody.endIndex - 1;
-            helpers.replace({start: lastBrace, end: lastBrace}, helpers.code`\n${cleanup}`);
 
             data.applied = true;
         });
@@ -105,12 +96,12 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
 int some_condition = 0;
 
 int main() {
-    char *str1 = malloc(100);
+    char * str1 = malloc(100);
     @defer { free(str1); str1 = NULL; }
-    char *str2;
+    char * str2;
 
     {
-        char *nested = malloc(100);
+        char * nested = malloc(100);
         @defer { free(nested); nested = NULL; }
         if (some_condition) {
             // should defer here, str1

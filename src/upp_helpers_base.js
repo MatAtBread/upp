@@ -35,6 +35,13 @@ class UppHelpersBase {
                 result += (val && typeof val === 'object' && val.text !== undefined) ? val.text : String(val);
             }
         }
+
+        // If the result contains macro invocations, wrap them so they are expanded
+        if (result.includes('@')) {
+            const prepared = this.registry.prepareSource(result, this.registry.originPath);
+            return prepared.cleanSource;
+        }
+
         return result;
     }
 
@@ -124,29 +131,22 @@ class UppHelpersBase {
 
     replace(n, newContent) {
         if (!n) return "";
+
+        let finalContent = newContent;
+        if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && this.registry.prepareSource) {
+            const prepared = this.registry.prepareSource(finalContent, this.registry.originPath);
+            finalContent = prepared.cleanSource;
+        }
+
         if (n.replaceWith) {
-            const result = n.replaceWith(newContent);
+            const result = n.replaceWith(finalContent);
             if (this.contextNode === n) this.contextNode = result;
             return result;
         }
 
-        // Handle range object { start, end } implementation for root insertion
+        // Handle range object { start, end } implementation (DEPRECATED and REMOVED)
         if (typeof n.start === 'number' && typeof n.end === 'number') {
-
-            const root = this.root || this.findRoot();
-            if (root && n.start === 0 && n.end === 0) {
-                if (root.children.length > 0) {
-                    return root.children[0].insertBefore(newContent);
-                } else {
-                    // Empty root, direct edit
-                    root.tree.edit(0, 0, newContent);
-                    // If we want to return nodes, we'd need to parse and attach.
-                    // For now just return string to avoid crash.
-                    return newContent;
-                }
-            }
-            // For other ranges, we might need a more complex lookup, 
-            // but lambda.hup only uses {start:0, end:0}.
+            throw new Error(`Range-based replace({start, end}) is no longer supported to preserve node reference stability. Use tree-based operations like node.insertBefore(), node.insertAfter(), or helpers.replace(node, content).`);
         }
         return "";
     }
