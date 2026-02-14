@@ -6,14 +6,13 @@
     const node = upp.consume(['declaration']);
     const declarator = upp.childForFieldName(node, 'declarator');
     if (declarator?.type === 'pointer_declarator') {
-        const identifier = upp.childForFieldName(declarator, 'declarator')?.text;
+        const identifier = upp.childForFieldName(declarator, 'declarator');
         if (identifier) {
-            const type = upp.childForFieldName(node, 'type')?.text;
+            const type = upp.childForFieldName(node, 'type');
             if (type) {
                 const repl = upp.code`
                     ${node.text.split(';')[0]} = malloc(${n} * sizeof(${type}));
-                    @defer { free(${identifier}); ${identifier} = NULL; }
-                `;
+                    @defer { free(${identifier}); ${identifier} = NULL; }`;
                 return repl;
             }
         }
@@ -23,11 +22,11 @@
 
 int some_condition;
 int main() {
-    @allocate(100) char *str1;
-    @allocate(100) char *str2;
+    @allocate(100) char * str1;
+    @allocate(100) char * str2;
 
     {
-        @allocate(100) char *nested;
+        @allocate(100) char * nested;
         if (some_condition) {
             // should defer here, str1
             return 1;

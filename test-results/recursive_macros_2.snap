@@ -5,6 +5,6 @@
    74 |             throw new Error(`@defer cannot be used in a scope containing ${m.node.type.replace('_statement', '')}`);
       |                                                                                                              ^
 2 warnings generated.
-[31m./examples/recursive_macros_2.cup:1:1: error: [0] Macro @method failed: Complex S-expression queries not yet supported on stable SourceTree[0m
+[31m./examples/recursive_macros_2.cup:1:1: error: [0] Macro @method failed: upp.query is not a function[0m
 
 [31m^[0m

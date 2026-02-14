@@ -15,14 +15,14 @@ extern void *_stderr;
 
 int some_condition;
 int main() {
-    char *str1 = malloc(100 * sizeof(char));
+    char * str1 = malloc(100 * sizeof(char));
 
  
-    char *str2 = malloc(100 * sizeof(char));
+    char * str2 = malloc(100 * sizeof(char));
 
  
     {
-        char *nested = malloc(100 * sizeof(char));
+        char * nested = malloc(100 * sizeof(char));
 
  
         if (some_condition) {
