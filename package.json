@@ -32,9 +32,10 @@
     "test": "test"
   },
   "scripts": {
-    "package": "cd vsix && vsce package",
+    "package": "cd vsix && npx vsce package",
     "test": "node test/runner.ts && ./test/run.sh",
-    "clean": "rm -rf test-results/*"
+    "clean": "rm -rf test-results/*",
+    "generate-dts": "node scripts/generate_vscode_dts.js"
   },
   "dependencies": {
     "tree-sitter": "^0.21.1",

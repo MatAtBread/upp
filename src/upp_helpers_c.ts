@@ -131,6 +131,7 @@ class UppHelpersC extends UppHelpersBase {
      */
     hoist(content: string, _hoistIndex: number = 0): void {
         const root = this.root; // Stable root
+        if (!root) throw new Error("helpers.hoist: Invalid root");
         if (root.children.length > 0) {
             root.children[0].insertBefore(content + "\n");
         } else {
@@ -446,9 +447,10 @@ class UppHelpersC extends UppHelpersBase {
 
         const idInDef = node.find((n: SourceNode) => n.type === 'identifier')[0];
         const name = idInDef ? idInDef.text : node.text;
-        if (!name) return [];
+        if (!name) throw new Error("helpers.findReferences: Invalid node");
 
-        const root = this.root;
+        const root = this.root || this.findRoot();
+        if (!root) throw new Error("helpers.findReferences: Invalid root");
         const ids = root.find((n: SourceNode) => n.type === 'identifier');
 
         const refs: SourceNode[] = [];

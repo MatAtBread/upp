@@ -11,6 +11,7 @@ export function activate(context: vscode.ExtensionContext) {
         onDidChange = this.onDidChangeEmitter.event;
 
         provideTextDocumentContent(uri: vscode.Uri, token: vscode.CancellationToken): string | Thenable<string> {
+            console.log(`[UPP] Providing content for: ${uri.toString()}`);
             const originalUriString = uri.query;
             const doc = vscode.workspace.textDocuments.find((d: vscode.TextDocument) => d.uri.toString() === originalUriString);
             if (!doc) return '';
@@ -48,7 +49,7 @@ export function activate(context: vscode.ExtensionContext) {
         private generateMaskedJS(content: string): string {
             const regex = /(@define(?:@[a-zA-Z0-9]+)?\s+[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{)/g;
             // Join with root upp.d.ts
-            const dtsPath = vscode.Uri.joinPath(context.extensionUri, '..', 'upp.d.ts').fsPath;
+            const dtsPath = vscode.Uri.joinPath(context.extensionUri, 'upp.d.ts').fsPath;
             const header = `/// <reference path="${dtsPath.replace(/\\/g, '/')}" />\n`;
             let masked = header + ' '.repeat(content.length);
 
@@ -168,7 +169,10 @@ export function activate(context: vscode.ExtensionContext) {
             virtualPosition = new vscode.Position(position.line + headerLines, position.character);
         }
 
-        return vscode.commands.executeCommand(command, virtualUri, virtualPosition);
+        console.log(`[UPP] Forwarding ${command} to ${virtualUri.toString()} at ${virtualPosition.line}:${virtualPosition.character}`);
+        const result = await vscode.commands.executeCommand(command, virtualUri, virtualPosition);
+        console.log(`[UPP] Result for ${command}:`, result ? 'Found completions' : 'No result');
+        return result;
     };
 
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider(['cup', 'hup'], {
@@ -231,4 +235,4 @@ export function activate(context: vscode.ExtensionContext) {
     }));
 }
 
-export function deactivate() {}
+export function deactivate() { }

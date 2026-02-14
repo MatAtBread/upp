@@ -15,6 +15,7 @@ void hello() {
 }
 
 void os_start(typeof (hello) task) {
+    printf("Starting task\n");
     task();
 }
 

@@ -3,7 +3,7 @@
   "displayName": "UPP Language Support",
   "description": "Language support for Universal Pre-Processor (.cup, .hup)",
   "publisher": "matatbread",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -82,7 +82,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run generate-dts --prefix .. && npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
