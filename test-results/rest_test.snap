@@ -1,5 +1,15 @@
 ==== examples/rest_test.c ===
-// #include "io-lite.h"
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
 
 int main() {
     const char *s = "AlphaBetaGammaDelta";
@@ -7,14 +17,6 @@ int main() {
     return 0;
 }
 
-==== COMPILATION ERROR ===
-./examples/rest_test.c:5:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-    5 |     printf("Joined: %s\n", s);
-      |     ^
-./examples/rest_test.c:5:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
-1 error generated.
+==== RUN OUTPUT ===
+Joined: AlphaBetaGammaDelta
 
-./examples/rest_test.cup:4:29: warning: empty character constant [-Winvalid-pp-token]
-    4 |     return '"' + items.join('') + '"';
-      |                             ^
-1 warning generated.
