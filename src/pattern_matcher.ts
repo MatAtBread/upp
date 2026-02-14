@@ -1,30 +1,48 @@
-import Parser from 'tree-sitter';
+import type { Tree, SyntaxNode } from 'tree-sitter';
+
+export interface ConstraintSpec {
+    type: string;
+    not: boolean;
+}
+
+export type ConstraintMap = Map<string, ConstraintSpec[]>;
+
+export interface CaptureResult {
+    node?: SyntaxNode;
+    [key: string]: any;
+}
 
 /**
  * Handles structural pattern matching for code fragments.
  */
 export class PatternMatcher {
+    private parseFn: (code: string) => Tree;
+    private cache: Map<string, { patternRoot: SyntaxNode; constraints: ConstraintMap }>;
+    private language: any;
+
     /**
-     * @param {function(string): import('tree-sitter').Tree} parseFn - Function to parse a code fragment.
+     * @param {function(string): Tree} parseFn - Function to parse a code fragment.
+     * @param {any} language - The language object.
      */
-    constructor(parseFn) {
+    constructor(parseFn: (code: string) => Tree, language: any) {
         this.parseFn = parseFn;
+        this.language = language;
         this.cache = new Map();
     }
 
     /**
      * Matches a target node against a pattern string.
-     * @param {import('tree-sitter').SyntaxNode} targetNode - The node to match against.
+     * @param {SyntaxNode} targetNode - The node to match against.
      * @param {string} patternStr - The code pattern (e.g., "int $x = 0;").
      * @param {boolean} [deep=false] - Whether to search the subtree.
-     * @returns {Object|null} Captures object or null.
+     * @returns {CaptureResult | null} Captures object or null.
      */
-    match(targetNode, patternStr, deep = false) {
+    match(targetNode: SyntaxNode, patternStr: string, deep: boolean = false): CaptureResult | null {
         const { patternRoot, constraints } = this.prepare(patternStr);
         if (deep) {
             return this.findMatch(targetNode, patternRoot, constraints);
         } else {
-            const captures = {};
+            const captures: CaptureResult = {};
             if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
                 captures.node = targetNode;
                 return captures;
@@ -35,14 +53,14 @@ export class PatternMatcher {
 
     /**
      * Matches all occurrences of a pattern.
-     * @returns {Array<Object>} Array of capture objects.
+     * @returns {Array<CaptureResult>} Array of capture objects.
      */
-    matchAll(targetNode, patternStr, deep = false) {
+    matchAll(targetNode: SyntaxNode, patternStr: string, deep: boolean = false): CaptureResult[] {
         const { patternRoot, constraints } = this.prepare(patternStr);
         if (deep) {
             return this.findAllMatches(targetNode, patternRoot, constraints);
         } else {
-            const captures = {};
+            const captures: CaptureResult = {};
             if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
                 captures.node = targetNode;
                 return [captures];
@@ -54,23 +72,20 @@ export class PatternMatcher {
     /**
      * Prepares a pattern string for matching.
      * @param {string} patternStr - The pattern string to prepare.
-     * @returns {Object} Object containing cleanPattern, constraints, and patternTree.
+     * @returns {{ patternRoot: SyntaxNode; constraints: ConstraintMap }} Object containing patternRoot and constraints.
      */
-    prepare(patternStr) {
-        let cleanPattern, constraints, patternTree;
-
+    prepare(patternStr: string): { patternRoot: SyntaxNode; constraints: ConstraintMap } {
         // Cache disabled to avoid NodeClass/context issues with Tree objects
         const result = this.preprocessPattern(patternStr);
-        cleanPattern = result.cleanPattern;
-        constraints = result.constraints;
-        patternTree = this.parseFn(cleanPattern);
+        const { cleanPattern, constraints } = result;
+        const patternTree = this.parseFn(cleanPattern);
 
         let patternRoot = patternTree.rootNode;
 
         if (patternRoot.type === 'translation_unit' && patternRoot.childCount > 0) {
             for (let i = 0; i < patternRoot.childCount; i++) {
                 const child = patternRoot.child(i);
-                if (child.type !== 'comment') {
+                if (child && child.type !== 'comment') {
                     patternRoot = child;
                     break;
                 }
@@ -81,10 +96,10 @@ export class PatternMatcher {
         // This allows expression patterns (like assignments) to match expression nodes anywhere,
         // rather than being locked to statement-level matching.
         if (patternRoot.type === 'expression_statement') {
-            const significantChildren = [];
+            const significantChildren: SyntaxNode[] = [];
             for (let i = 0; i < patternRoot.childCount; i++) {
                 const child = patternRoot.child(i);
-                if (child.type !== 'comment' && child.type !== ';') {
+                if (child && child.type !== 'comment' && child.type !== ';') {
                     significantChildren.push(child);
                 }
             }
@@ -99,21 +114,24 @@ export class PatternMatcher {
     /**
      * Recursively searches for a match in the subtree.
      */
-    findMatch(node, patternNode, constraints) {
-        const captures = {};
+    private findMatch(node: SyntaxNode, patternNode: SyntaxNode, constraints: ConstraintMap): CaptureResult | null {
+        const captures: CaptureResult = {};
         if (this.structuralMatch(node, patternNode, captures, constraints)) {
             captures.node = node;
             return captures;
         }
         for (let i = 0; i < node.childCount; i++) {
-            const result = this.findMatch(node.child(i), patternNode, constraints);
-            if (result) return result;
+            const childResult = node.child(i);
+            if (childResult) {
+                const result = this.findMatch(childResult, patternNode, constraints);
+                if (result) return result;
+            }
         }
         return null;
     }
 
-    findAllMatches(node, patternNode, constraints, results = []) {
-        const captures = {};
+    private findAllMatches(node: SyntaxNode, patternNode: SyntaxNode, constraints: ConstraintMap, results: CaptureResult[] = []): CaptureResult[] {
+        const captures: CaptureResult = {};
         // Important: check if node matches
         if (this.structuralMatch(node, patternNode, captures, constraints)) {
             captures.node = node;
@@ -121,12 +139,15 @@ export class PatternMatcher {
         }
         // Continue searching descendants
         for (let i = 0; i < node.childCount; i++) {
-            try {
-                this.findAllMatches(node.child(i), patternNode, constraints, results);
-            } catch (e) {
-                // Diagnose specific node failure
-                console.error(`PatternMatcher crash on node type '${node.type}': ${e.message}`);
-                // console.error(e.stack);
+            const child = node.child(i);
+            if (child) {
+                try {
+                    this.findAllMatches(child, patternNode, constraints, results);
+                } catch (e: any) {
+                    // Diagnose specific node failure
+                    console.error(`PatternMatcher crash on node type '${node.type}': ${e.message}`);
+                    // console.error(e.stack);
+                }
             }
         }
         return results;
@@ -134,13 +155,13 @@ export class PatternMatcher {
 
     /**
      * Compares two nodes structurally with wildcards.
-     * @param {import('tree-sitter').SyntaxNode} target
-     * @param {import('tree-sitter').SyntaxNode} pattern
-     * @param {Object} captures
-     * @param {Map<string, Array<{type: string, not: boolean}>>} constraints
+     * @param {SyntaxNode} target
+     * @param {SyntaxNode} pattern
+     * @param {CaptureResult} captures
+     * @param {ConstraintMap} constraints
      * @returns {boolean}
      */
-    structuralMatch(target, pattern, captures, constraints) {
+    private structuralMatch(target: SyntaxNode, pattern: SyntaxNode, captures: CaptureResult, constraints: ConstraintMap): boolean {
         // console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
         const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
         if (match) {
@@ -152,7 +173,7 @@ export class PatternMatcher {
             // Check constraints
             if (constraints.has(name)) {
                 // allowedTypes is Array<{type: string, not: boolean}>
-                const constraintSpecs = constraints.get(name);
+                const constraintSpecs = constraints.get(name)!;
 
                 // 1. Negative checks (if any match, fail immediately)
                 const isForbidden = constraintSpecs.some(spec => spec.not && spec.type === target.type);
@@ -200,11 +221,12 @@ export class PatternMatcher {
         return true;
     }
 
-    getChildren(node) {
-        const kids = [];
+    private getChildren(node: SyntaxNode): SyntaxNode[] {
+        const kids: SyntaxNode[] = [];
         for (let i = 0; i < node.childCount; i++) {
-            if (node.child(i).type !== 'comment') {
-                kids.push(node.child(i));
+            const child = node.child(i);
+            if (child && child.type !== 'comment') {
+                kids.push(child);
             }
         }
         return kids;
@@ -213,12 +235,12 @@ export class PatternMatcher {
     /**
      * Pre-processes pattern string to extract constraints.
      * @param {string} patternStr
-     * @returns {{cleanPattern: string, constraints: Map<string, Array<{type: string, not: boolean}>>}}
+     * @returns {{cleanPattern: string, constraints: ConstraintMap}}
      */
-    preprocessPattern(patternStr) {
-        const constraints = new Map();
+    private preprocessPattern(patternStr: string): { cleanPattern: string; constraints: ConstraintMap } {
+        const constraints: ConstraintMap = new Map();
         // Match any potential wildcard starting with $
-        const cleanPattern = patternStr.replace(/\$([a-zA-Z0-9_$]+)/g, (match, rawId) => {
+        const cleanPattern = patternStr.replace(/\$([a-zA-Z0-9_$]+)/g, (_match, rawId) => {
             const { name, types } = this.parseWildcard(rawId);
             if (types && types.length > 0) {
                 constraints.set(name, types);
@@ -231,9 +253,9 @@ export class PatternMatcher {
     /**
      * Parses a raw wildcard identifier into name and types.
      * @param {string} rawId - The identifier text after $.
-     * @returns {{name: string, types: Array<{type: string, not: boolean}>}}
+     * @returns {{name: string; types: ConstraintSpec[]}}
      */
-    parseWildcard(rawId) {
+    private parseWildcard(rawId: string): { name: string; types: ConstraintSpec[] } {
         // syntax: name__type1__type2 or opt$name__type1
         const parts = rawId.split('__');
         let name = parts[0];

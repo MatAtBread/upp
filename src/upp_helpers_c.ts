@@ -1,7 +1,7 @@
-import { UppHelpersBase } from './upp_helpers_base.js';
-import { RECURSION_LIMITER_ENABLED } from './registry.js';
-import { PatternMatcher } from './pattern_matcher.js';
-import { SourceNode } from './source_tree.js';
+import { UppHelpersBase } from './upp_helpers_base.ts';
+import { RECURSION_LIMITER_ENABLED } from './registry.ts';
+import { PatternMatcher } from './pattern_matcher.ts';
+import { SourceNode } from './source_tree.ts';
 import Parser from 'tree-sitter';
 
 /**
@@ -10,7 +10,10 @@ import Parser from 'tree-sitter';
  * @extends UppHelpersBase
  */
 class UppHelpersC extends UppHelpersBase {
-    constructor(root, registry, parentHelpers = null) {
+    public matcher: PatternMatcher;
+    public transformKey?: string;
+
+    constructor(root: SourceNode, registry: any, parentHelpers: UppHelpersBase | null = null) {
         super(root, registry, parentHelpers);
         // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
         const patternParser = new Parser();
@@ -21,12 +24,12 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Matches a pattern against code.
      * @param {SourceNode} node - Target node.
-     * @param {string} src - Pattern source code.
-     * @param {function(Object): any} callback - Callback with captures.
-     * @param {Object} [options] - Match options.
+     * @param {string | string[]} src - Pattern source code.
+     * @param {function(any): any} [callback] - Callback with captures.
+     * @param {any} [options] - Match options.
      * @returns {any} Result of callback or captures object (or null).
      */
-    match(node, src, callback, options = {}) {
+    match(node: SourceNode, src: string | string[], callback?: (captures: any) => any, options: any = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -42,49 +45,22 @@ class UppHelpersC extends UppHelpersBase {
         return null;
     }
 
-    // /**
-    //  * Matches a pattern against code and performs replacement.
-    //  * @param {SourceNode} node - Target node (root search starts here).
-    //  * @param {string} src - Pattern source code.
-    //  * @param {function(Object): string} callback - Callback returning replacement string.
-    //  * @param {Object} [options] - Match options.
-    //  * @param {boolean} [options.deep=false] - Whether to search deep.
-    //  */
-    // matchReplace(node, src, callback, options = {}) {
-    //     this.match(node, src, (captures) => {
-    //         if (captures && captures.node) {
-    //             // Automatic recursion avoidance
-    //             // Key by transform AND pattern to allow different rules to touch the same node
-    //             const key = this.transformKey + "::" + src;
-
-    //             if (this.transformKey) {
-    //                 if (!this.registry.visit(key, captures.node)) return;
-    //             }
-
-    //             const replacement = callback(captures);
-    //             if (replacement !== null && replacement !== undefined) {
-    //                 this.replace(captures.node, replacement);
-    //             }
-    //         }
-    //     }, options);
-    // }
-
     /**
      * Matches all occurrences of a pattern.
      * @param {SourceNode} node - Target node.
-     * @param {string} src - Pattern source code.
-     * @param {function(Object): any} [callback] - Optional callback.
-     * @param {Object} [options] - Options.
-     * @returns {Array<Object>} Matches.
+     * @param {string | string[]} src - Pattern source code.
+     * @param {function(any): any} [callback] - Optional callback.
+     * @param {any} [options] - Options.
+     * @returns {any[]} Matches.
      */
-    matchAll(node, src, callback, options = {}) {
+    matchAll(node: SourceNode, src: string | string[], callback?: (match: any) => any, options: any = {}): any[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true || (options.deep !== false && node.type === 'translation_unit');
 
-        const allMatches = [];
-        const seenIds = new Set();
+        const allMatches: any[] = [];
+        const seenIds = new Set<number | string>();
 
         for (const s of srcs) {
             const matches = this.matcher.matchAll(node, s, deep);
@@ -106,17 +82,17 @@ class UppHelpersC extends UppHelpersBase {
      * Replaces all matches of a pattern.
      * @param {SourceNode} node - Scope.
      * @param {string} src - Pattern.
-     * @param {function(Object): string} callback - Replacement callback.
-     * @param {Object} [options] - Options.
+     * @param {function(any): string | null | undefined} callback - Replacement callback.
+     * @param {any} [options] - Options.
      */
-    matchReplace(node, src, callback, options = {}) {
+    matchReplace(node: SourceNode, src: string, callback: (captures: any) => string | null | undefined, options: any = {}): void {
         this.matchAll(node, src, (captures) => {
             if (captures && captures.node) {
                 // Automatic recursion avoidance
                 const key = this.transformKey + "::" + src;
 
                 if (this.transformKey) {
-                    if (RECURSION_LIMITER_ENABLED && !this.registry.visit(key, captures.node)) return;
+                    if (RECURSION_LIMITER_ENABLED && !(this.registry as any).visit(key, captures.node)) return;
                 }
 
                 const replacement = callback(captures);
@@ -129,9 +105,9 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Hoists content to the top of the file, skipping comments.
      * @param {string} content - The content to hoist.
-     * @param {number} [hoistIndex=0] - The index to hoist to.
+     * @param {number} [_hoistIndex=0] - The index to hoist to.
      */
-    hoist(content, hoistIndex = 0) {
+    hoist(content: string, _hoistIndex: number = 0): void {
         const root = this.root; // Stable root
         if (root.children.length > 0) {
             root.children[0].insertBefore(content + "\n");
@@ -142,14 +118,14 @@ class UppHelpersC extends UppHelpersBase {
 
     /**
      * extracts the C type string from a definition node.
-     * @param {SourceNode} defNode - The definition identifier node.
+     * @param {SourceNode} node - The definition identifier node.
      * @returns {string} The C type string (e.g. "char *").
      */
-    getType(node) {
+    getType(node: SourceNode): string {
         if (!node) throw new Error("helpers.getType: Invalid node");
 
         let idNode = (node.type === 'identifier' || node.type === 'type_identifier') ? node : null;
-        let declNode = node;
+        let declNode: SourceNode | null = node;
 
         if (!idNode) {
             // Find the declaration/parameter/field/typedef container if not already one
@@ -168,8 +144,8 @@ class UppHelpersC extends UppHelpersBase {
             if (!declNode) throw new Error("helpers.getType: Node is not a declaration");
 
             // Find the primary identifier in this declaration to trace declarators
-            const ids = declNode.find(n => n.type === 'identifier' || n.type === 'type_identifier');
-            idNode = ids.find(id => {
+            const ids = declNode.find((n: SourceNode) => n.type === 'identifier' || n.type === 'type_identifier');
+            idNode = ids.find((id: SourceNode) => {
                 let p = id.parent;
                 while (p && p !== declNode) {
                     if (p.type.endsWith('declarator') || p.type === 'init_declarator') return true;
@@ -199,7 +175,7 @@ class UppHelpersC extends UppHelpersBase {
 
         // Walk up from the identifier to the declaration to collect pointers and arrays
         if (idNode) {
-            let p = idNode;
+            let p: SourceNode | null = idNode;
             while (p && p !== declNode) {
                 if (p.type === 'pointer_declarator') {
                     prefix += "*";
@@ -214,7 +190,7 @@ class UppHelpersC extends UppHelpersBase {
         if (!typeNode) {
             typeNode = declNode.children.find(c =>
                 ['primitive_type', 'type_identifier', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(c.type)
-            );
+            ) || null;
             // If declNode is a specifier itself, it's the type
             if (!typeNode && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
                 typeNode = declNode;
@@ -241,10 +217,10 @@ class UppHelpersC extends UppHelpersBase {
      * @param {SourceNode} defNode - The definition node.
      * @returns {number} Array depth.
      */
-    getArrayDepth(defNode) {
+    getArrayDepth(defNode: SourceNode): number {
         if (!defNode) return 0;
         let depth = 0;
-        let p = defNode;
+        let p: SourceNode | null = defNode;
         while (p) {
             if (p.type === 'array_declarator') depth++;
             // Stop at declaration boundary
@@ -259,7 +235,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {SourceNode} node - The identifier node.
      * @returns {SourceNode|null} The scope node.
      */
-    getEnclosingScope(node) {
+    getEnclosingScope(node: SourceNode): SourceNode | null {
         if (!node) return null;
         let p = node.parent;
         while (p) {
@@ -284,27 +260,27 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Extracts function signature details.
      * @param {SourceNode} fnNode - The function_definition node.
-     * @returns {{returnType: string, name: string, params: string}} Signature details.
+     * @returns {any} Signature details.
      */
-    getFunctionSignature(fnNode) {
+    getFunctionSignature(fnNode: SourceNode): any {
         if (!fnNode) return { returnType: "void", name: "unknown", params: "()" };
 
         // 1. Find type
         let typeNode = fnNode.findChildByFieldName('type');
         if (!typeNode) {
-            typeNode = fnNode.children.find(c => c.type.includes('type_specifier') || c.type === 'primitive_type');
+            typeNode = fnNode.children.find(c => c.type.includes('type_specifier') || c.type === 'primitive_type') || null;
         }
         const returnType = typeNode ? typeNode.text : "void";
 
         // 2. Find declarator
         let declarator = fnNode.findChildByFieldName('declarator');
         if (!declarator) {
-            declarator = fnNode.children.find(c => c.type !== 'compound_statement' && c !== typeNode);
+            declarator = fnNode.children.find(c => c.type !== 'compound_statement' && c !== typeNode) || null;
         }
 
         let funcDecl = declarator;
         while (funcDecl && (funcDecl.type === 'pointer_declarator' || funcDecl.type === 'parenthesized_declarator')) {
-            funcDecl = funcDecl.findChildByFieldName('declarator') || funcDecl.children.find(c => c.type.includes('declarator'));
+            funcDecl = funcDecl.findChildByFieldName('declarator') || funcDecl.children.find(c => c.type.includes('declarator')) || null;
         }
 
         const nameNode = funcDecl ? (funcDecl.findChildByFieldName('declarator') || funcDecl.children[0]) : null;
@@ -322,11 +298,11 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Finds the definition for a node or name.
      * @param {SourceNode|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
-     * @param {string|Object} [nameOrOptions] - The name to find (if target is a scope) or options object.
-     * @param {Object} [options] - Resolution options { variable: true, tag: true }.
+     * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
+     * @param {any} [options] - Resolution options { variable: true, tag: true }.
      * @returns {SourceNode|null} The declaration/definition node.
      */
-    findDefinitionOrNull(target, nameOrOptions = null, options = { variable: true, tag: true }) {
+    findDefinitionOrNull(target: SourceNode | string, nameOrOptions: string | any = null, options: any = { variable: true, tag: true }): SourceNode | null {
         try {
             return this.findDefinition(target, nameOrOptions, options);
         } catch (ex) {
@@ -337,13 +313,13 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Finds the definition for a node or name.
      * @param {SourceNode|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
-     * @param {string|Object} [nameOrOptions] - The name to find (if target is a scope) or options object.
-     * @param {Object} [options] - Resolution options { variable: true, tag: true }.
+     * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
+     * @param {any} [options] - Resolution options { variable: true, tag: true }.
      * @returns {SourceNode} The declaration/definition node.
      */
-    findDefinition(target, nameOrOptions = null, options = { variable: true, tag: true }) {
-        let name = null;
-        let startScope = null;
+    findDefinition(target: SourceNode | string, nameOrOptions: string | any = null, options: any = { variable: true, tag: true }): SourceNode {
+        let name: string | null = null;
+        let startScope: SourceNode | null = null;
         let finalOptions = (typeof nameOrOptions === 'object' && nameOrOptions !== null) ? { ...options, ...nameOrOptions } : options;
 
         if (typeof target === 'string') {
@@ -357,34 +333,33 @@ class UppHelpersC extends UppHelpersBase {
                 // target is the identifier or a node containing one
                 let idNode = (target.type === 'identifier' || target.type === 'type_identifier') ? target : null;
                 if (!idNode) {
-                    const ids = target.find(n => n.type === 'identifier' || n.type === 'type_identifier');
+                    const ids = target.find((n: SourceNode) => n.type === 'identifier' || n.type === 'type_identifier');
                     if (ids.length === 1) idNode = ids[0];
                 }
 
                 if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found");
-                name = idNode.searchableText;
+                name = idNode.searchableText as string;
                 startScope = target.parent;
             }
         }
 
         if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
 
-        const findInScope = (scope) => {
-            return scope.find(n => n.type === 'identifier' || n.type === 'type_identifier').filter(idNode => {
+        const findInScope = (scope: SourceNode) => {
+            return scope.find((n: SourceNode) => n.type === 'identifier' || n.type === 'type_identifier').filter((idNode: SourceNode) => {
                 return this.getEnclosingScope(idNode) === scope;
             });
         };
 
-        let current = startScope;
+        let current: SourceNode | null = startScope;
         while (current) {
             const identifiers = findInScope(current);
 
             for (const idNode of identifiers) {
                 if (idNode.searchableText === name) {
                     // Walk up to see what kind of occurrence this is
-                    let p = idNode;
+                    let p: SourceNode | null = idNode;
                     let isDeclarator = false;
-                    let declaratorOwner = null;
 
                     while (p && p !== current) {
                         if (p.type.endsWith('declarator') || p.type === 'init_declarator') {
@@ -393,7 +368,7 @@ class UppHelpersC extends UppHelpersBase {
                                 // idNode.parent might be the declarator, or deep below it.
                                 // We check if the path up from idNode to p goes through p.childForFieldName('value')
                                 let isInsideValue = false;
-                                let walk = idNode;
+                                let walk: SourceNode | null = idNode;
                                 while (walk && walk !== p) {
                                     if (walk.parent === p && walk.fieldName === 'value') {
                                         isInsideValue = true;
@@ -411,14 +386,13 @@ class UppHelpersC extends UppHelpersBase {
                             }
                         }
                         if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
-                            if (finalOptions.tag && p.child(1) && p.child(1).id === idNode.id) {
+                            if (finalOptions.tag && p.child(1) && p.child(1)!.id === idNode.id) {
                                 return p; // Found a tag definition
                             }
                             // If it's not the name, it's a usage inside the specifier (ignore for variables)
                             break;
                         }
                         if (p.type === 'parameter_declaration' || p.type === 'declaration' || p.type === 'type_definition' || p.type === 'field_declaration' || p.type === 'function_definition') {
-                            declaratorOwner = p;
                             // Check if we hit the declaration via a declarator or direct child (except 'type' field)
                             // For parameter_declaration/field_declaration, we also check fieldName
                             if (isDeclarator || (idNode.parent === p && idNode.fieldName !== 'type')) {
@@ -441,21 +415,21 @@ class UppHelpersC extends UppHelpersBase {
     /**
      * Finds references to a definition.
      * @param {SourceNode} node - The definition node.
-     * @returns {Array<SourceNode>} The references.
+     * @returns {SourceNode[]} The references.
      */
-    findReferences(node) {
+    findReferences(node: SourceNode): SourceNode[] {
         if (!node || node.type === 'identifier' || node.type === 'type_identifier') {
             this.error(node, `findReferences: Expected declaration/definition node, found ${node ? node.type : 'null'}`);
         }
 
-        const idInDef = node.find('identifier')[0];
+        const idInDef = node.find((n: SourceNode) => n.type === 'identifier')[0];
         const name = idInDef ? idInDef.text : node.text;
         if (!name) return [];
 
         const root = this.root;
-        const ids = root.find('identifier');
+        const ids = root.find((n: SourceNode) => n.type === 'identifier');
 
-        const refs = [];
+        const refs: SourceNode[] = [];
         for (const idNode of ids) {
             if (idNode.text === name) {
                 // Skip the identifier inside the definition itself
@@ -482,12 +456,12 @@ class UppHelpersC extends UppHelpersBase {
      *        Return: string (replace), null/"" (delete), undefined (no change)
      * @returns {string} Marker for deferred transformations (empty if all references were below)
      */
-    withReferences(definitionNode, callback) {
+    withReferences(definitionNode: SourceNode, callback: (n: SourceNode) => string | null | undefined): string {
         if (!definitionNode || definitionNode.type === 'identifier' || definitionNode.type === 'type_identifier') {
             this.error(definitionNode, `withReferences: Expected declaration/definition node, found ${definitionNode ? definitionNode.type : 'null'}`);
         }
 
-        const idInDef = definitionNode.find(n => n.type === 'identifier' || n.type === 'field_identifier')[0];
+        const idInDef = definitionNode.find((n: SourceNode) => n.type === 'identifier' || n.type === 'field_identifier')[0];
         if (!idInDef) {
             this.error(definitionNode, "withReferences: Could not find identifier in definition node");
         }
@@ -495,20 +469,20 @@ class UppHelpersC extends UppHelpersBase {
 
         // Register a transformation rule for this definition
         const rule = {
-            id: this.registry.generateRuleId(),
+            id: (this.registry as any).generateRuleId(),
             type: 'references',
             identity: {
                 name: originalName,
                 definitionNode: definitionNode
             },
-            matcher: (node) => {
+            matcher: (node: SourceNode) => {
                 if (node.type !== 'identifier' && node.type !== 'field_identifier') return false;
                 if (node.text !== originalName) return false;
 
                 // Resolves to our definition
                 // We must be robust against the definition itself having been renamed
                 // Find the identifier currently in the tree for this definition
-                const currentIdInDef = definitionNode.find(n => n.type === 'identifier' || n.type === 'field_identifier')[0] || idInDef;
+                const currentIdInDef = definitionNode.find((n: SourceNode) => n.type === 'identifier' || n.type === 'field_identifier')[0] || idInDef;
                 const oldCaptured = currentIdInDef._capturedText;
                 currentIdInDef._capturedText = originalName; // Force it to resolve as if it still has the old name
                 try {
@@ -535,7 +509,7 @@ class UppHelpersC extends UppHelpersBase {
      *        Return: string (replace), null/"" (delete), undefined (no change)
      * @returns {string} Marker for deferred transformations (empty if definition was below)
      */
-    withDefinition(target, callback) {
+    withDefinition(target: SourceNode | string, callback: (n: SourceNode, helpers: any) => string | null | undefined): string {
         const defNode = this.findDefinition(target);
         if (!defNode) return "";
         this.withNode(defNode, callback);
@@ -547,17 +521,17 @@ class UppHelpersC extends UppHelpersBase {
      * Registers a transformation rule for re-evaluation on generated code.
      *
      * @param {string} nodeType - The node type to match (e.g., 'call_expression')
-     * @param {function(SourceNode, Object): boolean} matcher - Custom matcher function
-     * @param {function(SourceNode): string|null|undefined} callback - Transformation callback
+     * @param {function(SourceNode, any): boolean} matcher - Custom matcher function
+     * @param {function(SourceNode, any): string|null|undefined} callback - Transformation callback
      * @returns {string} Marker for deferred transformations
      */
-    withPattern(nodeType, matcher, callback) {
+    withPattern(nodeType: string, matcher: (node: SourceNode, helpers: any) => boolean, callback: (node: SourceNode, helpers: any) => string | null | undefined): string {
         // Register a transformation rule for this pattern
         const rule = {
-            id: this.registry.generateRuleId(),
+            id: (this.registry as any).generateRuleId(),
             type: 'pattern',
             nodeType: nodeType,
-            matcher: (node, helpers) => {
+            matcher: (node: SourceNode, helpers: any) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers);
             },
@@ -587,12 +561,12 @@ class UppHelpersC extends UppHelpersBase {
      * Transforms nodes matching a source fragment pattern.
      * @param {SourceNode} scope - The search scope.
      * @param {string} pattern - The source fragment pattern.
-     * @param {function(Object, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
+     * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
      */
-    withMatch(scope, pattern, callback) {
+    withMatch(scope: SourceNode, pattern: string, callback: (captures: any, helpers: UppHelpersC) => string | null | undefined): void {
         this.matchAll(scope, pattern, (captures) => {
             if (captures && captures.node) {
-                this.withNode(captures.node, (node, helpers) => callback(captures, helpers));
+                this.withNode(captures.node, (node, helpers) => callback(captures, helpers as UppHelpersC));
             }
         });
     }

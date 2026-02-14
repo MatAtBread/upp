@@ -1,30 +1,34 @@
 import Parser from 'tree-sitter';
+import type { Tree, SyntaxNode } from 'tree-sitter';
 
 /**
  * Represents a source file as a manageable tree of nodes, 
  * providing an API for live source code manipulation.
  */
 export class SourceTree {
+    public source: string;
+    public language: any;
+    public parser: Parser;
+    public tree: Tree;
+    public nodeCache: Map<number | string, SourceNode>;
+    public root: SourceNode;
+
     /**
      * @param {string} source Initial source code text.
-     * @param {import('tree-sitter')} language Tree-sitter language object.
+     * @param {any} language Tree-sitter language object.
      */
-    constructor(source, language) {
-        /** @type {string} */
+    constructor(source: string, language: any) {
+        if (typeof source !== 'string') {
+            throw new Error(`SourceTree expects string source, got ${typeof source}`);
+        }
         this.source = source;
-        /** @type {import('tree-sitter')} */
         this.language = language;
-        /** @type {Parser} */
         this.parser = new Parser();
         this.parser.setLanguage(language);
 
         // Initial parse
-        /** @type {import('tree-sitter').Tree} */
-        if (typeof source !== 'string') {
-            throw new Error(`SourceTree expects string source, got ${typeof source}`);
-        }
         try {
-            this.tree = this.parser.parse((index) => {
+            this.tree = this.parser.parse((index: number) => {
                 if (index >= source.length) return null;
                 return source.slice(index, index + 4096);
             });
@@ -36,20 +40,20 @@ export class SourceTree {
         this.nodeCache = new Map();
 
         /** @type {SourceNode} The root node of the tree. */
-        this.root = this.wrap(this.tree.rootNode);
+        this.root = this.wrap(this.tree.rootNode)!;
     }
 
     /**
      * Internal method to get or create a SourceNode wrapper for a Tree-sitter node.
-     * @param {import('tree-sitter').SyntaxNode} tsNode The Tree-sitter node to wrap.
-     * @param {SourceNode} [parent] The parent SourceNode, if any.
-     * @param {string} [fieldName] The field name for this node in the parent.
+     * @param {SyntaxNode | null} tsNode The Tree-sitter node to wrap.
+     * @param {SourceNode | null} [parent] The parent SourceNode, if any.
+     * @param {string | null} [fieldName] The field name for this node in the parent.
      * @returns {SourceNode|null}
      */
-    wrap(tsNode, parent = null, fieldName = null) {
+    wrap(tsNode: SyntaxNode | null, parent: SourceNode | null = null, fieldName: string | null = null): SourceNode | null {
         if (!tsNode) return null;
         if (this.nodeCache.has(tsNode.id)) {
-            const node = this.nodeCache.get(tsNode.id);
+            const node = this.nodeCache.get(tsNode.id)!;
             if (parent) node.parent = parent;
             if (fieldName) node.fieldName = fieldName;
             return node;
@@ -68,7 +72,7 @@ export class SourceTree {
      * @param {number} end The end index of the edit.
      * @param {string} newText The replacement text.
      */
-    edit(start, end, newText) {
+    edit(start: number, end: number, newText: string): void {
         const oldLen = end - start;
         const newLen = newText.length;
         const delta = newLen - oldLen;
@@ -86,27 +90,31 @@ export class SourceTree {
     // Node Interface Methods (Delegated to Root)
 
     /** @returns {number} */
-    get startIndex() { return 0; }
+    get startIndex(): number { return 0; }
     /** @returns {number} */
-    get endIndex() { return this.source.length; }
+    get endIndex(): number { return this.source.length; }
     /** @returns {string} */
-    get type() { return 'fragment'; }
+    get type(): string { return 'fragment'; }
     /** @returns {SourceNode[]} */
-    get children() { return this.root.children; }
+    get children(): SourceNode[] { return this.root.children; }
     /** @returns {string} */
-    get text() { return this.source; }
+    get text(): string { return this.source; }
     /** @param {string} val */
-    set text(val) { this.edit(0, this.source.length, val); }
+    set text(val: string) { this.edit(0, this.source.length, val); }
 
     /**
      * Creates a SourceNode from a code fragment.
      * Tries to parse as valid code; if it fails, wraps in a dummy function to parse statements/expressions.
-     * @param {string} code The text fragment to parse.
-     * @param {import('tree-sitter')} language Tree-sitter language object.
+     * @param {string | SourceNode | SourceTree} code The text fragment to parse.
+     * @param {any} language Tree-sitter language object.
      * @returns {SourceNode}
      */
-    static fragment(code, language) {
-        if (typeof code !== 'string') return code;
+    static fragment(code: string | SourceNode | SourceTree, language: any): SourceNode {
+        if (typeof code !== 'string') {
+            if (code instanceof SourceNode) return code;
+            if (code instanceof SourceTree) return code.root;
+            return code as any;
+        }
 
         const trimmed = code.trim();
         // Special case: If it's a single valid identifier, parse it as such to avoid statement wrappers/errors
@@ -125,14 +133,14 @@ export class SourceTree {
 
         const parser = new Parser();
         parser.setLanguage(language);
-        let tree = parser.parse((index) => {
+        let tree = parser.parse((index: number) => {
             if (index >= code.length) return null;
             return code.slice(index, index + 4096);
         });
 
         let hasError = false;
-        if (typeof tree.rootNode.hasError === 'function') {
-            hasError = tree.rootNode.hasError();
+        if (typeof (tree.rootNode as any).hasError === 'function') {
+            hasError = (tree.rootNode as any).hasError();
         } else {
             hasError = tree.rootNode.toString().includes("ERROR");
         }
@@ -142,10 +150,13 @@ export class SourceTree {
             let isTopLevel = true;
 
             for (let i = 0; i < root.childCount; i++) {
-                const type = root.children[i].type;
-                if (!['function_definition', 'declaration', 'preproc_def', 'preproc_include', 'preproc_ifdef', 'type_definition'].includes(type)) {
-                    isTopLevel = false;
-                    break;
+                const child = root.child(i);
+                if (child) {
+                    const type = child.type;
+                    if (!['function_definition', 'declaration', 'preproc_def', 'preproc_include', 'preproc_ifdef', 'type_definition'].includes(type)) {
+                        isTopLevel = false;
+                        break;
+                    }
                 }
             }
 
@@ -189,7 +200,7 @@ export class SourceTree {
      * Serializes the tree to JSON, avoiding circular references.
      * @returns {Object}
      */
-    toJSON() {
+    toJSON(): any {
         return {
             source: this.source,
             root: this.root
@@ -201,7 +212,7 @@ export class SourceTree {
      * @param {SourceTree} targetTree The tree to merge into.
      * @param {number} offset The offset to apply to all migrated nodes.
      */
-    mergeInto(targetTree, offset) {
+    mergeInto(targetTree: SourceTree, offset: number): void {
         // 1. Transfer all cached nodes
         for (const [id, node] of this.nodeCache) {
             // Update node to point to new tree
@@ -222,49 +233,55 @@ export class SourceTree {
  * Represents a node within a SourceTree.
  */
 export class SourceNode {
+    public tree: SourceTree;
+    public id: number | string;
+    public type: string;
+    public startIndex: number;
+    public endIndex: number;
+    public children: SourceNode[];
+    public parent: SourceNode | null;
+    public fieldName: string | null;
+    public markers: Array<{ callback: Function, data: any }>;
+    public data: Record<string, any>;
+    public _capturedText?: string;
+    public _snapshotSearchable?: string;
+
     /**
      * @param {SourceTree} tree The tree this node belongs to.
-     * @param {import('tree-sitter').SyntaxNode} [tsNode] The Tree-sitter node to wrap.
+     * @param {SyntaxNode} tsNode The Tree-sitter node to wrap.
      */
-    constructor(tree, tsNode) {
+    constructor(tree: SourceTree, tsNode: SyntaxNode) {
         if (!tsNode || !tree) {
             throw new Error("SourceNode must be created with a Tree-sitter node.");
         }
-        /** @type {SourceTree} */
         this.tree = tree;
-        /** @type {string|number} */
         this.id = tsNode.id;
-        /** @type {string} */
         this.type = tsNode.type;
-        /** @type {number} */
         this.startIndex = tsNode.startIndex;
-        /** @type {number} */
         this.endIndex = tsNode.endIndex;
-        /** @type {SourceNode[]} */
         this.children = [];
-        /** @type {SourceNode|null} */
         this.parent = null;
-        /** @type {string|null} */
         this.fieldName = null;
         for (let i = 0; i < tsNode.childCount; i++) {
             const child = tsNode.child(i);
             const fieldName = tsNode.fieldNameForChild(i);
-            this.children.push(tree.wrap(child, this, fieldName));
+            const wrapped = tree.wrap(child, this, fieldName);
+            if (wrapped) {
+                this.children.push(wrapped);
+            }
         }
 
-        /** @type {Array<{callback: Function, data: any}>} */
         this.markers = [];
-        /** @type {Object} */
         this.data = {};
     }
 
     /** @returns {boolean} */
-    get isNamed() {
+    get isNamed(): boolean {
         return this.type !== undefined && this.type !== null && !/^[^a-zA-Z_]/.test(this.type);
     }
 
     /** @returns {boolean} */
-    get isValid() {
+    get isValid(): boolean {
         return this.startIndex !== -1 &&
             this.tree &&
             this.tree.nodeCache &&
@@ -272,7 +289,7 @@ export class SourceNode {
     }
 
     /** @returns {SourceNode|null} */
-    get nextNamedSibling() {
+    get nextNamedSibling(): SourceNode | null {
         if (!this.parent) return null;
         const idx = this.parent.children.indexOf(this);
         for (let i = idx + 1; i < this.parent.children.length; i++) {
@@ -283,7 +300,7 @@ export class SourceNode {
     }
 
     /** @returns {SourceNode|null} */
-    get prevNamedSibling() {
+    get prevNamedSibling(): SourceNode | null {
         if (!this.parent) return null;
         const idx = this.parent.children.indexOf(this);
         for (let i = idx - 1; i >= 0; i--) {
@@ -294,7 +311,7 @@ export class SourceNode {
     }
 
     /** @returns {number} */
-    get namedChildCount() {
+    get namedChildCount(): number {
         return this.children.filter(c => c.isNamed).length;
     }
 
@@ -302,22 +319,22 @@ export class SourceNode {
      * @param {number} idx 
      * @returns {SourceNode|null} 
      */
-    namedChild(idx) {
+    namedChild(idx: number): SourceNode | null {
         const named = this.children.filter(c => c.isNamed);
         return named[idx] || null;
     }
 
     /** @returns {SourceNode|null} */
-    get firstNamedChild() {
+    get firstNamedChild(): SourceNode | null {
         return this.namedChild(0);
     }
 
-    toString() {
+    toString(): string {
         return this.text;
     }
 
     /** @returns {string} */
-    get text() {
+    get text(): string {
         if (this.startIndex === -1) return "";
         return this.tree.source.slice(this.startIndex, this.endIndex);
     }
@@ -327,28 +344,28 @@ export class SourceNode {
      * Prioritizes _capturedText to allow resolution by original name after a rename.
      * @returns {string} 
      */
-    get searchableText() {
+    get searchableText(): string {
         if (this._capturedText !== undefined) return this._capturedText.trim();
         return this.text.trim();
     }
 
     /** @param {string} value */
-    set text(value) {
+    set text(value: string) {
         this.replaceWith(value);
     }
 
     /** @returns {number} */
-    get childCount() {
+    get childCount(): number {
         return this.children.length;
     }
 
-    get named() {
+    get named(): Record<string, SourceNode> {
         return Object.fromEntries(this.children.filter(c => c.isNamed).map((c, idx) => [c.fieldName ?? idx, c]));
     }
     /**
      * @returns {Object}
      */
-    toJSON() {
+    toJSON(): any {
         return {
             id: this.id,
             type: this.type,
@@ -365,7 +382,7 @@ export class SourceNode {
      * @param {number} idx 
      * @returns {SourceNode} 
      */
-    child(idx) {
+    child(idx: number): SourceNode {
         return this.children[idx];
     }
 
@@ -375,7 +392,7 @@ export class SourceNode {
      * @param {number} editEnd The end index of the edit.
      * @param {number} delta Offset change duration.
      */
-    handleEdit(editStart, editEnd, delta) {
+    handleEdit(editStart: number, editEnd: number, delta: number): void {
         if (this.startIndex === -1) return;
 
 
@@ -406,7 +423,7 @@ export class SourceNode {
      * Removes the node from the tree and returns the removed sub-tree.
      * @returns {SourceTree}
      */
-    remove() {
+    remove(): SourceTree {
         // 1. Snapshot current text range.
         const cachedText = this.text;
 
@@ -419,7 +436,7 @@ export class SourceNode {
         const oldTree = this.tree;
 
         // Recursive migration function
-        const migrate = (n, offsetDelta) => {
+        const migrate = (n: SourceNode, offsetDelta: number) => {
             // Remove from old tree
             if (n.tree) n.tree.nodeCache.delete(n.id);
 
@@ -453,7 +470,7 @@ export class SourceNode {
      * removing them from the tree cache.
      * @private
      */
-    _invalidateRecursively() {
+    public _invalidateRecursively(): void {
         this.tree.nodeCache.delete(this.id);
         this.startIndex = -1;
         this.endIndex = -1;
@@ -464,17 +481,17 @@ export class SourceNode {
 
     /**
      * Replaces this node with another node or text.
-     * @param {SourceNode|SourceTree|string} newNode The node or text to replace with.
-     * @returns {SourceNode}
+     * @param {SourceNode|SourceTree|string|Array<SourceNode|string>} newNodeContent The node or text to replace with.
+     * @returns {SourceNode | SourceNode[] | null}
      */
-    replaceWith(newNodeContent) {
+    replaceWith(newNodeContent: SourceNode | SourceTree | string | Array<SourceNode | string>): SourceNode | SourceNode[] | null {
         const isNewObject = newNodeContent instanceof SourceNode || newNodeContent instanceof SourceTree;
-        let newNode = newNodeContent;
+        let newNode: any = newNodeContent;
         const originalText = this.text;
         const oldCaptured = this._capturedText;
 
         const oldChildren = this.children;
-        const snapshotIdentity = (nodes) => {
+        const snapshotIdentity = (nodes: SourceNode[]) => {
             for (const n of nodes) {
                 n._snapshotSearchable = n.searchableText;
                 snapshotIdentity(n.children);
@@ -484,7 +501,7 @@ export class SourceNode {
 
         if (Array.isArray(newNode)) {
             // Handle array of nodes/text
-            const textParts = newNode.map(n => typeof n === 'string' ? n : n.text);
+            const textParts = newNode.map(n => typeof n === 'string' ? n : (n as any).text);
             const combinedText = textParts.join('');
             const start = this.startIndex;
             const end = this.endIndex;
@@ -512,7 +529,7 @@ export class SourceNode {
 
         const start = this.startIndex;
         const end = this.endIndex;
-        const newText = newNode.text || "";
+        const newText = (newNode as any).text || "";
 
         // Capture parent before we are detached
         const parent = this.parent;
@@ -543,7 +560,7 @@ export class SourceNode {
             this.endIndex = newEndIndex;
             this.type = newType;
             // Recursive identity transfer (important for structural morphing like renames)
-            const transferIdentity = (oldNodes, newNodes) => {
+            const transferIdentity = (oldNodes: SourceNode[], newNodes: SourceNode[]) => {
                 // Heuristic: If we have exactly one identifier in both, it's likely a rename
                 const oldIds = oldNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
                 const newIds = newNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
@@ -564,10 +581,10 @@ export class SourceNode {
                 }
             };
 
-            const oldChildren = this.children;
+            const prevChildren = this.children;
             this.children = newChildren;
             this.data = newData;
-            transferIdentity(oldChildren, this.children);
+            transferIdentity(prevChildren, this.children);
 
             // Preserve captured text (important for stable symbol resolution during renames)
             if (oldCaptured !== undefined) {
@@ -615,11 +632,11 @@ export class SourceNode {
      * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
      * @returns {SourceNode|SourceNode[]}
      */
-    insertAfter(newNode) {
+    insertAfter(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment(newNode, this.tree.language);
         }
-        const text = newNode.text;
+        const text = (newNode as any).text;
 
         // Insert at END of this node
         const insertPos = this.endIndex;
@@ -636,7 +653,7 @@ export class SourceNode {
             }
         }
 
-        return attached;
+        return attached as SourceNode | SourceNode[];
     }
 
     /**
@@ -644,11 +661,11 @@ export class SourceNode {
      * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
      * @returns {SourceNode|SourceNode[]}
      */
-    insertBefore(newNode) {
+    insertBefore(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment(newNode, this.tree.language);
         }
-        const text = newNode.text;
+        const text = (newNode as any).text;
 
         // Insert at START of this node
         const insertPos = this.startIndex;
@@ -665,13 +682,13 @@ export class SourceNode {
             }
         }
 
-        return attached;
+        return attached as SourceNode | SourceNode[];
     }
 
-    _attachNewNode(newNode, insertionOffset) {
+    public _attachNewNode(newNode: any, insertionOffset: number): SourceNode | SourceNode[] | null {
         if (Array.isArray(newNode)) {
             let currentOffset = insertionOffset;
-            const results = [];
+            const results: SourceNode[] = [];
             for (const item of newNode) {
                 const attached = this._attachNewNode(item, currentOffset);
                 if (Array.isArray(attached)) {
@@ -687,11 +704,11 @@ export class SourceNode {
             return results;
         }
 
-        let rootNode = null;
+        let rootNode: SourceNode | null = null;
         if (newNode instanceof SourceNode) {
             const delta = insertionOffset - newNode.startIndex;
 
-            const migrate = (n) => {
+            const migrate = (n: SourceNode) => {
                 const oldTree = n.tree;
                 const oldId = n.id;
 
@@ -725,13 +742,13 @@ export class SourceNode {
      * @param {string|function(SourceNode):boolean} predicate Type name or filter function.
      * @returns {SourceNode[]}
      */
-    find(predicate) {
-        const results = [];
+    find(predicate: string | ((n: SourceNode) => boolean)): SourceNode[] {
+        const results: SourceNode[] = [];
         const isMatch = typeof predicate === 'string'
-            ? (n) => n.type === predicate
+            ? (n: SourceNode) => n.type === predicate
             : predicate;
 
-        const walk = (n) => {
+        const walk = (n: SourceNode) => {
             if (isMatch(n)) results.push(n);
             for (const child of n.children) {
                 walk(child);
@@ -748,8 +765,8 @@ export class SourceNode {
      * @param {number} end 
      * @returns {SourceNode}
      */
-    descendantForIndex(start, end) {
-        let current = this;
+    descendantForIndex(start: number, end: number): SourceNode {
+        let current: SourceNode = this;
         let found = true;
         while (found) {
             found = false;
@@ -764,7 +781,7 @@ export class SourceNode {
         return current;
     }
 
-    childForFieldName(fieldName) {
+    childForFieldName(fieldName: string): SourceNode | null {
         return this.findChildByFieldName(fieldName);
     }
 
@@ -773,7 +790,7 @@ export class SourceNode {
      * @param {string} fieldName 
      * @returns {SourceNode|null}
      */
-    findChildByFieldName(fieldName) {
+    findChildByFieldName(fieldName: string): SourceNode | null {
         return this.children.find(c => c.fieldName === fieldName) || null;
     }
 
@@ -781,8 +798,9 @@ export class SourceNode {
      * Appends a node or text as a child of this node.
      * Requires the node to already have children to use as anchors.
      * @param {SourceNode|SourceTree|string} newNode The node or text to append.
+     * @returns {SourceNode | SourceNode[]}
      */
-    append(newNode) {
+    append(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment(newNode, this.tree.language);
         }

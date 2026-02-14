@@ -1,16 +1,18 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { DependencyCache } from './dependency_cache.ts';
+import type { DiagnosticsManager } from './diagnostics.ts';
 
 const UPP_INSTALL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Deep merges two objects. B overrides A.
- * @param {Object} a - The base object.
- * @param {Object} b - The overriding object.
- * @returns {Object} The merged object.
+ * @param {any} a - The base object.
+ * @param {any} b - The overriding object.
+ * @returns {any} The merged object.
  */
-function deepMerge(a, b) {
+function deepMerge(a: any, b: any): any {
     if (b === undefined) return a;
     if (Array.isArray(a) && Array.isArray(b)) {
         return [...new Set([...a, ...b])];
@@ -31,37 +33,36 @@ function deepMerge(a, b) {
     return result;
 }
 
-/**
- * @typedef {Object} UppConfig
- * @property {Object.<string, Object>} [lang] - Language specific configuration.
- * @property {string[]} [includePaths] - List of include paths.
- * @property {import('./dependency_cache.js').DependencyCache|null} [cache] - Dependency cache instance.
- * @property {boolean} [write] - Whether write mode is enabled.
- * @property {import('./diagnostics.js').DiagnosticsManager} [diagnostics] - Diagnostics manager instance.
- * @property {string[]} [suppress] - List of warning codes to suppress.
- * @property {string} [extends] - Path to parent config file.
- */
+export interface UppConfig {
+    lang?: Record<string, any>;
+    includePaths?: string[];
+    cache?: DependencyCache | null;
+    write?: boolean;
+    diagnostics?: DiagnosticsManager;
+    suppress?: string[];
+    extends?: string;
+}
 
 /**
  * Loads a config file and recursively handles "extends".
  * @param {string} configPath - Path to the JSON config file.
  * @returns {UppConfig} The loaded and merged configuration object.
  */
-function loadConfig(configPath) {
+function loadConfig(configPath: string): UppConfig {
     if (!fs.existsSync(configPath)) return {};
 
     const configDir = path.dirname(configPath);
-    let config = {};
+    let config: any = {};
     try {
         const content = fs.readFileSync(configPath, 'utf8');
         config = JSON.parse(content);
-    } catch (err) {
+    } catch (err: any) {
         console.error(`Error parsing config file ${configPath}: ${err.message}`);
         return {};
     }
 
     // Resolve includePaths relative to THIS config file
-    const resolvePath = (p) => {
+    const resolvePath = (p: string) => {
         const expanded = p.replace('${UPP}', UPP_INSTALL_DIR);
         return path.isAbsolute(expanded) ? expanded : path.resolve(configDir, expanded);
     };
@@ -85,7 +86,7 @@ function loadConfig(configPath) {
         delete config.extends;
     }
 
-    return config;
+    return config as UppConfig;
 }
 
 /**
@@ -94,9 +95,9 @@ function loadConfig(configPath) {
  * @param {string} sourcePath - Absolute path to the source file.
  * @returns {UppConfig} The resolved configuration.
  */
-function resolveConfig(sourcePath) {
+function resolveConfig(sourcePath: string): UppConfig {
     let currentDir = path.dirname(path.resolve(sourcePath));
-    let configPath = null;
+    let configPath: string | null = null;
 
     while (true) {
         const potentialPath = path.join(currentDir, 'upp.json');

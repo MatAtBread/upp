@@ -1,4 +1,3 @@
-
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
@@ -21,7 +20,7 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
-function ask(question) {
+function ask(question: string): Promise<string> {
     return new Promise((resolve) => {
         rl.question(question, (answer) => {
             resolve(answer.toLowerCase());
@@ -29,19 +28,19 @@ function ask(question) {
     });
 }
 
-function getDiff(file1, content2) {
+function getDiff(file1: string, content2: string): string {
     const tempFile = path.join(RESULTS_DIR, '.temp_output');
     fs.writeFileSync(tempFile, content2);
     try {
         const result = spawnSync('diff', ['-u', '--color=always', file1, tempFile], { encoding: 'utf8' });
         if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
         return result.stdout;
-    } catch (e) {
+    } catch (e: any) {
         return "Diff failed: " + e.message;
     }
 }
 
-function normalizeOutput(actualOutput) {
+function normalizeOutput(actualOutput: string): string {
     // Remove absolute paths to make snapshots portable
     let normalized = actualOutput.split(process.cwd()).join('.');
     // Normalize /tmp/ccXXXX.o (masking the random part)
@@ -54,7 +53,7 @@ function normalizeOutput(actualOutput) {
     return normalized;
 }
 
-async function verifySnapshot(testName, actualOutput) {
+async function verifySnapshot(testName: string, actualOutput: string): Promise<boolean> {
     const snapshotPath = path.join(RESULTS_DIR, `${testName}.snap`);
     const normalizedOutput = normalizeOutput(actualOutput);
 
@@ -88,11 +87,13 @@ async function verifySnapshot(testName, actualOutput) {
     return true;
 }
 
-async function runTest(entryName) {
+async function runTest(entryName: string): Promise<boolean> {
     const entryPath = path.join(EXAMPLES_DIR, entryName);
 
     // Invoke upp --test
-    const run = spawnSync('node', ['index.js', '--test', entryPath], { encoding: 'utf8' });
+    // Note: We use index.ts directly here. 
+    // Node 24 with --experimental-strip-types will handle it.
+    const run = spawnSync('node', ['--experimental-strip-types', 'index.ts', '--test', entryPath], { encoding: 'utf8' });
     const output = run.stdout + run.stderr;
 
     const testName = entryName.endsWith('.cup') ? entryName.slice(0, -4) : entryName;
@@ -114,7 +115,7 @@ async function runTest(entryName) {
 
 async function main() {
     const args = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
-    let entries;
+    let entries: string[];
 
     if (args.length > 0) {
         entries = args.map(f => {

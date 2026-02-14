@@ -1,15 +1,16 @@
-#!/usr/bin/env node
+#!/usr/bin/env node --experimental-strip-types
 
 import fs from 'fs';
 import path from 'path';
 import { execSync, spawnSync } from 'child_process';
-import { Registry } from './src/registry.js';
-import { DependencyCache } from './src/dependency_cache.js';
-import { DiagnosticsManager } from './src/diagnostics.js';
-import { parseArgs } from './src/cli.js';
-import { resolveConfig } from './src/config_loader.js';
+import { Registry } from './src/registry.ts';
+import { DependencyCache } from './src/dependency_cache.ts';
+import { DiagnosticsManager } from './src/diagnostics.ts';
+import { parseArgs } from './src/cli.ts';
+import { resolveConfig } from './src/config_loader.ts';
+import type { CompilerCommand, SourceInfo } from './src/cli.ts';
 
-const command = parseArgs(process.argv.slice(2));
+const command: CompilerCommand = parseArgs(process.argv.slice(2));
 
 if (!command.isUppCommand) {
     console.error("Usage: upp <compiler_command>");
@@ -22,9 +23,9 @@ if (!command.isUppCommand) {
 const projectRoot = path.dirname(new URL(import.meta.url).pathname);
 const stdPath = path.join(projectRoot, 'std');
 const cache = new DependencyCache();
-let extraDeps = []; // Collected from -M flags during preprocessing
+let extraDeps: string[] = []; // Collected from -M flags during preprocessing
 
-function preprocess(filePath, extraFlags = []) {
+function preprocess(filePath: string, extraFlags: string[] = []): string {
     const compiler = command.compiler || 'cc';
     const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
@@ -32,11 +33,12 @@ function preprocess(filePath, extraFlags = []) {
         return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
     } catch (e) {
         process.exit(1);
+        throw e; // Unreachable but for types
     }
 }
 
 // Helper for core transpilation of a single file
-function transpileOne(sourceFile, outputCFile = null) {
+function transpileOne(sourceFile: string, outputCFile: string | null = null): string {
     const absSource = path.resolve(sourceFile);
     const preProcessed = preprocess(absSource, command.depFlags || []);
     const loadedConfig = resolveConfig(absSource);
@@ -53,7 +55,7 @@ function transpileOne(sourceFile, outputCFile = null) {
         includePaths: finalIncludePaths,
         stdPath: path.join(path.dirname(new URL(import.meta.url).pathname), 'std'),
         diagnostics: new DiagnosticsManager({}),
-        preprocess: (file) => {
+        preprocess: (file: string) => {
             // ... same logic as below but simplified or shared ...
             return preprocess(file);
         }
@@ -61,7 +63,7 @@ function transpileOne(sourceFile, outputCFile = null) {
     const registry = new Registry(config);
     const coreFiles = loadedConfig.core || [];
     for (const coreFile of coreFiles) {
-        let foundPath = null;
+        let foundPath: string | null = null;
         for (const inc of finalIncludePaths) {
             const p = path.join(inc, coreFile);
             if (fs.existsSync(p)) { foundPath = p; break; }
@@ -73,7 +75,7 @@ function transpileOne(sourceFile, outputCFile = null) {
 
     // Support materialization for the root file if requested by a macro (like @package)
     if (registry.shouldMaterializeDependency) {
-        let outputPath = null;
+        let outputPath: string | null = null;
         if (absSource.endsWith('.cup')) outputPath = absSource.slice(0, -4) + '.c';
         else if (absSource.endsWith('.hup')) outputPath = absSource.slice(0, -4) + '.h';
 
@@ -92,9 +94,9 @@ function transpileOne(sourceFile, outputCFile = null) {
 
 if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === 'test') {
     try {
-        const materializations = new Map();
-        const authoritativeMaterials = new Set();
-        const expandedFiles = [];
+        const materializations = new Map<string, string>();
+        const authoritativeMaterials = new Set<string>();
+        const expandedFiles: string[] = [];
 
         // 1. Expand directories into .cup files
         for (const f of command.files) {
@@ -137,7 +139,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                 includePaths: finalIncludePaths,
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p, content, options = {}) => {
+                onMaterialize: (p: string, content: string, options: any = {}) => {
                     if (materializations.has(p)) {
                         const existing = materializations.get(p);
                         if (existing === content) return;
@@ -161,13 +163,13 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                     materializations.set(p, content);
                     if (options.isAuthoritative) authoritativeMaterials.add(p);
                 },
-                preprocess: (file) => preprocess(file)
+                preprocess: (file: string) => preprocess(file)
             };
 
             const registry = new Registry(config);
             const coreFiles = loadedConfig.core || [];
             for (const coreFile of coreFiles) {
-                let foundPath = null;
+                let foundPath: string | null = null;
                 for (const inc of finalIncludePaths) {
                     const p = path.join(inc, coreFile);
                     if (fs.existsSync(p)) { foundPath = p; break; }
@@ -177,7 +179,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
 
             const output = registry.transform(preProcessed, absSource);
 
-            let mainOutputPath = null;
+            let mainOutputPath: string | null = null;
             if (absSource.endsWith('.cup')) mainOutputPath = absSource.slice(0, -4) + '.c';
             else if (absSource.endsWith('.hup')) mainOutputPath = absSource.slice(0, -4) + '.h';
 
@@ -211,7 +213,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             }
 
             // Gather all include paths for the compiler
-            const allIncludePaths = new Set();
+            const allIncludePaths = new Set<string>();
             for (const f of expandedFiles) {
                 const loaded = resolveConfig(f);
                 allIncludePaths.add(path.dirname(f));
@@ -248,14 +250,14 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             process.stdout.write(mainOutput);
             process.exit(0);
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error(`[upp] Error:`);
         console.error(e);
         process.exit(1);
     }
 }
-const materializations = new Map();
-const authoritativeMaterials = new Set();
+const materializations = new Map<string, string>();
+const authoritativeMaterials = new Set<string>();
 
 for (const source of command.sources) {
     extraDeps = []; // Reset for each source
@@ -285,7 +287,7 @@ for (const source of command.sources) {
                 includePaths: finalIncludePaths,
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p, content, options = {}) => {
+                onMaterialize: (p: string, content: string, options: any = {}) => {
                     if (materializations.has(p)) {
                         const existing = materializations.get(p);
                         if (existing === content) return;
@@ -307,9 +309,9 @@ for (const source of command.sources) {
                     if (options.isAuthoritative) authoritativeMaterials.add(p);
                     fs.writeFileSync(p, content);
                 },
-                preprocess: (file) => {
+                preprocess: (file: string) => {
                     // Same preprocess logic as before...
-                    if (command.depFlags.length > 0) {
+                    if (command.depFlags && command.depFlags.length > 0) {
                         const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
                         const flags = ['-MD', '-MF', tempD];
                         try {
@@ -336,7 +338,7 @@ for (const source of command.sources) {
 
             for (const coreFile of coreFiles) {
                 // Find file in include paths
-                let foundPath = null;
+                let foundPath: string | null = null;
                 for (const inc of finalIncludePaths) {
                     const p = path.join(inc, coreFile);
                     if (fs.existsSync(p)) {
@@ -359,7 +361,7 @@ for (const source of command.sources) {
             fs.writeFileSync(source.absCFile, output);
 
             // Dependency Tracking Logic
-            if (command.depFlags.length > 0) {
+            if (command.depFlags && command.depFlags.length > 0) {
                 let dFile = command.depOutputFile;
                 if (!dFile) {
                     const parsed = path.parse(source.cupFile);
@@ -380,12 +382,12 @@ for (const source of command.sources) {
             }
 
             // Add resolved include paths to the FINAL compiler command so it can find generated headers
-            if (!command.additionalIncludes) command.additionalIncludes = [];
+            if (!(command as any).additionalIncludes) (command as any).additionalIncludes = [];
             for (const inc of resolvedConfigIncludes) {
-                command.additionalIncludes.push(inc);
+                (command as any).additionalIncludes.push(inc);
             }
 
-        } catch (e) {
+        } catch (e: any) {
             console.error(`[upp] Error processing ${source.cupFile}:`);
             console.error(e.message);
             process.exit(1);
@@ -402,8 +404,8 @@ const finalArgs = command.fullCommand.slice(1).map(arg => {
 });
 
 // Append additional include paths from config
-if (command.additionalIncludes) {
-    for (const inc of command.additionalIncludes) {
+if ((command as any).additionalIncludes) {
+    for (const inc of (command as any).additionalIncludes) {
         finalArgs.push('-I', inc);
     }
 }

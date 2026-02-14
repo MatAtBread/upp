@@ -1,13 +1,24 @@
 import path from 'path';
-import fs from 'fs';
 
-/**
- * @typedef {Object} CompilerCommand
- * @property {string[]} fullCommand - The full compiler command args.
- * @property {string} compiler - The compiler executable (e.g. 'gcc').
- * @property {Array<{cFile: string, cupFile: string}>} sources - Pairs of .c and .cup files found.
- * @property {boolean} isUppCommand - Whether this is a valid upp wrapper invocation.
- */
+export interface SourceInfo {
+    cFile: string;
+    absCFile: string;
+    cupFile: string;
+    absCupFile: string;
+}
+
+export interface CompilerCommand {
+    isUppCommand: boolean;
+    fullCommand?: string[];
+    compiler?: string;
+    sources?: SourceInfo[];
+    includePaths?: string[];
+    depFlags?: string[];
+    depOutputFile?: string | null;
+    mode?: string;
+    file?: string;
+    files?: string[];
+}
 
 /**
  * Parses command line arguments for the upp compiler wrapper.
@@ -15,7 +26,7 @@ import fs from 'fs';
  * @param {string[]} args - Raw arguments from process.argv.slice(2).
  * @returns {CompilerCommand} The parsed command info.
  */
-export function parseArgs(args) {
+export function parseArgs(args: string[]): CompilerCommand {
     if (args.length === 0) {
         return { isUppCommand: false };
     }
@@ -47,10 +58,10 @@ export function parseArgs(args) {
     }
 
     const compiler = args[0];
-    const sources = [];
-    const includePaths = [];
-    const depFlags = [];
-    let depOutputFile = null;
+    const sources: SourceInfo[] = [];
+    const includePaths: string[] = [];
+    const depFlags: string[] = [];
+    let depOutputFile: string | null = null;
 
     // Simple heuristic: Find arguments ending in .c
     // Robust parsing of GCC flags is hard, but .c files are usually distinct.
@@ -107,4 +118,3 @@ export function parseArgs(args) {
         depOutputFile
     };
 }
-
