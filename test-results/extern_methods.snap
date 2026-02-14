@@ -7,7 +7,7 @@ struct Foo {
 typedef struct Foo Foo;
 
 extern  void _Foo_method_print(Foo *f);
- void _Foo_method_increment(Foo *f);
+extern  void _Foo_method_increment(Foo *f);
 
 ==== examples/extern_methods/extern_methods_impl.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to

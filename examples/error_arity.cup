@@ -1,9 +1,9 @@
 @define myMacro(a, b) {
-    return upp.code`/* ${a}, ${b} */`;
+    return upp.codeTree`/* ${a}, ${b} */`;
 }
 
 @define transformer(node, x) {
-    upp.replace(node, upp.code`/* ${x} */ ${node.text}`);
+    upp.replace(node, upp.codeTree`/* ${x} */ ${node.text}`);
 }
 
 int main() {

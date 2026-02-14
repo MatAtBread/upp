@@ -6,7 +6,7 @@ static int expanded_inner = 1;
 @define outer() {
     // Should expand @inner() immediately if we support nested expansion
     // OR should be caught in the next pass.
-    return upp.code`@inner`;
+    return upp.codeTree`@inner`;
 }
 
 int main() {

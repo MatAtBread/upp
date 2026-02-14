@@ -29,7 +29,7 @@ function preprocess(filePath, extraFlags = []) {
     const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
         const cmd = `${compiler} ${flags} "${filePath}"`;
-        return execSync(cmd, { encoding: 'utf8' });
+        return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
     } catch (e) {
         process.exit(1);
     }
@@ -254,6 +254,8 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
         process.exit(1);
     }
 }
+const materializations = new Map();
+const authoritativeMaterials = new Set();
 
 for (const source of command.sources) {
     extraDeps = []; // Reset for each source
@@ -273,15 +275,38 @@ for (const source of command.sources) {
             const finalIncludePaths = [
                 path.dirname(source.absCupFile), // Implicit sibling lookup
                 ...resolvedConfigIncludes,
-                ...(command.includePaths || [])
+                ...(command.includePaths || []),
+                stdPath,
+                projectRoot
             ];
 
-            // Initialize Registry
             const config = {
                 cache,
                 includePaths: finalIncludePaths,
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
+                onMaterialize: (p, content, options = {}) => {
+                    if (materializations.has(p)) {
+                        const existing = materializations.get(p);
+                        if (existing === content) return;
+
+                        if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
+                            materializations.set(p, content);
+                            authoritativeMaterials.add(p);
+                            fs.writeFileSync(p, content);
+                            return;
+                        }
+
+                        if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
+                            return;
+                        }
+
+                        throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
+                    }
+                    materializations.set(p, content);
+                    if (options.isAuthoritative) authoritativeMaterials.add(p);
+                    fs.writeFileSync(p, content);
+                },
                 preprocess: (file) => {
                     // Same preprocess logic as before...
                     if (command.depFlags.length > 0) {

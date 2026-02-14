@@ -1,6 +1,4 @@
-==== examples/rule_tracking_test.c ===
-// Test transformation rule tracking
-// This tests if rules registered by withReferences get re-evaluated on generated code
+==== examples/repro-stale-node.c ===
 /* A minimal C stdio/stdlib for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -12,26 +10,13 @@ extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 extern void *stderr;
 extern void *_stderr;
-#include "method.h"
-struct Point {
-    int x;
-    int y;
-};
- int _Point_method_getX(struct Point * self) {
-    return self -> x;
-}
 
 int main() {
-    struct Point p = {10, 20};
-        int val = _Point_method_getX(&p);
-    
-    printf("%d\n", val);
+    // Using stale identifier: 
+int another_var = 456; 
     return 0;
 }
 
-==== std/method.h ===
-
-
 ==== RUN OUTPUT ===
-10
 
+[UPP WARNING] Macro substitution uses a stale node reference (type: identifier). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.

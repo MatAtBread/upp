@@ -7,14 +7,14 @@
         upp.error(node, "@task must be applied to a function call");
     }
     const name = call.childForFieldName('function').text;
-    return upp.code`os_start(${name});`;
+    return upp.codeTree`os_start(${name});`;
 }
 
 void hello() {
     printf("World\n");
 }
 
-void os_start(typeof(hello) task) {
+void os_start(typeof (hello) task) {
     task();
 }
 

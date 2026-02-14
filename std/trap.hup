@@ -4,102 +4,96 @@
 @define trap(arg) {
     const declNode = upp.consume(['declaration', 'field_declaration'], 'expected a variable or field declaration');
 
-    // Determine declared identifier
-    let varName = "";
-    let varIdNode = null;
-
-    // Use recursive walk to find the identifier being declared
-    // For 'declaration', it's usually inside 'init_declarator' or 'declarator'
-    // For 'field_declaration', it's inside 'field_declarator' (or just 'identifier' / 'array_declarator')
-    upp.walk(declNode, n => {
-        if (!varName && (n.type === 'identifier' || n.type === 'field_identifier')) {
-            // We need to ensure we aren't picking up a type name or something else.
-            // Check if it's the declared name.
-            if (upp.isDescendant(declNode, n)) {
-                 // Double check context:
-                 // declaration -> init_declarator -> declarator -> identifier
-                 // field_declaration -> field_declarator -> field_identifier
-                 // Also handle pointers: pointer_declarator -> ...
-
-                 // Heuristic: if parent is a declarator type or the node itself is a field_identifier
-                 const parent = upp.parent(n);
-                 if ((parent && parent.type.includes('declarator')) || n.type === 'field_identifier') {
-                     varName = n.text;
-                     varIdNode = n;
-                 }
+    // Find the primary identifier being declared (handles normal vars and struct fields)
+    const isId = n => n.type === 'identifier' || n.type === 'field_identifier';
+    const varIdNode = declNode.find(n => {
+        if (!isId(n)) return false;
+        let p = n;
+        while (p && p !== declNode) {
+            if (p.fieldName === 'declarator' || p.fieldName === 'field' || p.type === 'init_declarator') {
+                 // Ensure we aren't in the 'value' side of an init_declarator
+                 if (p.type === 'init_declarator' && n.parent === p && n.fieldName === 'value') return false;
+                 return true;
             }
+            p = p.parent;
         }
-    });
+        return false;
+    })[0] || declNode.find(isId)[0];
 
-    if (!varName) {
-        upp.error(declNode, "Could not find declared identifier for @trap");
+    if (!varIdNode) {
+        upp.error(declNode, `Could not find declared identifier in ${declNode.type} for @trap`);
     }
 
-    // Determine Handler Name
+    const varName = varIdNode.text;
     let handlerName = "";
 
-    // Check if argument is a Code Block (starts with {) or Identifier
-    // arg is a string.
+    // Determine Handler Name
     const trimmedArg = arg.trim();
-
     if (trimmedArg.startsWith('{')) {
-        // Case: @trap({ val + 1 })
-        // Generate wrapper
         const typeStr = upp.getType(varIdNode);
         handlerName = upp.createUniqueIdentifier(`${varName}_trap`);
-        const bodyText = trimmedArg;
-        const handlerCode = `${typeStr} ${handlerName}(${typeStr} value) ${bodyText}\n`;
-        upp.hoist(handlerCode);
+        upp.hoist(`${typeStr} ${handlerName}(${typeStr} value) ${trimmedArg}\n`);
+    } else if (/^[a-zA-Z_]\w*$/.test(trimmedArg)) {
+        handlerName = trimmedArg;
     } else {
-        // Case: @trap(my_handler)
-        // Verify it looks like an identifier
-        if (/^[a-zA-Z_]\w*$/.test(trimmedArg)) {
-             handlerName = trimmedArg;
-        } else {
-             // We can't use upp.error with a string effectively without context.
-             // We can use declNode for context error
-             upp.error(declNode, `@trap argument '${trimmedArg}' must be a code block or function identifier`);
-        }
+        upp.error(declNode, `@trap argument '${trimmedArg}' must be a code block or function identifier`);
     }
 
-    // Transform Assignments
-    const root = upp.root;
+    const processed = new WeakSet();
 
-    // 1. Direct assignments: var = expr
-    upp.matchAll(root, `${varName} = $expr`, ({expr}) => {
-         upp.replace(expr, upp.code`${handlerName}(${expr})`);
-    });
+    // Transform assignments using scope-aware withReferences (for variables)
+    // and pattern-based matching (for struct fields until UPP has full member resolution)
+    if (declNode.type === 'field_declaration') {
+        upp.withPattern('assignment_expression', (node, helpers) => {
+            const left = node.childForFieldName('left');
+            if (left && left.type === 'field_expression') {
+                const field = left.childForFieldName('field');
+                return field && field.text === varName;
+            }
+            return false;
+        }, (node, helpers) => {
+            const expr = node.childForFieldName('right');
+            if (expr && !processed.has(expr)) {
+                helpers.insertBefore(expr, `${handlerName}(`);
+                helpers.insertAfter(expr, `)`);
+                processed.add(expr);
+            }
+        });
+    } else {
+        upp.withReferences(declNode, (refNode, helpers) => {
+            // Find the top-level expression targeting this reference
+            let current = refNode;
+            while (current.parent && (current.parent.type === 'field_expression')) {
+                current = current.parent;
+            }
 
-    // 2. Field assignments (Dot): obj.var = expr
-    upp.matchAll(root, `$obj.${varName} = $expr`, ({expr}) => {
-         upp.replace(expr, upp.code`${handlerName}(${expr})`);
-    });
+            const parent = current.parent;
+            if (parent && parent.type === 'assignment_expression' && parent.childForFieldName('left') === current) {
+                const expr = parent.childForFieldName('right');
+                if (expr && !processed.has(expr)) {
+                    helpers.insertBefore(expr, `${handlerName}(`);
+                    helpers.insertAfter(expr, `)`);
+                    processed.add(expr);
+                }
+            }
+        });
+    }
 
-    // 3. Field assignments (Arrow): ptr->var = expr
-    upp.matchAll(root, `$ptr->${varName} = $expr`, ({expr}) => {
-         upp.replace(expr, upp.code`${handlerName}(${expr})`);
-    });
-
-    // Reconstruct Declaration with Init (only for standard declarations, fields can't have init in C (mostly))
+    // Handle initial value in declaration
     if (declNode.type === 'declaration') {
         const initDecl = declNode.childForFieldName('declarator'); // init_declarator
-        let newDeclText = declNode.text;
-
         if (initDecl && initDecl.type === 'init_declarator') {
-             const val = initDecl.childForFieldName('value');
-             if (val) {
-                 const relStart = val.startIndex - declNode.startIndex;
-                 const relEnd = val.endIndex - declNode.startIndex;
-
-                 newDeclText = newDeclText.slice(0, relStart) +
-                               `${handlerName}(${val.text})` +
-                               newDeclText.slice(relEnd);
-             }
+            const val = initDecl.childForFieldName('value');
+            if (val && !processed.has(val)) {
+                upp.insertBefore(val, `${handlerName}(`);
+                upp.insertAfter(val, `)`);
+                processed.add(val);
+            }
         }
-        return newDeclText;
     }
 
-    return declNode.text; // For fields, return as is (they don't support init values in C89/99 usually, or if they do (C++11), logic handles it?)
+    return declNode;
 }
+
 
 #endif

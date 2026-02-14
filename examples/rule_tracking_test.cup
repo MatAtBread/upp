@@ -1,6 +1,7 @@
 // Test transformation rule tracking
 // This tests if rules registered by withReferences get re-evaluated on generated code
 
+#include "io-lite.h"
 @include(method.hup)
 
 struct Point {
@@ -8,23 +9,21 @@ struct Point {
     int y;
 };
 
-@method(struct Point) int getX() {
-    return this->x;
+@method(struct Point) int getX(struct Point * self) {
+    return self -> x;
 }
 
 @define testMacro() {
     // This macro generates code that contains a method call
     // The @method rule should detect and transform it
-    const code = upp.code(`
-        Point p = {10, 20};
+    return upp.codeTree`
+        struct Point p = {10, 20};
         int val = p.getX();
-    `);
-
-    return code.toString();
+    `;
 }
 
 int main() {
     @testMacro()
-
+    printf("%d\n", val);
     return 0;
 }

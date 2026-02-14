@@ -3,7 +3,6 @@
 
 @define async() {
     let node = upp.nextNode(['function_definition', 'declaration']);
-    if (!node) return "";
     const sig = upp.getFunctionSignature(node);
     if (!sig.nameNode) return "";
 
@@ -22,7 +21,7 @@
             const funcNode = helpers.childForFieldName(callNode, 'function');
             // Ensure we are the function being called, not an argument
             if (funcNode && (funcNode === refNode || helpers.isDescendant(funcNode, refNode))) {
-                helpers.replace(callNode, helpers.code`os_start(${name})`);
+                helpers.replace(callNode, helpers.codeTree`os_start(${name})`);
                 return undefined; // Skip default replacement of the identifier itself
             }
         }

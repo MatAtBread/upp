@@ -1,4 +1,4 @@
-@define map(arrayName,varName) {
+@define map(arrayName, varName) {
     let bodyNode;
 
     const node = upp.consume();
@@ -6,7 +6,7 @@
         upp.error(node, `@map: Expected a block, but found ${node?.type}.`);
     }
 
-    return upp.code`
+    return upp.codeTree`
     for (int _i = 0; _i < sizeof(${arrayName})/sizeof(${arrayName}[0]); _i++) {
         int ${varName} = ${arrayName}[_i];
         ${node}
@@ -15,7 +15,7 @@
 }
 
 int main() {
-    int arr[] = {1, 2, 3};
+    int arr[] = { 1, 2, 3};
     @map(arr, z) { z = z + 1; };
     return 0;
 }

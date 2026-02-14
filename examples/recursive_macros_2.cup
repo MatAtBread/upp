@@ -1,3 +1,5 @@
+#include "io-lite.h"
+
 @define method(targetType) {
     const node = upp.consume();
     const funcDef = node;
@@ -16,89 +18,89 @@
     }
     const newName = `_${cleanTarget}_method_${originalName}`;
 
-    upp.registerTransform((root, helpers) => {
-        const queryText = `
-            (call_expression
-                function: (field_expression
-                    argument: (_) @obj
-                    field: (field_identifier) @field
-                ) @fn
-                arguments: (argument_list) @args
-            ) @call
-        `;
-        const matches = helpers.query(queryText, root);
-        for (const m of matches) {
-            if (m.captures.field.text === originalName) {
-                const operator = m.captures.fn.child(1).text;
-                const objRef = operator === '.' ? `&(${m.captures.obj.text})` : m.captures.obj.text;
-                const argsList = m.captures.args.text.slice(1, -1);
-                const finalArgs = objRef + (argsList.trim() ? ', ' + argsList : '');
-                helpers.replace(m.captures.call, helpers.code`${newName}(${finalArgs})`);
+    // Use withPattern to transform method calls persistently
+    upp.withPattern('call_expression',
+        (call, helpers) => {
+            const fn = call.childForFieldName('function');
+            if (fn && fn.type === 'field_expression') {
+                const field = fn.childForFieldName('field');
+                if (field && field.text === originalName) {
+                    const obj = fn.childForFieldName('argument');
+                    // Simple heuristic: check if obj text matches a known var (limited in this example)
+                    // In a full impl like std/method.hup, we'd check types.
+                    return true;
+                }
+            }
+            return false;
+        },
+        (call, helpers) => {
+            const fn = call.childForFieldName('function');
+            const obj = fn.childForFieldName('argument');
+            const args = call.childForFieldName('arguments');
+            const operator = fn.text.includes('->') ? '->' : '.';
+            const innerArgs = args.children.slice(1, -1);
+            const hasArgs = innerArgs.length > 0;
+            if (operator === '.') {
+                return helpers.codeTree`${newName}(&(${obj})${hasArgs ? ', ' : ''}${innerArgs})`;
+            } else {
+                return helpers.codeTree`${newName}(${obj}${hasArgs ? ', ' : ''}${innerArgs})`;
             }
         }
-    });
+    );
 
     if (originalName === 'Defer') {
-        const matches = upp.query(`(declaration type: (type_identifier) @type) @decl`, upp.root);
-        for (const m of matches) {
-            if (m.captures.type.text === cleanTarget) {
-                const declNode = m.captures.decl;
-                for (let i = 0; i < declNode.childCount; i++) {
-                    const child = declNode.child(i);
-                    if (child.type === 'identifier') {
-                        const varName = child.text;
-                        upp.replace({ start: declNode.endIndex, end: declNode.endIndex }, upp.code` @defer ${varName}.Defer();`);
+        const declarations = upp.root.find('declaration');
+        for (const declNode of declarations) {
+            const typeNode = declNode.childForFieldName('type');
+            if (typeNode && typeNode.text === cleanTarget) {
+                const ids = declNode.find('identifier');
+                for (const id of ids) {
+                    if (id.parent.type.includes('declarator') || id.parent === declNode) {
+                        declNode.insertAfter(upp.code`@defer ${id.text}.Defer();`);
                     }
                 }
             }
         }
     }
 
-    return upp.code`${returnType.text} ${newName}${params.text} ${body.text}`;
+    return upp.codeTree`${returnType.text} ${newName}${params.text} ${body.text}`;
 }
 
 @define defer() {
     const node = upp.consume();
-    const scope = upp.findEnclosing(node, 'compound_statement');
+    const scope = upp.findEnclosing(upp.invocation.invocationNode, 'compound_statement');
     if (!scope) return;
 
     const absStart = (node.tree && node.tree === upp.root.tree) ? node.startIndex : upp.invocation.startIndex;
 
-    const safetyMatches = upp.query(`
-        (break_statement) @break
-        (continue_statement) @continue
-        (goto_statement) @goto
-    `, scope);
-    for (const m of safetyMatches) {
-        if (m.node.startIndex > absStart) {
-            throw new Error(`@defer cannot be used in a scope containing ${m.node.type.replace('_statement', '')}`);
+    // Use withPattern to catch all returns in this scope
+    upp.withPattern('return_statement',
+        (m, helpers) => {
+            // Only transform returns that come AFTER this defer in the SAME scope/function
+            return m.startIndex > absStart && helpers.findEnclosing(m, 'compound_statement') === scope;
+        },
+        (m, helpers) => {
+            // Replace return with { defer_code; return; } to avoid infinite recursion
+            return helpers.codeTree`{ ${node.text} ${m.text} }`;
+
         }
-    }
+    );
 
-    const returnMatches = upp.query(`(return_statement) @ret`, scope);
-    for (const m of returnMatches) {
-        if (m.captures.ret.startIndex > absStart) {
-            upp.replace({ start: m.captures.ret.startIndex, end: m.captures.ret.startIndex }, upp.code`${node.text} `);
-        }
+    // Also handle the end of scope
+    const lastBrace = scope.children.find(c => c.text === '}');
+    if (lastBrace) {
+        lastBrace.insertBefore(upp.codeTree`${node.text} `);
     }
-
-    const lastStmt = scope.lastNamedChild;
-    if (lastStmt && lastStmt.type !== 'return_statement' && lastStmt.startIndex > absStart) {
-        const endBrace = scope.endIndex - 1;
-        upp.replace({ start: endBrace, end: endBrace }, upp.code`${node.text} `);
-    }
-
-    return "";
 }
 
 typedef struct String String;
 struct String {
-    char *data;
+    char * data;
 };
 
-@method(String) void Defer(String *s) {
-    printf("Freeing string: %s\n", s->data);
-    free(s->data);
+@method(String) void Defer(String * s) {
+    printf("Freeing string: %s\n", s -> data);
+    free(s -> data);
 }
 
 int main() {

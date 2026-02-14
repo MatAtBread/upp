@@ -1,11 +1,11 @@
 #include "io-lite.h"
 
 @define Inner(val) {
-    return upp.code`(${val} * 2)`;
+    return upp.codeTree`(${val} * 2)`;
 }
 
 @define Outer(a, b) {
-    return upp.code`int result = @Inner(${a}) + @Inner(${b});`;
+    return upp.codeTree`int result = @Inner(${a}) + @Inner(${b});`;
 }
 
 int main() {

@@ -35,7 +35,7 @@ class Registry {
         this.parentTree = parentRegistry ? parentRegistry.tree : null;
 
         this.materializedFiles = new Set();
-        this.isAuthoritative = false;
+        this.isAuthoritative = true;
 
         this.macros = new Map();
 
@@ -138,7 +138,10 @@ class Registry {
                 }
                 // Re-emit materialization if needed
                 if (cached.shouldMaterialize && this.config.onMaterialize) {
-                    this.config.onMaterialize(targetPath, cached.output, { isAuthoritative: cached.isAuthoritative });
+                    let outputPath = targetPath;
+                    if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
+                    else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
+                    this.config.onMaterialize(outputPath, cached.output, { isAuthoritative: cached.isAuthoritative });
                 }
                 return;
             }
@@ -151,6 +154,7 @@ class Registry {
         depRegistry.shouldMaterializeDependency = true;
 
         if (isDiscoveryOnly) {
+            depRegistry.isAuthoritative = false;
             depRegistry.source = source;
             depRegistry.prepareSource(source, targetPath);
         } else {
@@ -614,9 +618,6 @@ class Registry {
                 line: (source.slice(0, match.index).match(/\n/g) || []).length + 1,
                 col: match.index - source.lastIndexOf('\n', match.index)
             });
-        }
-        if (invs.length > 0) {
-
         }
         return invs;
     }

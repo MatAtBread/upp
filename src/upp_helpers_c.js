@@ -487,7 +487,7 @@ class UppHelpersC extends UppHelpersBase {
             this.error(definitionNode, `withReferences: Expected declaration/definition node, found ${definitionNode ? definitionNode.type : 'null'}`);
         }
 
-        const idInDef = definitionNode.find('identifier')[0];
+        const idInDef = definitionNode.find(n => n.type === 'identifier' || n.type === 'field_identifier')[0];
         if (!idInDef) {
             this.error(definitionNode, "withReferences: Could not find identifier in definition node");
         }
@@ -502,13 +502,13 @@ class UppHelpersC extends UppHelpersBase {
                 definitionNode: definitionNode
             },
             matcher: (node) => {
-                if (node.type !== 'identifier') return false;
+                if (node.type !== 'identifier' && node.type !== 'field_identifier') return false;
                 if (node.text !== originalName) return false;
 
                 // Resolves to our definition
                 // We must be robust against the definition itself having been renamed
                 // Find the identifier currently in the tree for this definition
-                const currentIdInDef = definitionNode.find('identifier')[0] || idInDef;
+                const currentIdInDef = definitionNode.find(n => n.type === 'identifier' || n.type === 'field_identifier')[0] || idInDef;
                 const oldCaptured = currentIdInDef._capturedText;
                 currentIdInDef._capturedText = originalName; // Force it to resolve as if it still has the old name
                 try {

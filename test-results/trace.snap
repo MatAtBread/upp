@@ -14,10 +14,10 @@ extern void *_stderr;
 int my_function(int x) {
     puts("Entering my_function\n");
     int g = 1;
-	for (int i=1; i < x; i++) {
+for (int i = 1; i < x; i++) {
         g = g * i;
     }
-	return g;
+return g;
 } 
 int main() {
     printf("magic number %d\n", my_function(10));

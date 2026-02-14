@@ -1,3 +1,5 @@
+import { SourceNode } from './source_tree.js';
+
 let uniqueIdCounter = 1;
 
 /**
@@ -35,6 +37,13 @@ class UppHelpersBase {
                 result += (val && typeof val === 'object' && val.text !== undefined) ? val.text : String(val);
             }
         }
+
+        // If the result contains macro invocations, wrap them so they are expanded
+        if (result.includes('@')) {
+            const prepared = this.registry.prepareSource(result, this.registry.originPath);
+            return prepared.cleanSource;
+        }
+
         return result;
     }
 
@@ -42,29 +51,40 @@ class UppHelpersBase {
         let text = "";
         const nodeMap = new Map();
         const usedNodes = new Set();
+
+        const processValue = (val, index) => {
+            if (val instanceof SourceNode) {
+                if (!val.isValid) {
+                    const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
+                    console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
+                    text += val.text;
+                    return;
+                }
+                if (usedNodes.has(val)) {
+                    throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                }
+                usedNodes.add(val);
+                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                nodeMap.set(placeholder, val);
+                text += placeholder;
+            } else if (val === null || val === undefined) {
+                throw new Error(`upp.codeTree: Invalid null or undefined value at index ${index}`);
+            } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
+                let first = true;
+                for (const item of val) {
+                    if (!first) text += '\n';
+                    first = false;
+                    processValue(item, index);
+                }
+            } else {
+                text += String(val);
+            }
+        };
+
         for (let i = 0; i < strings.length; i++) {
             text += strings[i];
             if (i < values.length) {
-                const val = values[i];
-                if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
-                    if (!val.isValid) {
-                        const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
-                        console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
-                        text += val.text;
-                        continue;
-                    }
-                    if (usedNodes.has(val)) {
-                        throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
-                    }
-                    usedNodes.add(val);
-                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
-                    nodeMap.set(placeholder, val);
-                    text += placeholder;
-                } else if (val === null || val === undefined) {
-                    throw new Error(`upp.codeTree: Invalid null or undefined value at index ${i}`);
-                } else {
-                    text += String(val);
-                }
+                processValue(values[i], i);
             }
         }
 
@@ -123,32 +143,29 @@ class UppHelpersBase {
     }
 
     replace(n, newContent) {
-        if (!n) return "";
+        let finalContent = newContent;
+        if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && this.registry.prepareSource) {
+            const prepared = this.registry.prepareSource(finalContent, this.registry.originPath);
+            finalContent = prepared.cleanSource;
+        }
+
         if (n.replaceWith) {
-            const result = n.replaceWith(newContent);
+            const result = n.replaceWith(finalContent);
             if (this.contextNode === n) this.contextNode = result;
             return result;
         }
 
-        // Handle range object { start, end } implementation for root insertion
-        if (typeof n.start === 'number' && typeof n.end === 'number') {
+        throw new Error(`Illegal call to helpers.replace(node, content).`);
+    }
 
-            const root = this.root || this.findRoot();
-            if (root && n.start === 0 && n.end === 0) {
-                if (root.children.length > 0) {
-                    return root.children[0].insertBefore(newContent);
-                } else {
-                    // Empty root, direct edit
-                    root.tree.edit(0, 0, newContent);
-                    // If we want to return nodes, we'd need to parse and attach.
-                    // For now just return string to avoid crash.
-                    return newContent;
-                }
-            }
-            // For other ranges, we might need a more complex lookup, 
-            // but lambda.hup only uses {start:0, end:0}.
-        }
-        return "";
+    insertBefore(n, content) {
+        if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
+        return n.insertBefore(content);
+    }
+
+    insertAfter(n, content) {
+        if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
+        return n.insertAfter(content);
     }
 
     findRoot() {

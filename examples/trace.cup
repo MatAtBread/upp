@@ -6,16 +6,16 @@
     const body = fnNode.childForFieldName('body');
 
     if (body) {
-        return upp.code`${returnType} ${name}${params} {
+        return upp.codeTree`${returnType} ${name}${params} {
     puts("Entering ${name}\\n");
-    ${body.children.slice(1, -1).map(c => c.text).join('\n\t')}
+    ${body.children.slice(1, -1)}
 }`;
     }
 }
 
 @trace int my_function(int x) {
     int g = 1;
-    for (int i=1; i < x; i++) {
+    for (int i = 1; i < x; i++) {
         g = g * i;
     }
     return g;

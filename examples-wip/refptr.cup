@@ -1,0 +1,338 @@
+extern int printf(const char * format, ...);
+extern void * malloc(unsigned long size);
+extern void * calloc(unsigned long n, unsigned long size);
+extern void free(void * ptr);
+
+@define RefPtr(T) {
+  let typeName = T.trim();
+  if (typeName.startsWith('struct ')) {
+    typeName = typeName.slice(7).trim();
+  }
+  const refTypeName = `RefPtr_${typeName}`;
+
+  if (!upp.registry.state) {
+    upp.registry.state = {};
+  }
+
+  const detectCustomMethod = (methodSuffix) => {
+    if (!upp.root) return false;
+    const methodName = `_${typeName}_method_${methodSuffix}`;
+    const funcs = upp.root.find('function_definition');
+    for (const f of funcs) {
+      const decl = f.childForFieldName('declarator');
+      if (decl) {
+        const nameNode = decl.find('identifier')[0];
+        if (nameNode && nameNode.text === methodName) return true;
+      }
+    }
+    const targetMacro = `Ref${methodSuffix}`;
+    if (upp.registry && upp.registry.invocations) {
+      return upp.registry.invocations.some(inv => {
+        if (inv.name === targetMacro) {
+          const arg0 = inv.args[0].trim();
+          let argType = arg0;
+          if (argType.startsWith('struct ')) argType = argType.slice(7).trim();
+          return argType === typeName;
+        }
+        return false;
+      });
+    }
+    return false;
+  };
+
+  const hasRetain = detectCustomMethod('Retain');
+  const hasRelease = detectCustomMethod('Release');
+  const isIntrusive = hasRetain;
+
+  if (!upp.registry.state['RefPtr_' + typeName]) {
+    let structBody = ` ${T} * ptr; int *count; `;
+    if (isIntrusive) {
+      structBody = ` ${T} * ptr; `;
+    }
+
+    let retainImpl = ` if (p.count) { (*p.count)++; } `;
+    let releaseImpl = ` if (p.count) {
+      (*p.count)--;
+      if (*p.count == 0) {
+        _${typeName}_method_Defer(p.ptr);
+        free(p.count);
+        free(p.ptr);
+      }
+    } `;
+    let wrapImpl = ` int *count = malloc(sizeof(int)); *count = 1; return (${refTypeName}){ptr, count}; `;
+
+    if (isIntrusive) {
+      retainImpl = ` if (p.ptr) { _${typeName}_method_Retain(p.ptr); } `;
+      if (hasRelease) {
+        releaseImpl = ` if (p.ptr) { _${typeName}_method_Release(p.ptr); } `;
+      } else {
+        releaseImpl = `/* Warning: Retain defined but no Release detected */`;
+      }
+      wrapImpl = ` return (${refTypeName}){ptr}; `;
+    }
+
+    const headerCode = `
+        extern void * malloc(unsigned long size);
+        extern void * calloc(unsigned long n, unsigned long size);
+        extern void free(void * ptr);
+        struct ${typeName};
+        void _${typeName}_method_Defer(${T} * f);
+        ${isIntrusive ? `
+        void _${typeName}_method_Retain(${T} * p);
+        void _${typeName}_method_Release(${T} * p);
+        ` : ""}
+        typedef struct { ${structBody} } ${refTypeName};
+        void _retain_${typeName}(${refTypeName} p) { ${retainImpl} }
+        void _release_${typeName}(${refTypeName} p) { ${releaseImpl} }
+        ${refTypeName} _wrap_${typeName}(${T} * ptr) { ${wrapImpl} }
+        ${refTypeName} _copy_${typeName}(${refTypeName} p) { _retain_${typeName}(p); return p; }
+        ${refTypeName} _assign_wrap_${typeName}(${refTypeName} * lhs, ${T} * rhs_ptr) {
+          _release_${typeName}(*lhs);
+          *lhs = _wrap_${typeName}(rhs_ptr);
+          return *lhs;
+        }
+        ${refTypeName} _assign_copy_${typeName}(${refTypeName} * lhs, ${refTypeName} rhs_val) {
+          if (lhs->ptr != rhs_val.ptr) {
+            _retain_${typeName}(rhs_val);
+            _release_${typeName}(*lhs);
+            *lhs = rhs_val;
+          }
+          return *lhs;
+        }
+    `;
+    upp.hoist(headerCode);
+    upp.registry.state['RefPtr_' + typeName] = true;
+  }
+
+  if (!upp.registry.state['RefPtr_Transformer']) {
+    upp.withPattern('declaration',
+      (declaration, helpers) => {
+        const typeNode = declaration.childForFieldName('type');
+        if (!typeNode) return false;
+        const text = typeNode.text;
+        const matched = text.includes('RefPtr_') || text.includes('@RefPtr');
+        if (matched) console.error(`[DEBUG] Declaration matcher hit: ${text}`);
+        return matched;
+      },
+      (declaration, helpers) => {
+        console.error(`[DEBUG] Declaration transformer running for: ${declaration.text}`);
+        const typeNode = declaration.childForFieldName('type');
+        let typeSuffix = "";
+        const text = typeNode.text;
+
+        if (text.includes('RefPtr_')) {
+          const match = text.match(/RefPtr_(\w+)/);
+          if (match) typeSuffix = match[1];
+        } else if (text.includes('@RefPtr')) {
+          const match = text.match(/@RefPtr\s*\(\s*(struct\s+)?(\w+)\s*\)/);
+          if (match) typeSuffix = match[2];
+        }
+
+        if (!typeSuffix) return undefined;
+
+        const refPtrVars = upp.registry.state.refPtrVars || (upp.registry.state.refPtrVars = new Map());
+        const declarators = declaration.children.filter(c => c.type === 'declarator' || c.type === 'init_declarator');
+
+        for (const decl of declarators) {
+          const idNode = decl.find('identifier')[0];
+          if (idNode) {
+            const varName = idNode.text;
+            refPtrVars.set(varName, typeSuffix);
+
+            if (decl.type === 'declarator') {
+              const createMethodName = `_${typeSuffix}_method_Create`;
+              const hasCreate = upp.root.find('function_definition').some(f => {
+                const nameNode = f.childForFieldName('declarator')?.find('identifier')[0];
+                return nameNode && nameNode.text === createMethodName;
+              });
+              const initVal = hasCreate ? `${createMethodName}()` : `calloc(1, sizeof(struct ${typeSuffix}))`;
+              helpers.replace(decl, `${varName} = _Generic((${initVal}), 
+                struct ${typeSuffix} *: _wrap_${typeSuffix}, 
+                void *: _wrap_${typeSuffix}, 
+                RefPtr_${typeSuffix}: _copy_${typeSuffix})(${initVal})`);
+            } else if (decl.type === 'init_declarator') {
+              const valNode = decl.childForFieldName('value');
+              if (valNode) {
+                const valText = valNode.text;
+                helpers.replace(valNode, `_Generic((${valText}), 
+                  struct ${typeSuffix} *: _wrap_${typeSuffix}, 
+                  void *: _wrap_${typeSuffix}, 
+                  RefPtr_${typeSuffix}: _copy_${typeSuffix})(${valText})`);
+              }
+            }
+            declaration.insertAfter(helpers.code` @defer { _release_${typeSuffix}(${varName}); }`);
+          }
+        }
+        return undefined;
+      }
+    );
+
+    upp.withPattern('assignment_expression',
+      (assign, helpers) => {
+        const left = assign.childForFieldName('left');
+        const refPtrVars = upp.registry.state.refPtrVars;
+        return left && refPtrVars && refPtrVars.has(left.text);
+      },
+      (assign, helpers) => {
+        const left = assign.childForFieldName('left');
+        const right = assign.childForFieldName('right');
+        const varName = left.text;
+        const typeSuffix = upp.registry.state.refPtrVars.get(varName);
+        if (helpers.findEnclosing(assign, 'parenthesized_expression')?.text.includes(`_assign_`)) return undefined;
+        return helpers.code`_Generic((${right.text}),
+            struct ${typeSuffix} *: _assign_wrap_${typeSuffix},
+            void *: _assign_wrap_${typeSuffix},
+            RefPtr_${typeSuffix}: _assign_copy_${typeSuffix})(&${varName}, ${right.text})`;
+      }
+    );
+
+    upp.withPattern('field_expression',
+      (fieldExpr, helpers) => {
+        const arg = fieldExpr.childForFieldName('argument');
+        const refPtrVars = upp.registry.state.refPtrVars;
+        return arg && fieldExpr.text.includes('->') && refPtrVars && refPtrVars.has(arg.text);
+      },
+      (fieldExpr, helpers) => {
+        const arg = fieldExpr.childForFieldName('argument');
+        return helpers.code`${arg.text}.ptr`;
+      }
+    );
+
+    upp.withPattern('pointer_expression',
+      (ptrExpr, helpers) => {
+        const arg = ptrExpr.childForFieldName('argument');
+        const op = ptrExpr.child(0);
+        const refPtrVars = upp.registry.state.refPtrVars;
+        return op && op.text === '*' && arg && refPtrVars && refPtrVars.has(arg.text);
+      },
+      (ptrExpr, helpers) => {
+        const arg = ptrExpr.childForFieldName('argument');
+        return helpers.code`${arg.text}.ptr`;
+      }
+    );
+
+    upp.registry.state['RefPtr_Transformer'] = true;
+  }
+
+  return refTypeName;
+}
+
+@define RefRetain(T) {
+  let typeName = T.trim();
+  if (typeName.startsWith('struct '))
+    typeName = typeName.slice(7).trim();
+  return `void _${typeName}_method_Retain(${T} * p)`;
+}
+
+@define RefRelease(T) {
+  let typeName = T.trim();
+  if (typeName.startsWith('struct '))
+    typeName = typeName.slice(7).trim();
+  return `void _${typeName}_method_Release(${T} * p)`;
+}
+
+// ----------------------------------------------------
+// Testing Code
+// ----------------------------------------------------
+
+struct Foo {
+  int id;
+};
+
+// ----------------------------------------------------
+// Intrusive Test Types
+// ----------------------------------------------------
+struct Node {
+  int value;
+  int ref_count;
+};
+
+// Intrusive Retain
+@RefRetain(struct Node) {
+  if (p) {
+    p -> ref_count++;
+    // printf("Intrusive Retain: %d\n", p->ref_count);
+  }
+}
+
+// Intrusive Release
+@RefRelease(struct Node) {
+  if (p) {
+    p -> ref_count--;
+    // printf("Intrusive Release: %d\n", p->ref_count);
+    if (p -> ref_count == 0) {
+      // printf("Intrusive Free\n");
+      free(p);
+    }
+  }
+}
+
+// Factory
+struct Node * _Node_method_Create() {
+  struct Node * n = calloc(1, sizeof(struct Node));
+  n -> ref_count = 1; // Start with 1
+  return n;
+}
+
+/* @method(struct Foo) */ void _Foo_method_Defer(struct Foo * f) {
+  if (f)
+    printf("Defer Foo: %d\n", f -> id);
+}
+
+// Custom Create method to test auto-detection
+struct Foo * _Foo_method_Create() {
+  printf("Foo Created via Method!\n");
+  struct Foo * f = malloc(sizeof(struct Foo));
+  f -> id = 999; // distinctive value
+  return f;
+}
+
+int main() {
+  printf("Scope 1 Start\n");
+  {
+    // 1. Implicit Init with malloc (void*)
+    @RefPtr(struct Foo) p1 = malloc(sizeof(struct Foo));
+    p1 -> id =
+    1; // User requested elision: p->id should work/transform to p.ptr->id
+    printf("  p1 id: %d\n", p1 -> id);
+
+    {
+      printf("  Scope 2 Start\n");
+      // 2. Implicit Copy Init (RefPtr)
+      @RefPtr(struct Foo) p2 = p1;
+      printf("  p2 id: %d\n", p2 -> id); // Elision
+
+      // 3. Implicit Zero Init (Fallback if no Create, but now we have Create!)
+      // WAIT: We just added Create. So this test case behavior CHANGES.
+      // Old p3 was zero-init (id=0). New p3 should be id=999.
+      @RefPtr(struct Foo) p3;
+      printf("  p3 id: %d\n", p3 -> id);
+
+      // 4. Assignment (RefPtr = RefPtr)
+      p3 = p2; // p3 now shares p1/p2
+      printf("  p3 assigned from p2, id: %d\n", p3 -> id);
+
+      // 5. Assignment (RefPtr = malloc)
+      @RefPtr(struct Foo) p4;
+      p4 = malloc(sizeof(struct Foo));
+      p4 -> id = 4;
+      printf("  p4 id: %d\n", p4 -> id);
+    }
+    printf("  Scope 2 End\n");
+    // p2, p3, p4 released. p1 count should still be valid.
+  }
+  printf("Scope 1 End\n");
+
+  printf("Scope 3 Start (Intrusive)\n");
+  {
+    @RefPtr(struct Node) n1; // Use Create
+    n1 -> value = 10;
+    printf("  n1 value: %d\n", n1 -> value); // Elision
+
+    @RefPtr(struct Node) n2 = n1;
+    printf("  n2 shares n1. RefCount: %d\n", n1 -> ref_count); // Should be 2
+  }
+  printf("Scope 3 End\n");
+
+  return 0;
+}

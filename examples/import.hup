@@ -28,5 +28,5 @@
     upp.registerTransformRule((root, helpers) => {
         helpers.matchReplace(root, `${nameSpace}.$field`, ({field}) => field);
     });
-    return upp.code`\n#include ${literal.text}`;
+    return upp.codeTree`\n#include ${literal.text}`;
 }
