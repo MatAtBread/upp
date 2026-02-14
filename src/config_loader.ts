@@ -36,6 +36,7 @@ function deepMerge(a: any, b: any): any {
 export interface UppConfig {
     lang?: Record<string, any>;
     includePaths?: string[];
+    core?: string[];
     cache?: DependencyCache | null;
     write?: boolean;
     diagnostics?: DiagnosticsManager;

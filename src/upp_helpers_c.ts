@@ -1,5 +1,5 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
-import { RECURSION_LIMITER_ENABLED } from './registry.ts';
+import type { Invocation, Registry, RECURSION_LIMITER_ENABLED, TransformRule } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import { SourceNode } from './source_tree.ts';
 import Parser from 'tree-sitter';
@@ -13,7 +13,7 @@ class UppHelpersC extends UppHelpersBase {
     public matcher: PatternMatcher;
     public transformKey?: string;
 
-    constructor(root: SourceNode, registry: any, parentHelpers: UppHelpersBase | null = null) {
+    constructor(root: SourceNode, registry: Registry, parentHelpers: UppHelpersBase | null = null) {
         super(root, registry, parentHelpers);
         // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
         const patternParser = new Parser();
@@ -29,16 +29,16 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Match options.
      * @returns {any} Result of callback or captures object (or null).
      */
-    match(node: SourceNode, src: string | string[], callback?: (captures: any) => any, options: any = {}): any {
+    match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, SourceNode>) => any, options: { deep?: boolean } = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true;
 
         for (const s of srcs) {
-            const result = this.matcher.match(node, s, deep);
+            const result = this.matcher.match(node as any, s, deep);
             if (result) {
-                if (callback) return callback(result);
+                if (callback) return callback(result as Record<string, SourceNode>);
                 return result;
             }
         }
@@ -53,7 +53,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Options.
      * @returns {any[]} Matches.
      */
-    matchAll(node: SourceNode, src: string | string[], callback?: (match: any) => any, options: any = {}): any[] {
+    matchAll(node: SourceNode, src: string | string[], callback?: (match: { node: SourceNode, captures: Record<string, SourceNode> }) => any, options: { deep?: boolean } = {}): any[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -63,17 +63,27 @@ class UppHelpersC extends UppHelpersBase {
         const seenIds = new Set<number | string>();
 
         for (const s of srcs) {
-            const matches = this.matcher.matchAll(node, s, deep);
+            const matches = this.matcher.matchAll(node as any, s, deep);
             for (const m of matches) {
-                if (!seenIds.has(m.node.id)) {
-                    allMatches.push(m);
-                    seenIds.add(m.node.id);
+                if (m.node && !seenIds.has(m.node.id)) {
+                    const matchNode = node.tree.wrap(m.node);
+                    if (matchNode) {
+                        const captures: Record<string, SourceNode> = {};
+                        for (const key in m) {
+                            if (key !== 'node' && m[key]) {
+                                const wrapped = node.tree.wrap(m[key]);
+                                if (wrapped) captures[key] = wrapped;
+                            }
+                        }
+                        allMatches.push({ node: matchNode, captures: captures });
+                        seenIds.add(m.node.id);
+                    }
                 }
             }
         }
 
         if (callback) {
-            return allMatches.map(m => callback(m));
+            return allMatches.map(m => callback(m as { node: SourceNode, captures: Record<string, SourceNode> }));
         }
         return allMatches;
     }
@@ -85,19 +95,24 @@ class UppHelpersC extends UppHelpersBase {
      * @param {function(any): string | null | undefined} callback - Replacement callback.
      * @param {any} [options] - Options.
      */
-    matchReplace(node: SourceNode, src: string, callback: (captures: any) => string | null | undefined, options: any = {}): void {
-        this.matchAll(node, src, (captures) => {
-            if (captures && captures.node) {
+    matchReplace(node: SourceNode, src: string, callback: (match: { node: SourceNode, captures: Record<string, SourceNode> }) => string | null | undefined, options: { deep?: boolean } = {}): void {
+        this.matchAll(node, src, (match) => {
+            if (match && match.node) {
                 // Automatic recursion avoidance
-                const key = this.transformKey + "::" + src;
+                const key = (this as any).transformKey + "::" + src;
 
-                if (this.transformKey) {
-                    if (RECURSION_LIMITER_ENABLED && !(this.registry as any).visit(key, captures.node)) return;
-                }
-
-                const replacement = callback(captures);
-                if (replacement !== null && replacement !== undefined) {
-                    this.replace(captures.node, replacement);
+                if ((this as any).transformKey) {
+                    if ((this.registry as any).visit(key, match.node)) {
+                        const replacement = callback(match.captures as any);
+                        if (replacement !== null && replacement !== undefined) {
+                            this.replace(match.node, replacement);
+                        }
+                    }
+                } else {
+                    const replacement = callback(match.captures as any);
+                    if (replacement !== null && replacement !== undefined) {
+                        this.replace(match.node, replacement);
+                    }
                 }
             }
         }, { ...options, deep: true }); // Default to deep for matchReplace
@@ -302,7 +317,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Resolution options { variable: true, tag: true }.
      * @returns {SourceNode|null} The declaration/definition node.
      */
-    findDefinitionOrNull(target: SourceNode | string, nameOrOptions: string | any = null, options: any = { variable: true, tag: true }): SourceNode | null {
+    findDefinitionOrNull(target: SourceNode | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode | null {
         try {
             return this.findDefinition(target, nameOrOptions, options);
         } catch (ex) {
@@ -317,7 +332,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Resolution options { variable: true, tag: true }.
      * @returns {SourceNode} The declaration/definition node.
      */
-    findDefinition(target: SourceNode | string, nameOrOptions: string | any = null, options: any = { variable: true, tag: true }): SourceNode {
+    findDefinition(target: SourceNode | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode {
         let name: string | null = null;
         let startScope: SourceNode | null = null;
         let finalOptions = (typeof nameOrOptions === 'object' && nameOrOptions !== null) ? { ...options, ...nameOrOptions } : options;
@@ -509,10 +524,10 @@ class UppHelpersC extends UppHelpersBase {
      *        Return: string (replace), null/"" (delete), undefined (no change)
      * @returns {string} Marker for deferred transformations (empty if definition was below)
      */
-    withDefinition(target: SourceNode | string, callback: (n: SourceNode, helpers: any) => string | null | undefined): string {
+    withDefinition(target: SourceNode | string, callback: (n: SourceNode, helpers: UppHelpersC) => string | null | undefined): string {
         const defNode = this.findDefinition(target);
         if (!defNode) return "";
-        this.withNode(defNode, callback);
+        this.withNode(defNode, callback as any);
         return "";
     }
 
@@ -521,24 +536,24 @@ class UppHelpersC extends UppHelpersBase {
      * Registers a transformation rule for re-evaluation on generated code.
      *
      * @param {string} nodeType - The node type to match (e.g., 'call_expression')
-     * @param {function(SourceNode, any): boolean} matcher - Custom matcher function
-     * @param {function(SourceNode, any): string|null|undefined} callback - Transformation callback
+     * @param {function(SourceNode, UppHelpersC): boolean} matcher - Custom matcher function
+     * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback
      * @returns {string} Marker for deferred transformations
      */
-    withPattern(nodeType: string, matcher: (node: SourceNode, helpers: any) => boolean, callback: (node: SourceNode, helpers: any) => string | null | undefined): string {
+    withPattern(nodeType: string, matcher: (node: SourceNode, helpers: UppHelpersC) => boolean, callback: (node: SourceNode, helpers: UppHelpersC) => string | null | undefined): string {
         // Register a transformation rule for this pattern
-        const rule = {
+        const rule: TransformRule = {
             id: (this.registry as any).generateRuleId(),
             type: 'pattern',
             nodeType: nodeType,
-            matcher: (node: SourceNode, helpers: any) => {
+            matcher: (node: SourceNode, helpers: UppHelpersC) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers);
             },
             callback: callback,
             scope: this.contextNode,
             active: true
-        };
+        } as any;
 
         this.registry.registerTransformRule(rule);
 
@@ -546,8 +561,8 @@ class UppHelpersC extends UppHelpersBase {
         return this.atRoot((root, helpers) => {
             helpers.walk(root, (node) => {
                 if (node.type === nodeType) {
-                    if (matcher(node, helpers)) {
-                        const replacement = callback(node, helpers);
+                    if (matcher(node, helpers as UppHelpersC)) {
+                        const replacement = callback(node, helpers as UppHelpersC);
                         if (replacement !== undefined) {
                             helpers.replace(node, replacement === null ? '' : replacement);
                         }
@@ -563,10 +578,10 @@ class UppHelpersC extends UppHelpersBase {
      * @param {string} pattern - The source fragment pattern.
      * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
      */
-    withMatch(scope: SourceNode, pattern: string, callback: (captures: any, helpers: UppHelpersC) => string | null | undefined): void {
-        this.matchAll(scope, pattern, (captures) => {
-            if (captures && captures.node) {
-                this.withNode(captures.node, (node, helpers) => callback(captures, helpers as UppHelpersC));
+    withMatch(scope: SourceNode, pattern: string, callback: (captures: Record<string, SourceNode>, helpers: UppHelpersC) => string | null | undefined): void {
+        this.matchAll(scope, pattern, (match) => {
+            if (match && match.node) {
+                this.withNode(match.node, ((node: SourceNode, helpers: UppHelpersBase) => callback(match.captures, helpers as UppHelpersC)) as any);
             }
         });
     }

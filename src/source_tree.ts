@@ -1,5 +1,6 @@
 import Parser from 'tree-sitter';
 import type { Tree, SyntaxNode } from 'tree-sitter';
+import type { Marker } from './registry.ts';
 
 /**
  * Represents a source file as a manageable tree of nodes, 
@@ -17,7 +18,7 @@ export class SourceTree {
      * @param {string} source Initial source code text.
      * @param {any} language Tree-sitter language object.
      */
-    constructor(source: string, language: any) {
+    constructor(source: string, language: any) { // language is tree-sitter Language
         if (typeof source !== 'string') {
             throw new Error(`SourceTree expects string source, got ${typeof source}`);
         }
@@ -241,7 +242,7 @@ export class SourceNode {
     public children: SourceNode[];
     public parent: SourceNode | null;
     public fieldName: string | null;
-    public markers: Array<{ callback: Function, data: any }>;
+    public markers: Marker[];
     public data: Record<string, any>;
     public _capturedText?: string;
     public _snapshotSearchable?: string;
@@ -685,7 +686,7 @@ export class SourceNode {
         return attached as SourceNode | SourceNode[];
     }
 
-    public _attachNewNode(newNode: any, insertionOffset: number): SourceNode | SourceNode[] | null {
+    public _attachNewNode(newNode: SourceNode | SourceTree | string | Array<SourceNode | string>, insertionOffset: number): SourceNode | SourceNode[] | null {
         if (Array.isArray(newNode)) {
             let currentOffset = insertionOffset;
             const results: SourceNode[] = [];

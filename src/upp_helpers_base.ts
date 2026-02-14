@@ -1,5 +1,5 @@
-import { SourceNode } from './source_tree.ts';
-import type { Registry } from './registry.ts';
+import { SourceNode, SourceTree } from './source_tree.ts';
+import type { Invocation, Registry, RegistryContext } from './registry.ts';
 
 let uniqueIdCounter = 1;
 
@@ -12,15 +12,21 @@ class UppHelpersBase {
     public registry: Registry;
     public _parentHelpers: UppHelpersBase | null;
     public contextNode: SourceNode | null;
-    public invocation: any | null;
+    public invocation: Invocation | null;
     public lastConsumedNode: SourceNode | null;
     public isDeferred: boolean;
-    public currentInvocations: any[];
+    public currentInvocations: Invocation[];
     public consumedIds: Set<number | string>;
-    public context: any | null;
-    public parentTree: any | null;
+    public context: RegistryContext | null;
+    public parentTree: SourceNode | null;
     public stdPath: string | null;
     public lastConsumedIndex?: number;
+    public parentRegistry?: {
+        invocations: Invocation[];
+        sourceCode: string;
+        helpers: UppHelpersBase;
+    };
+    public topLevelInvocation?: Invocation | null;
 
     get parentHelpers(): UppHelpersBase | null { return this._parentHelpers; }
     set parentHelpers(v: UppHelpersBase | null) { this._parentHelpers = v; }
@@ -39,7 +45,7 @@ class UppHelpersBase {
         this.currentInvocations = [];
         this.consumedIds = new Set();
         this.context = null; // Back-reference to the local transform context
-        this.parentTree = (registry && registry.parentRegistry) ? registry.parentRegistry.tree : null;
+        this.parentTree = (registry && registry.parentRegistry && registry.parentRegistry.tree) ? registry.parentRegistry.tree.root : null;
         this.stdPath = registry ? registry.stdPath : null;
     }
 
@@ -142,7 +148,7 @@ class UppHelpersBase {
         this.registry.registerTransformRule(rule);
     }
 
-    replace(n: SourceNode, newContent: any): any {
+    replace(n: SourceNode, newContent: string | SourceNode | SourceNode[] | SourceTree | null): SourceNode | SourceNode[] | null {
         let finalContent = newContent;
         if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && (this.registry as any).prepareSource) {
             const prepared = (this.registry as any).prepareSource(finalContent, (this.registry as any).originPath);
@@ -150,7 +156,7 @@ class UppHelpersBase {
         }
 
         if (n.replaceWith) {
-            const result = n.replaceWith(finalContent);
+            const result = n.replaceWith(finalContent as any);
             if (this.contextNode === n) this.contextNode = result as any;
             return result;
         }
@@ -158,14 +164,14 @@ class UppHelpersBase {
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
-    insertBefore(n: SourceNode, content: any): SourceNode | SourceNode[] {
+    insertBefore(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
         if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
-        return n.insertBefore(content);
+        return n.insertBefore(content as any);
     }
 
-    insertAfter(n: SourceNode, content: any): SourceNode | SourceNode[] {
+    insertAfter(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
         if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
-        return n.insertAfter(content);
+        return n.insertAfter(content as any);
     }
 
     findRoot(): SourceNode | null {
@@ -193,7 +199,7 @@ class UppHelpersBase {
      * @param {SourceNode} [node]
      * @returns {any[]}
      */
-    findInvocations(macroName: string, node: SourceNode | null = null): any[] {
+    findInvocations(macroName: string, node: SourceNode | null = null): Invocation[] {
         let target = node || this.root;
         if (!target && this.registry) {
             target = this.registry.tree ? this.registry.tree.root : null as any;
@@ -204,7 +210,7 @@ class UppHelpersBase {
             if (!source) return [];
 
             const invs = (this.registry as any).findInvocations(source);
-            return invs.filter((i: any) => i.name === macroName).map((i: any) => ({
+            return invs.filter((i: Invocation) => i.name === macroName).map((i: Invocation) => ({
                 ...i,
                 text: `@${i.name}(${i.args.join(',')})`,
                 // Mock includes for package.hup
@@ -220,12 +226,12 @@ class UppHelpersBase {
             }
             return false;
         });
-        return results;
+        return results as any;
     }
 
 
     loadDependency(file: string): void {
-        this.registry.loadDependency(file, this.context.originPath, this);
+        this.registry.loadDependency(file, this.context?.originPath || 'unknown', this as any);
     }
 
 
@@ -235,8 +241,8 @@ class UppHelpersBase {
      */
     public _getNextNode(expectedTypes: string[] | null = null): SourceNode | null {
         const root = this.root || this.findRoot();
-        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode.endIndex);
-        if (index === undefined) return null;
+        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode?.endIndex);
+        if (index === undefined || index === null) return null;
         return this.findNextNodeAfter(root, index);
     }
 
@@ -288,7 +294,7 @@ class UppHelpersBase {
         if (expectedTypes && !expectedTypes.includes(node.type)) reportFailure(node);
         if (validateFn && !validateFn(node)) reportFailure(node);
 
-        const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
+        const isHoisted = this.invocation?.invocationNode && this.isDescendant(node, this.invocation.invocationNode);
 
         const captureText = (n: SourceNode) => {
             n._capturedText = n.text;

@@ -99,15 +99,17 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
         const expandedFiles: string[] = [];
 
         // 1. Expand directories into .cup files
-        for (const f of command.files) {
-            const stat = fs.statSync(f);
-            if (stat.isDirectory()) {
-                const files = fs.readdirSync(f).filter(file => file.endsWith('.cup'));
-                for (const cupFile of files) {
-                    expandedFiles.push(path.join(f, cupFile));
+        if (command.files) {
+            for (const f of command.files) {
+                const stat = fs.statSync(f);
+                if (stat.isDirectory()) {
+                    const files = fs.readdirSync(f).filter(file => file.endsWith('.cup'));
+                    for (const cupFile of files) {
+                        expandedFiles.push(path.join(f, cupFile));
+                    }
+                } else {
+                    expandedFiles.push(f);
                 }
-            } else {
-                expandedFiles.push(f);
             }
         }
 
@@ -256,149 +258,156 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
         process.exit(1);
     }
 }
+
+// =========================================================================================
+// STANDARD COMPILE MODE
+// =========================================================================================
+
 const materializations = new Map<string, string>();
 const authoritativeMaterials = new Set<string>();
 
-for (const source of command.sources) {
-    extraDeps = []; // Reset for each source
-    if (fs.existsSync(source.absCupFile)) {
-        try {
-            // Run Pre-processor on main input with Main Dep Flags
-            const preProcessed = preprocess(source.cupFile, command.depFlags);
+if (command.sources) {
+    for (const source of command.sources) {
+        extraDeps = []; // Reset for each source
+        if (fs.existsSync(source.absCupFile)) {
+            try {
+                // Run Pre-processor on main input with Main Dep Flags
+                const preProcessed = preprocess(source.cupFile, command.depFlags);
 
-            // Resolve config (Search up tree for upp.json, supports extends and UPP fallback)
-            const loadedConfig = resolveConfig(source.absCupFile);
+                // Resolve config (Search up tree for upp.json, supports extends and UPP fallback)
+                const loadedConfig = resolveConfig(source.absCupFile);
 
-            // Include Paths: source dir + config (already resolved) + CLI
-            const resolvedConfigIncludes = loadedConfig.includePaths || [];
-            if (loadedConfig.includePaths) resolvedConfigIncludes.push(...loadedConfig.includePaths);
+                // Include Paths: source dir + config (already resolved) + CLI
+                const resolvedConfigIncludes = loadedConfig.includePaths || [];
+                if (loadedConfig.includePaths) resolvedConfigIncludes.push(...loadedConfig.includePaths);
 
-            // Final Include Paths (prioritize config)
-            const finalIncludePaths = [
-                path.dirname(source.absCupFile), // Implicit sibling lookup
-                ...resolvedConfigIncludes,
-                ...(command.includePaths || []),
-                stdPath,
-                projectRoot
-            ];
+                // Final Include Paths (prioritize config)
+                const finalIncludePaths = [
+                    path.dirname(source.absCupFile), // Implicit sibling lookup
+                    ...resolvedConfigIncludes,
+                    ...(command.includePaths || []),
+                    stdPath,
+                    projectRoot
+                ];
 
-            const config = {
-                cache,
-                includePaths: finalIncludePaths,
-                stdPath,
-                diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p: string, content: string, options: any = {}) => {
-                    if (materializations.has(p)) {
-                        const existing = materializations.get(p);
-                        if (existing === content) return;
+                const config = {
+                    cache,
+                    includePaths: finalIncludePaths,
+                    stdPath,
+                    diagnostics: new DiagnosticsManager({}),
+                    onMaterialize: (p: string, content: string, options: any = {}) => {
+                        if (materializations.has(p)) {
+                            const existing = materializations.get(p);
+                            if (existing === content) return;
 
-                        if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
-                            materializations.set(p, content);
-                            authoritativeMaterials.add(p);
-                            fs.writeFileSync(p, content);
-                            return;
-                        }
-
-                        if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
-                            return;
-                        }
-
-                        throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
-                    }
-                    materializations.set(p, content);
-                    if (options.isAuthoritative) authoritativeMaterials.add(p);
-                    fs.writeFileSync(p, content);
-                },
-                preprocess: (file: string) => {
-                    // Same preprocess logic as before...
-                    if (command.depFlags && command.depFlags.length > 0) {
-                        const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
-                        const flags = ['-MD', '-MF', tempD];
-                        try {
-                            const out = preprocess(file, flags);
-                            if (fs.existsSync(tempD)) {
-                                const content = fs.readFileSync(tempD, 'utf8');
-                                const match = content.match(/^[^:]+:(.*)/s);
-                                if (match) { extraDeps.push(match[1]); }
-                                fs.unlinkSync(tempD);
+                            if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
+                                materializations.set(p, content);
+                                authoritativeMaterials.add(p);
+                                fs.writeFileSync(p, content);
+                                return;
                             }
-                            return out;
-                        } catch (e) {
-                            if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
-                            throw e;
+
+                            if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
+                                return;
+                            }
+
+                            throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
+                        }
+                        materializations.set(p, content);
+                        if (options.isAuthoritative) authoritativeMaterials.add(p);
+                        fs.writeFileSync(p, content);
+                    },
+                    preprocess: (file: string) => {
+                        // Same preprocess logic as before...
+                        if (command.depFlags && command.depFlags.length > 0) {
+                            const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
+                            const flags = ['-MD', '-MF', tempD];
+                            try {
+                                const out = preprocess(file, flags);
+                                if (fs.existsSync(tempD)) {
+                                    const content = fs.readFileSync(tempD, 'utf8');
+                                    const match = content.match(/^[^:]+:(.*)/s);
+                                    if (match) { extraDeps.push(match[1]); }
+                                    fs.unlinkSync(tempD);
+                                }
+                                return out;
+                            } catch (e) {
+                                if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
+                                throw e;
+                            }
+                        }
+                        return preprocess(file);
+                    }
+                };
+                const registry = new Registry(config);
+
+                // Core Loading (from config.core)
+                const coreFiles = loadedConfig.core || [];
+
+                for (const coreFile of coreFiles) {
+                    // Find file in include paths
+                    let foundPath: string | null = null;
+                    for (const inc of finalIncludePaths) {
+                        const p = path.join(inc, coreFile);
+                        if (fs.existsSync(p)) {
+                            foundPath = p;
+                            break;
                         }
                     }
-                    return preprocess(file);
-                }
-            };
-            const registry = new Registry(config);
 
-            // Core Loading (from config.core)
-            const coreFiles = loadedConfig.core || [];
-
-            for (const coreFile of coreFiles) {
-                // Find file in include paths
-                let foundPath: string | null = null;
-                for (const inc of finalIncludePaths) {
-                    const p = path.join(inc, coreFile);
-                    if (fs.existsSync(p)) {
-                        foundPath = p;
-                        break;
+                    if (foundPath) {
+                        registry.loadDependency(foundPath);
+                    } else {
+                        console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
                     }
                 }
 
-                if (foundPath) {
-                    registry.loadDependency(foundPath);
-                } else {
-                    console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
-                }
-            }
+                // Process
+                const output = registry.transform(preProcessed, source.absCupFile);
 
-            // Process
-            const output = registry.transform(preProcessed, source.absCupFile);
+                // Write output to the .c file
+                fs.writeFileSync(source.absCFile, output);
 
-            // Write output to the .c file
-            fs.writeFileSync(source.absCFile, output);
+                // Dependency Tracking Logic
+                if (command.depFlags && command.depFlags.length > 0) {
+                    let dFile = command.depOutputFile;
+                    if (!dFile) {
+                        const parsed = path.parse(source.cupFile);
+                        dFile = path.join(parsed.dir, parsed.name + '.d');
+                    }
 
-            // Dependency Tracking Logic
-            if (command.depFlags && command.depFlags.length > 0) {
-                let dFile = command.depOutputFile;
-                if (!dFile) {
-                    const parsed = path.parse(source.cupFile);
-                    dFile = path.join(parsed.dir, parsed.name + '.d');
-                }
+                    if (dFile && fs.existsSync(dFile)) {
+                        const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
+                        const transitive = extraDeps.join('');
 
-                if (dFile && fs.existsSync(dFile)) {
-                    const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
-                    const transitive = extraDeps.join('');
-
-                    const content = fs.readFileSync(dFile, 'utf8');
-                    const targetMatch = content.match(/^([^:]+):/);
-                    if (targetMatch) {
-                        const target = targetMatch[1].trim();
-                        fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
+                        const content = fs.readFileSync(dFile, 'utf8');
+                        const targetMatch = content.match(/^([^:]+):/);
+                        if (targetMatch) {
+                            const target = targetMatch[1].trim();
+                            fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
+                        }
                     }
                 }
-            }
 
-            // Add resolved include paths to the FINAL compiler command so it can find generated headers
-            if (!(command as any).additionalIncludes) (command as any).additionalIncludes = [];
-            for (const inc of resolvedConfigIncludes) {
-                (command as any).additionalIncludes.push(inc);
-            }
+                // Add resolved include paths to the FINAL compiler command so it can find generated headers
+                if (!(command as any).additionalIncludes) (command as any).additionalIncludes = [];
+                for (const inc of resolvedConfigIncludes) {
+                    (command as any).additionalIncludes.push(inc);
+                }
 
-        } catch (e: any) {
-            console.error(`[upp] Error processing ${source.cupFile}:`);
-            console.error(e.message);
-            process.exit(1);
+            } catch (e: any) {
+                console.error(`[upp] Error processing ${source.cupFile}:`);
+                console.error(e.message);
+                process.exit(1);
+            }
         }
     }
 }
 
 // Final Step: Invoke the real compiler
 // We need to swap all .cup entries in the original command with their .c counterparts
-const finalArgs = command.fullCommand.slice(1).map(arg => {
-    const source = command.sources.find(s => s.cupFile === arg || s.absCupFile === path.resolve(arg));
+const finalArgs = (command.fullCommand || []).slice(1).map(arg => {
+    const source = (command.sources || []).find(s => s.cupFile === arg || s.absCupFile === path.resolve(arg));
     if (source) return source.cFile;
     return arg;
 });
@@ -410,5 +419,9 @@ if ((command as any).additionalIncludes) {
     }
 }
 
-const run = spawnSync(command.compiler, finalArgs, { stdio: 'inherit' });
-process.exit(run.status);
+const run = spawnSync(command.compiler || 'cc', finalArgs, { stdio: 'inherit' });
+if (run.status !== null) {
+    process.exit(run.status);
+} else {
+    process.exit(1); // Compilation killed/failed
+}

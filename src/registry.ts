@@ -7,6 +7,7 @@ import { UppHelpersBase } from './upp_helpers_base.ts';
 import { DiagnosticsManager } from './diagnostics.ts';
 import { SourceTree, SourceNode } from './source_tree.ts';
 import type { Tree, SyntaxNode } from 'tree-sitter';
+import type { DependencyCache } from './dependency_cache.ts';
 
 export const RECURSION_LIMITER_ENABLED = false;
 
@@ -21,8 +22,8 @@ export interface Macro {
 
 export interface TransformRule {
     active: boolean;
-    matcher: (node: SourceNode, helpers: any) => boolean;
-    callback: (node: SourceNode, helpers: any) => any;
+    matcher: (node: SourceNode, helpers: UppHelpersC) => boolean;
+    callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
 }
 
 export interface Invocation {
@@ -39,13 +40,26 @@ export interface RegistryConfig {
     onMaterialize?: (outputPath: string, content: string, options: { isAuthoritative: boolean }) => void;
     filePath?: string;
     stdPath?: string;
-    cache?: any;
+    cache?: DependencyCache;
     diagnostics?: DiagnosticsManager;
     suppress?: string[];
     comments?: boolean;
-    [key: string]: any;
 }
 
+export interface Marker {
+    callback: (node: SourceNode, helpers: UppHelpersC) => any;
+    data?: any;
+}
+
+export interface RegistryContext {
+    source: string;
+    tree: SourceTree;
+    originPath: string;
+    invocations: Invocation[];
+    helpers: UppHelpersC | null;
+}
+
+type TreeSitterLang = unknown;
 /**
  * Main registry class for managing macros, parsing, and transformations.
  * @class
@@ -56,8 +70,8 @@ class Registry {
     public depth: number;
     public filePath: string;
     public diagnostics: DiagnosticsManager;
-    public language: any;
-    public helpers: any | null;
+    public language: TreeSitterLang; // Tree-sitter Language
+    public helpers: UppHelpersC | null;
     public parentHelpers: UppHelpersBase | null;
     public parentTree: SourceTree | null;
     public materializedFiles: Set<string>;
@@ -72,11 +86,11 @@ class Registry {
     public ruleIdCounter: number;
     public isExecutingDeferred: boolean;
     public onMaterialize: ((outputPath: string, content: string, options: { isAuthoritative: boolean }) => void) | null;
-    public mainContext: any | null;
+    public mainContext: RegistryContext | null;
     public UppHelpersC: typeof UppHelpersC;
     public source?: string;
     public tree?: SourceTree;
-    public deferredMarkers?: any[];
+    public deferredMarkers?: Marker[];
     public activeTransformNode?: SourceNode | null;
     public originPath?: string;
 
@@ -151,7 +165,7 @@ class Registry {
         return undefined;
     }
 
-    registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: any) => any)): void {
+    registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: UppHelpersC) => any)): void {
         if (typeof rule === 'function') {
             rule = {
                 active: true,
@@ -165,7 +179,7 @@ class Registry {
         }
     }
 
-    loadDependency(file: string, originPath: string = 'unknown', parentHelpers: any = null): void {
+    loadDependency(file: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): void {
         let targetPath: string;
         if (path.isAbsolute(file)) {
             targetPath = file;
@@ -193,7 +207,7 @@ class Registry {
             const cached = this.config.cache.get(targetPath);
 
             // Only use cache if it's authoritative, or if we don't care about authority (isDiscoveryOnly handled above)
-            if (cached.isAuthoritative) {
+            if (cached && cached.isAuthoritative) {
                 // Replay macros
                 for (const macro of cached.macros) {
                     this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
@@ -258,7 +272,7 @@ class Registry {
     }
 
 
-    transform(source: string, originPath: string = 'unknown', parentHelpers: any = null): string {
+    transform(source: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): string {
         this.source = source;
         if (!source) return "";
 
@@ -275,19 +289,20 @@ class Registry {
             } else {
                 this.tree = new SourceTree(cleanSource, this.language);
             }
-            this.helpers.root = this.tree.root; // Update helpers root
+            if (this.helpers) (this.helpers as any).root = this.tree.root; // Update helpers root
         }
         const sourceTree = this.tree!;
 
-        const context: any = {
+        const context: RegistryContext = {
             source: cleanSource, // This will be stale, should use sourceTree.source
             tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
-            helpers: null
+            helpers: null as any
         };
 
-        const helpers = new (this.UppHelpersC as any)(sourceTree.root, this, parentHelpers);
+        if (!sourceTree) throw new Error("Could not create source tree for transformation.");
+        const helpers = new (this.UppHelpersC as any)(sourceTree.root, this, parentHelpers) as UppHelpersC;
         context.helpers = helpers;
         helpers.context = context;
         helpers.root = sourceTree.root;
@@ -302,8 +317,8 @@ class Registry {
             helpers.parentHelpers = parentHelpers;
             helpers.parentTree = parentHelpers.root;
             helpers.parentRegistry = {
-                invocations: parentHelpers.context.invocations,
-                sourceCode: (parentHelpers.context.tree && parentHelpers.context.tree.source) || parentHelpers.context.source,
+                invocations: parentHelpers.context?.invocations || [],
+                sourceCode: parentHelpers.context?.tree?.source || parentHelpers.context?.source || "",
                 helpers: parentHelpers
             };
             helpers.topLevelInvocation = parentHelpers.topLevelInvocation || parentHelpers.invocation;
@@ -319,7 +334,7 @@ class Registry {
         return sourceTree.source;
     }
 
-    transformNode(node: SourceNode, helpers: any, context: any): void {
+    transformNode(node: SourceNode, helpers: UppHelpersC, context: RegistryContext): void {
         if (!node) return;
 
         // Skip invalidated nodes
@@ -415,7 +430,7 @@ class Registry {
     }
 
 
-    executeDeferredMarkers(helpers: any): void {
+    executeDeferredMarkers(helpers: UppHelpersC): void {
         if (this.isExecutingDeferred) return;
         this.isExecutingDeferred = true;
 
@@ -463,7 +478,7 @@ class Registry {
         }
     }
 
-    evaluateMacro(invocation: Invocation, source: string, helpers: any, filePath: string): any {
+    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersC, filePath: string): any {
         const macro = this.getMacro(invocation.name);
 
         const oldInvocation = helpers.invocation;

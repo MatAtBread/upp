@@ -1,7 +1,11 @@
+import type { Macro, TransformRule } from './registry.ts';
+
 export interface CacheData {
-    macros: any[];
-    transformRules: any[];
+    macros: Macro[];
+    transformRules: TransformRule[];
     output: string;
+    shouldMaterialize: boolean;
+    isAuthoritative: boolean;
 }
 
 /**
