@@ -158,6 +158,16 @@ class UppHelpersBase {
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
+    insertBefore(n, content) {
+        if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
+        return n.insertBefore(content);
+    }
+
+    insertAfter(n, content) {
+        if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
+        return n.insertAfter(content);
+    }
+
     findRoot() {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
