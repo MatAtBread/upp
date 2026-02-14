@@ -13,10 +13,9 @@
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    const isImpl = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
+    upp.isAuthoritative = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
 
-    if (isImpl) {
-        upp.isAuthoritative = true;
+    if (upp.isAuthoritative) {
         upp.registry.shouldMaterializeDependency = true;
         if (upp.parentHelpers.registry) {
             upp.parentHelpers.registry.shouldMaterializeDependency = true;
