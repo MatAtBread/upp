@@ -2,33 +2,49 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
-    const node = upp.consume();
-    const scope = upp.findEnclosing(node, 'compound_statement');
-    if (!scope) return;
+    const stmt = upp.consume(['expression_statement', 'compound_statement']);
+    if (!stmt) return upp.error("Expected expression_statement or compound_statement");
+    
+    const code = stmt.text;
 
-    // 1. Check for forbidden flow control anywhere in the scope
-    upp.walk(scope, (n) => {
-        if (['break_statement', 'continue_statement', 'goto_statement'].includes(n.type)) {
-            throw new Error(`@defer cannot be used in a scope containing ${n.type.replace('_statement', '')}`);
+    upp.withScope((scope, helpers) => {
+        const trimmed = code.trim();
+        const codeText = (trimmed.endsWith('}') || trimmed.endsWith(';')) ? code : code + ";";
+        
+        // Find all return statements
+        const returns = scope.find('return_statement');
+        const returnOffsets = new Set();
+        for (const node of returns) {
+            helpers.replace(node, "\n" + codeText + "\n" + node.text);
+            returnOffsets.add(node.startIndex);
+        }
+
+        // Also add before the closing brace of the scope
+        const last = scope.children[scope.children.length - 1];
+        if (last && (last.type === '}' || (last.type === 'compound_statement' && last.text === '}'))) {
+            // Check if we already handled a return at the very end.
+            // When we replace a return with 'code \n return', 
+            // the original return node's identity is preserved if we use insertBefore on the return,
+            // but here we are looking for the end of the block.
+            let foundReturn = false;
+            for (let i = scope.children.length - 1; i >= 0; i--) {
+                const child = scope.children[i];
+                if (child === last) continue;
+                if (child.type === 'comment' || child.text.trim().length === 0) continue;
+                
+                if (child.type === 'return_statement') {
+                    foundReturn = true;
+                }
+                break;
+            }
+
+            if (!foundReturn) {
+                 last.insertBefore(codeText);
+            }
         }
     });
 
-    // 2. Insert before all subsequent return statements
-    upp.walk(scope, (n) => {
-        if (n.type === 'return_statement' && n.startIndex > node.startIndex) {
-            upp.replace({ start: n.startIndex, end: n.startIndex }, upp.code`${node.text} `);
-        }
-    });
-
-    // 3. Insert before the block's closing brace, but only if the last statement isn't a return
-    const lastStmt = scope.lastNamedChild;
-    if (lastStmt && lastStmt.type !== 'return_statement') {
-        const endBrace = scope.endIndex - 1;
-        upp.replace({ start: endBrace, end: endBrace }, upp.code`${node.text} `);
-    }
-
-    // 4. Strip the expression from the original site
-    return "";
+    return null;
 }
 
 #endif

@@ -8,7 +8,25 @@ typedef struct {
 } Point;
 
 @define Point() {
-    return "@useCreate(Point)";
+    let node = upp.consume();
+    let name, init;
+    const text = node.text.trim();
+
+    if (node.type === 'type_identifier' || node.type === 'identifier') {
+        name = text;
+        init = "= {0}";
+    } else {
+        const match = text.match(/^(\w+)\s*=\s*([\s\S]*);?$/);
+        if (match) {
+            name = match[1];
+            init = ' = ' + match[2].replace(/;$/, '');
+        } else {
+            name = text.replace(';', '').trim();
+            init = "= {0}";
+        }
+    }
+
+    return `Point ${name} ${init}; ${name}.Create();`;
 }
 
 @method(Point) void print(Point *p) {

@@ -1,0 +1,39 @@
+==== examples/async.c ===
+#include "async.h"
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+void os_start(void (*fn)()) {
+    puts("Run in background");
+    fn();
+    puts("Finished");
+}
+ void afn() {
+    printf("World\n");
+}
+int main() {
+    os_start(afn);
+    return 0;
+}
+
+==== std/async.h ===
+#ifndef __UPP_STDLIB_ASYNC_H__
+#define __UPP_STDLIB_ASYNC_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
+Run in background
+World
+Finished
+

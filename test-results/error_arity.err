@@ -1,3 +1,0 @@
-[1m./examples/error_arity.cup:9:5: error: @transformer expected 2 arguments, but found 1[0m
-    @transformer(10) int a;
-    [1;31m^[0m

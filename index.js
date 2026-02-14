@@ -14,22 +14,243 @@ const command = parseArgs(process.argv.slice(2));
 if (!command.isUppCommand) {
     console.error("Usage: upp <compiler_command>");
     console.error("Example: upp gcc -c main.c -o main.o");
+    console.error("Support: upp --transpile <file.cup>");
     process.exit(1);
 }
 
 // Global state across transpilations
+const projectRoot = path.dirname(new URL(import.meta.url).pathname);
+const stdPath = path.join(projectRoot, 'std');
 const cache = new DependencyCache();
 let extraDeps = []; // Collected from -M flags during preprocessing
 
 function preprocess(filePath, extraFlags = []) {
-    // We add -x c to force C processing even for .hup files
-    // We use -E -P to get clean output
-    const flags = [...extraFlags, '-E', '-P', '-x', 'c'].join(' ');
+    const compiler = command.compiler || 'cc';
+    const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
-        const cmd = `${command.compiler} ${flags} "${filePath}"`;
+        const cmd = `${compiler} ${flags} "${filePath}"`;
         return execSync(cmd, { encoding: 'utf8' });
     } catch (e) {
-        // GCC stderr is already printed
+        process.exit(1);
+    }
+}
+
+// Helper for core transpilation of a single file
+function transpileOne(sourceFile, outputCFile = null) {
+    const absSource = path.resolve(sourceFile);
+    const preProcessed = preprocess(absSource, command.depFlags || []);
+    const loadedConfig = resolveConfig(absSource);
+
+    const resolvedConfigIncludes = loadedConfig.includePaths || [];
+    const finalIncludePaths = [
+        path.dirname(absSource),
+        ...resolvedConfigIncludes,
+        ...(command.includePaths || [])
+    ];
+
+    const config = {
+        cache,
+        includePaths: finalIncludePaths,
+        stdPath: path.join(path.dirname(new URL(import.meta.url).pathname), 'std'),
+        diagnostics: new DiagnosticsManager({}),
+        preprocess: (file) => {
+            // ... same logic as below but simplified or shared ...
+            return preprocess(file);
+        }
+    };
+    const registry = new Registry(config);
+    const coreFiles = loadedConfig.core || [];
+    for (const coreFile of coreFiles) {
+        let foundPath = null;
+        for (const inc of finalIncludePaths) {
+            const p = path.join(inc, coreFile);
+            if (fs.existsSync(p)) { foundPath = p; break; }
+        }
+        if (foundPath) registry.loadDependency(foundPath);
+    }
+
+    const output = registry.transform(preProcessed, absSource);
+
+    // Support materialization for the root file if requested by a macro (like @package)
+    if (registry.shouldMaterializeDependency) {
+        let outputPath = null;
+        if (absSource.endsWith('.cup')) outputPath = absSource.slice(0, -4) + '.c';
+        else if (absSource.endsWith('.hup')) outputPath = absSource.slice(0, -4) + '.h';
+
+        if (outputPath) {
+            fs.writeFileSync(outputPath, output);
+        }
+    }
+
+    if (outputCFile) {
+        fs.writeFileSync(outputCFile, output);
+        return output;
+    } else {
+        return output;
+    }
+}
+
+if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === 'test') {
+    try {
+        const materializations = new Map();
+        const authoritativeMaterials = new Set();
+        const expandedFiles = [];
+
+        // 1. Expand directories into .cup files
+        for (const f of command.files) {
+            const stat = fs.statSync(f);
+            if (stat.isDirectory()) {
+                const files = fs.readdirSync(f).filter(file => file.endsWith('.cup'));
+                for (const cupFile of files) {
+                    expandedFiles.push(path.join(f, cupFile));
+                }
+            } else {
+                expandedFiles.push(f);
+            }
+        }
+
+        if (command.mode === 'ast') {
+            const absSource = path.resolve(expandedFiles[0]);
+            const preProcessed = preprocess(absSource, command.depFlags || []);
+            const registry = new Registry({ diagnostics: new DiagnosticsManager({}) });
+            const tree = registry.parser.parse(preProcessed);
+            console.log(tree.rootNode.toString());
+            process.exit(0);
+        }
+
+        let mainOutput = "";
+
+        for (const absSource of expandedFiles) {
+            const preProcessed = preprocess(absSource, command.depFlags || []);
+            const loadedConfig = resolveConfig(absSource);
+            const resolvedConfigIncludes = loadedConfig.includePaths || [];
+            const finalIncludePaths = [
+                path.dirname(absSource),
+                ...resolvedConfigIncludes,
+                ...(command.includePaths || []),
+                stdPath,
+                projectRoot // So #include "std/package.h" works
+            ];
+
+            const config = {
+                cache,
+                includePaths: finalIncludePaths,
+                stdPath,
+                diagnostics: new DiagnosticsManager({}),
+                onMaterialize: (p, content, options = {}) => {
+                    if (materializations.has(p)) {
+                        const existing = materializations.get(p);
+                        if (existing === content) return;
+
+                        // Authoritative Win Logic:
+                        // If the new content is authoritative, it can overwrite non-authoritative content.
+                        // We need to keep track of WHICH files are authoritative.
+                        if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
+                            materializations.set(p, content);
+                            authoritativeMaterials.add(p);
+                            return;
+                        }
+
+                        if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
+                            // Ignored: a consumer pass trying to overwrite an already-established authoritative version
+                            return;
+                        }
+
+                        throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
+                    }
+                    materializations.set(p, content);
+                    if (options.isAuthoritative) authoritativeMaterials.add(p);
+                },
+                preprocess: (file) => preprocess(file)
+            };
+
+            const registry = new Registry(config);
+            const coreFiles = loadedConfig.core || [];
+            for (const coreFile of coreFiles) {
+                let foundPath = null;
+                for (const inc of finalIncludePaths) {
+                    const p = path.join(inc, coreFile);
+                    if (fs.existsSync(p)) { foundPath = p; break; }
+                }
+                if (foundPath) registry.loadDependency(foundPath);
+            }
+
+            const output = registry.transform(preProcessed, absSource);
+
+            let mainOutputPath = null;
+            if (absSource.endsWith('.cup')) mainOutputPath = absSource.slice(0, -4) + '.c';
+            else if (absSource.endsWith('.hup')) mainOutputPath = absSource.slice(0, -4) + '.h';
+
+            if (mainOutputPath) {
+                materializations.set(mainOutputPath, output);
+            }
+            if (absSource === expandedFiles[0]) {
+                mainOutput = output;
+            }
+        }
+
+        if (command.mode === 'test') {
+            // 1. Print all materialized files
+            const sortedPaths = Array.from(materializations.keys()).sort();
+            for (const p of sortedPaths) {
+                const content = materializations.get(p);
+                const relPath = path.relative(process.cwd(), p);
+                console.log(`==== ${relPath} ===`);
+                console.log(content);
+            }
+
+            // 2. Prepare for compilation
+            const compiler = command.compiler || 'cc';
+            const firstFile = expandedFiles[0];
+            const exePath = firstFile.slice(0, -4) + '.exe';
+            const cFiles = Array.from(materializations.keys()).filter(p => p.endsWith('.c'));
+
+            // Write to disk for the real compiler
+            for (const [p, content] of materializations) {
+                fs.writeFileSync(p, content);
+            }
+
+            // Gather all include paths for the compiler
+            const allIncludePaths = new Set();
+            for (const f of expandedFiles) {
+                const loaded = resolveConfig(f);
+                allIncludePaths.add(path.dirname(f));
+                (loaded.includePaths || []).forEach(inc => allIncludePaths.add(path.resolve(path.dirname(f), inc)));
+            }
+            allIncludePaths.add(stdPath);
+            allIncludePaths.add(projectRoot);
+
+            const compileArgs = [...cFiles, '-o', exePath, ...Array.from(allIncludePaths).map(p => `-I${p}`)];
+            const compile = spawnSync(compiler, compileArgs, { encoding: 'utf8' });
+
+            if (compile.status !== 0) {
+                console.log("==== COMPILATION ERROR ===");
+                console.log(compile.stdout + compile.stderr);
+            } else {
+                // 3. Run
+                const run = spawnSync(exePath, [], { encoding: 'utf8' });
+                console.log("==== RUN OUTPUT ===");
+                console.log(run.stdout + run.stderr);
+            }
+
+            // Cleanup
+            if (fs.existsSync(exePath)) fs.unlinkSync(exePath);
+            for (const p of materializations.keys()) {
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            }
+            process.exit(0);
+        } else {
+            // Transpile mode: output all materialized files to disk
+            for (const [p, content] of materializations) {
+                fs.writeFileSync(p, content);
+            }
+            // Also output the main file content to stdout (current behavior preserved)
+            process.stdout.write(mainOutput);
+            process.exit(0);
+        }
+    } catch (e) {
+        console.error(`[upp] Error:`);
+        console.error(e);
         process.exit(1);
     }
 }
@@ -57,30 +278,31 @@ for (const source of command.sources) {
 
             // Initialize Registry
             const config = {
-                 cache,
-                 includePaths: finalIncludePaths,
-                 diagnostics: new DiagnosticsManager({}),
-                 preprocess: (file) => {
-                     // Same preprocess logic as before...
-                     if (command.depFlags.length > 0) {
-                         const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
-                         const flags = ['-MD', '-MF', tempD];
-                         try {
-                             const out = preprocess(file, flags);
-                             if (fs.existsSync(tempD)) {
-                                 const content = fs.readFileSync(tempD, 'utf8');
-                                 const match = content.match(/^[^:]+:(.*)/s);
-                                 if (match) { extraDeps.push(match[1]); }
-                                 fs.unlinkSync(tempD);
-                             }
-                             return out;
-                         } catch (e) {
-                             if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
-                             throw e;
-                         }
-                     }
-                     return preprocess(file);
-                 }
+                cache,
+                includePaths: finalIncludePaths,
+                stdPath,
+                diagnostics: new DiagnosticsManager({}),
+                preprocess: (file) => {
+                    // Same preprocess logic as before...
+                    if (command.depFlags.length > 0) {
+                        const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
+                        const flags = ['-MD', '-MF', tempD];
+                        try {
+                            const out = preprocess(file, flags);
+                            if (fs.existsSync(tempD)) {
+                                const content = fs.readFileSync(tempD, 'utf8');
+                                const match = content.match(/^[^:]+:(.*)/s);
+                                if (match) { extraDeps.push(match[1]); }
+                                fs.unlinkSync(tempD);
+                            }
+                            return out;
+                        } catch (e) {
+                            if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
+                            throw e;
+                        }
+                    }
+                    return preprocess(file);
+                }
             };
             const registry = new Registry(config);
 
@@ -99,38 +321,37 @@ for (const source of command.sources) {
                 }
 
                 if (foundPath) {
-                   registry.loadDependency(foundPath);
+                    registry.loadDependency(foundPath);
                 } else {
                     console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
                 }
             }
 
-            // Process Macros
-            registry.registerSource(preProcessed, source.absCupFile);
-            const output = registry.process();
+            // Process
+            const output = registry.transform(preProcessed, source.absCupFile);
 
             // Write output to the .c file
             fs.writeFileSync(source.absCFile, output);
 
             // Dependency Tracking Logic
             if (command.depFlags.length > 0) {
-                 let dFile = command.depOutputFile;
-                 if (!dFile) {
-                     const parsed = path.parse(source.cupFile);
-                     dFile = path.join(parsed.dir, parsed.name + '.d');
-                 }
+                let dFile = command.depOutputFile;
+                if (!dFile) {
+                    const parsed = path.parse(source.cupFile);
+                    dFile = path.join(parsed.dir, parsed.name + '.d');
+                }
 
-                 if (dFile && fs.existsSync(dFile)) {
-                     const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
-                     const transitive = extraDeps.join('');
+                if (dFile && fs.existsSync(dFile)) {
+                    const loadedHups = Array.from(registry.loadedDependencies).map(d => ` \\\n ${d}`).join('');
+                    const transitive = extraDeps.join('');
 
-                     const content = fs.readFileSync(dFile, 'utf8');
-                     const targetMatch = content.match(/^([^:]+):/);
-                     if (targetMatch) {
-                         const target = targetMatch[1].trim();
-                         fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
-                     }
-                 }
+                    const content = fs.readFileSync(dFile, 'utf8');
+                    const targetMatch = content.match(/^([^:]+):/);
+                    if (targetMatch) {
+                        const target = targetMatch[1].trim();
+                        fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
+                    }
+                }
             }
 
             // Add resolved include paths to the FINAL compiler command so it can find generated headers

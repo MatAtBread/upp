@@ -22,7 +22,8 @@
                  // Also handle pointers: pointer_declarator -> ...
 
                  // Heuristic: if parent is a declarator type or the node itself is a field_identifier
-                 if (n.parent.type.includes('declarator') || n.type === 'field_identifier') {
+                 const parent = upp.parent(n);
+                 if ((parent && parent.type.includes('declarator')) || n.type === 'field_identifier') {
                      varName = n.text;
                      varIdNode = n;
                  }

@@ -1,0 +1,46 @@
+==== examples/extern_methods/extern_methods.h ===
+#include "method.h"
+
+struct Foo {
+    int x;
+};
+typedef struct Foo Foo;
+
+extern  void _Foo_method_print(Foo *f);
+ void _Foo_method_increment(Foo *f);
+
+==== examples/extern_methods/extern_methods_impl.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+#include "extern_methods.h"
+ void _Foo_method_print(Foo *f) {
+    printf("Foo %d\n", f->x);
+}
+ void _Foo_method_increment(Foo *f) {
+    f->x++;
+}
+
+==== examples/extern_methods/extern_methods_main.c ===
+#include "extern_methods.h"
+int main() {
+    Foo f = { .x = 1 };
+    _Foo_method_increment(&f);
+    _Foo_method_print(&f);
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+Foo 2
+

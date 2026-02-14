@@ -1,0 +1,9 @@
+==== examples/match_int.c ===
+
+/*@transform_int()*/
+long foo_long = 100;
+long bar_long = 200;
+int main() { return 0; }
+
+==== RUN OUTPUT ===
+

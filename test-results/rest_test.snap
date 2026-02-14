@@ -1,0 +1,20 @@
+==== examples/rest_test.c ===
+// #include "io-lite.h"
+
+int main() {
+    const char *s = "AlphaBetaGammaDelta";
+    printf("Joined: %s\n", s);
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/rest_test.c:5:5: error: call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    5 |     printf("Joined: %s\n", s);
+      |     ^
+./examples/rest_test.c:5:5: note: include the header <stdio.h> or explicitly provide a declaration for 'printf'
+1 error generated.
+
+./examples/rest_test.cup:4:29: warning: empty character constant [-Winvalid-pp-token]
+    4 |     return '"' + items.join('') + '"';
+      |                             ^
+1 warning generated.

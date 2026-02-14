@@ -1,0 +1,23 @@
+#include "io-lite.h"
+
+@define stale_test() {
+    const node = upp.consume(['declaration']);
+    const declarator = upp.childForFieldName(node, 'declarator');
+    const identifier = declarator.find('identifier')[0];
+
+    // This replacement uses raw text for the node's parent, 
+    // which destroys the node-tree structure for 'node' and its descendants.
+    node.replaceWith(`int some_new_var = 123;`);
+
+    // Now we try to use the 'identifier' node which belonged to the old 'node'.
+    // In a mature system, this should warn that 'identifier' is stale.
+    return upp.codeTree`
+        // Using stale identifier: ${identifier}
+        int another_var = 456;
+    `;
+}
+
+int main() {
+    @stale_test char * str1;
+    return 0;
+}

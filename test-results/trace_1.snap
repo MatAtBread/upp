@@ -1,0 +1,69 @@
+==== examples/trace_1.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+#include "lambda.h"
+#include "defer.h"
+
+int my_function(int x) {
+    puts("Entering: my_function\n");
+     ;
+    int g = 1;
+	for (int i=1; i < x; i++) {
+        g = g * i;
+        if (g>100) {
+            { puts("Exiting: my_function\n"); }
+return -1;
+        }
+    }
+	{ puts("Exiting: my_function\n"); }
+return g;
+}
+
+int main() {
+    printf("magic number %d\n", my_function(10));
+    return 0;
+}
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/lambda.h ===
+#ifndef __UPP_STDLIB_LAMBDA_H__
+#define __UPP_STDLIB_LAMBDA_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
+Entering: my_function
+
+Exiting: my_function
+
+magic number -1
+

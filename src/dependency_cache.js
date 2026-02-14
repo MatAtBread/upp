@@ -5,7 +5,7 @@
 export class DependencyCache {
     constructor() {
         /**
-         * @type {Map<string, {macros: Map<string, Object>, includes: Array<string>}>}
+         * @type {Map<string, {macros: Array<Object>, transformRules: Array<Object>, output: string}>}
          */
         this.cache = new Map();
     }
@@ -22,7 +22,7 @@ export class DependencyCache {
     /**
      * Gets data for a file.
      * @param {string} filePath
-     * @returns {{macros: Map<string, Object>, includes: Array<string>}|undefined}
+     * @returns {{macros: Array<Object>, transformRules: Array<Object>, output: string}|undefined}
      */
     get(filePath) {
         return this.cache.get(filePath);
@@ -31,7 +31,7 @@ export class DependencyCache {
     /**
      * Sets data for a file.
      * @param {string} filePath
-     * @param {{macros: Map<string, Object>, includes: Array<string>}} data
+     * @param {{macros: Array<Object>, transformRules: Array<Object>, output: string}} data
      */
     set(filePath, data) {
         this.cache.set(filePath, data);

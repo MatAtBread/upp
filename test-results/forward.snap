@@ -1,0 +1,41 @@
+==== examples/forward.c ===
+void foo();
+void bar();
+
+#include "forward.h"
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+;
+void foo() {
+    printf("Foo calls bar\n");
+    bar();
+}
+void bar() {
+    printf("Bar called\n");
+}
+int main() {
+    foo();
+    return 0;
+}
+
+==== std/forward.h ===
+#ifndef __UPP_STDLIB_FORWARD_H__
+#define __UPP_STDLIB_FORWARD_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
+Foo calls bar
+Bar called
+

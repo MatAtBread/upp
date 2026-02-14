@@ -1,0 +1,52 @@
+==== examples/fieldsof.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+#include "fieldsof.h"
+struct Base {
+    int x;
+    int y;
+};
+// Typedef example
+typedef struct {
+    float lat;
+    float lon;
+} GeoCoord;
+struct Derived {
+    int z;
+    int x;
+    int y;
+    ; // Standard struct tag
+    float lat;
+    float lon;
+    ; // Typedef
+};
+int main() {
+    struct Derived d;
+    d.x = 10;
+    d.y = 20;
+    d.z = 30;
+    d.lat = 51.5f;
+    d.lon = -0.1f;
+    printf("Derived: x=%d, y=%d, z=%d, lat=%.1f, lon=%.1f\n", d.x, d.y, d.z, d.lat, d.lon);
+    return 0;
+}
+
+==== std/fieldsof.h ===
+#ifndef __UPP_STDLIB_FIELDSOF_H__
+#define __UPP_STDLIB_FIELDSOF_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
+Derived: x=10, y=20, z=30, lat=51.5, lon=-0.1
+

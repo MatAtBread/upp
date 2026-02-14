@@ -1,0 +1,27 @@
+// Simple test for withReferences transformation rule tracking
+
+@define renameVar(oldName, newName) {
+    // Find the variable definition
+    const varDecl = upp.consume('declaration');
+    if (!varDecl) return "";
+
+    // Use withReferences to transform all references
+    const marker = upp.withReferences(varDecl, (refNode) => {
+        return newName;
+    });
+
+    // Rename the declaration itself
+    varDecl.find('identifier')[0].text = newName;
+
+    return [varDecl, marker];
+}
+
+int main() {
+    @renameVar(x, renamedX)
+    int x = 10;
+
+    int y = x + 5;  // This should become: int y = renamedX + 5
+    int z = x * 2;  // This should become: int z = renamedX * 2
+
+    return x;  // This should become: return renamedX;
+}

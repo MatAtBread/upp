@@ -1,0 +1,46 @@
+==== examples/trap.c ===
+int z_trap_2(int value) { return value + 1; }
+
+int x_trap_1(int value) { return value * 2; }
+
+#include "trap.h"
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+int my_logger(int v) {
+    printf("Logging value: %d\n", v);
+    return v;
+}
+struct Point {
+    int x; 
+    int y; 
+};
+int main() {
+    struct Point p;
+    p.x = x_trap_1(10); // x = trap(10) -> 20
+    p.y = my_logger(5); // y = logger(5) -> 5, prints "Logging value: 5"
+    int z = z_trap_2(10);  // z = trap(10) -> 11
+    z = z_trap_2(20); // z = trap(20) -> 21
+    printf("p.x=%d, p.y=%d, z=%d\n", p.x, p.y, z);
+    return 0;
+}
+
+==== std/trap.h ===
+#ifndef __UPP_STDLIB_TRAP_H__
+#define __UPP_STDLIB_TRAP_H__
+
+
+#endif
+==== RUN OUTPUT ===
+Logging value: 5
+p.x=20, p.y=5, z=21
+

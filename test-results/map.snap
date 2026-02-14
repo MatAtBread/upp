@@ -1,0 +1,28 @@
+==== examples/map.c ===
+
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+int main() {
+    int arr[] = {1, 2, 3};
+    for (int _i = 0; _i < sizeof(arr)/sizeof(arr[0]); _i++) {
+        int z = arr[_i];
+        { z = z + 1; }
+        arr[_i] = z;
+    } ;
+    printf("%d %d %d\n", arr[0], arr[1], arr[2]);
+    return 0;
+}
+
+==== RUN OUTPUT ===
+2 3 4
+

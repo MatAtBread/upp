@@ -1,0 +1,50 @@
+==== examples/lambda.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+#include "lambda.h"
+struct hello_lambda_ctx {
+    int *direction;
+    char * *name;
+
+}
+;
+void hello_lambda(struct hello_lambda_ctx *ctx, int num);
+void hello_lambda(struct hello_lambda_ctx *ctx, int num) {
+        const char * salutation = (*ctx->direction) ? "Hello" : "Bye";
+        printf("%s %s %d\n", salutation, (*ctx->name), num);
+    }int main() {
+    char * name = "Diego";
+    int direction = 1;
+    struct hello_lambda_ctx ctx_1 = { .direction = &direction, .name = &name }; 
+    hello_lambda(&ctx_1, 1);
+    name = "Fabio";
+    hello_lambda(&ctx_1, 2);
+    direction = 0;
+    hello_lambda(&ctx_1, 3);
+    typeof(&hello_lambda) z = hello_lambda;
+    z(&ctx_1, 4);
+    return 0;
+}
+
+==== std/lambda.h ===
+#ifndef __UPP_STDLIB_LAMBDA_H__
+#define __UPP_STDLIB_LAMBDA_H__
+
+
+#endif
+
+==== RUN OUTPUT ===
+Hello Diego 1
+Hello Fabio 2
+Bye Fabio 3
+Bye Fabio 4
+

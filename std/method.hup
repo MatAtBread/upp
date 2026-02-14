@@ -1,221 +1,82 @@
-#ifndef __UPP_STDLIB_METHOD_H__
-#define __UPP_STDLIB_METHOD_H__
-
 @define method(targetType) {
-    const node = upp.consume();
-    // Re-parse for stability (workaround for tree-sitter instability)
-    let funcDef = node;
-    try {
-        if (upp.parseFragment) {
-            const freshRoot = upp.parseFragment(node.text);
-            if (freshRoot && freshRoot.childCount > 0) {
-                funcDef = freshRoot.child(0);
-            }
-        }
-    } catch (e) {}
-
-
-    let isExternDecl = false;
-    // node is typically the consumed node. If it's a type (void), we might be in a declaration.
-    if (node.type === 'primitive_type' || node.type === 'type_identifier' || node.type === 'struct_specifier' || node.type === 'enum_specifier') {
-        const parent = upp.parent(node);
-        if (parent && parent.type === 'declaration') {
-             isExternDecl = true;
-             funcDef = parent;
-        }
+    let node = upp.nextNode(['function_definition', 'declaration']);
+    if (!node) {
+        node = upp.findEnclosing(upp.contextNode, ['function_definition', 'declaration']);
     }
+    if (!node) return "";
 
-    const funcDeclarator = upp.childForFieldName(funcDef, 'declarator');
+    const sig = upp.getFunctionSignature(node);
+    if (!sig.nameNode) return node.text;
 
-    // Handle potential pointer declarators
-    let funcDecl = funcDeclarator;
-    while (funcDecl && funcDecl.type === 'pointer_declarator') {
-        funcDecl = upp.childForFieldName(funcDecl, 'declarator');
-    }
-
-    const funcIdentifier = upp.childForFieldName(funcDecl, 'declarator');
-    if (!funcIdentifier) return;
-
-    const originalName = funcIdentifier.text;
-
-    // Check for infinite loop / recursion
-    if (originalName.startsWith('_') && originalName.includes('_method_')) {
-         return isExternDecl ? node.text : node.text;
-    }
-
-    // 1. Sanitize targetType to handle "struct Point" vs "Point"
+    const originalName = sig.name;
     let cleanTarget = targetType.trim();
     if (cleanTarget.startsWith('struct ')) {
         cleanTarget = cleanTarget.slice(7).trim();
     }
 
-    // 2. Generate new name: _Point_method_distance
+    // Generate new name: _Point_method_getX
     const newName = `_${cleanTarget}_method_${originalName}`;
 
-    let outputText = "";
+    // Rename the function identifier stable-y
+    sig.nameNode.text = newName;
 
-    // 3. Rename
-    if (isExternDecl) {
-        // Transform the DECLARATOR only (disjoint from macro).
-        // Return the consumed type node text (to restore the hole we made).
-        let declaratorText = funcDeclarator.text;
-        const startOffset = funcIdentifier.startIndex - funcDeclarator.startIndex;
-        const endOffset = funcIdentifier.endIndex - funcDeclarator.startIndex;
-        const newDeclaratorText = declaratorText.slice(0, startOffset) + newName + declaratorText.slice(endOffset);
+    // Use withPattern to transform method calls
+    upp.withPattern('call_expression',
+        (callNode, helpers) => {
+            // Check if this is a field_expression call (obj.method() or obj->method())
+            const funcNode = helpers.childForFieldName(callNode, 'function');
+            if (!funcNode || funcNode.type !== 'field_expression') return false;
 
-        upp.replace(funcDeclarator, newDeclaratorText);
-        outputText = node.text;
-    } else {
-        // Standard Definition Renaming
-        let functionText = node.text;
-        const idStart = (funcIdentifier.tree === node.tree) ? (funcIdentifier.startIndex - node.startIndex) : funcIdentifier.startIndex;
-        const idEnd = (funcIdentifier.tree === node.tree) ? (funcIdentifier.endIndex - node.startIndex) : funcIdentifier.endIndex;
-        functionText = functionText.slice(0, idStart) + newName + functionText.slice(idEnd);
-        outputText = functionText;
-    }
+            const objectNode = helpers.childForFieldName(funcNode, 'argument');
+            const methodNode = helpers.childForFieldName(funcNode, 'field');
 
-    // 4. Register global transformer for method calls
-    upp.registerTransform((root, helpers) => {
-        const transformCall = (callNode, objectNode, argsNode, operator) => {
-            // CHECK FOR CONFLICTS
-            const isConflict = helpers.registry.helpers.replacements.some(r => {
-                return (r.start < callNode.endIndex && r.end > callNode.startIndex);
-            });
-            if (isConflict) return null;
+            if (!objectNode || !methodNode) return false;
+            if (methodNode.text !== originalName) return false;
 
-            // Type Validation
-            const objDef = helpers.getDefinition(objectNode);
-            if (objDef) {
-                let objType = helpers.getType(objDef);
+            const objDef = helpers.findDefinitionOrNull(objectNode);
+            if (!objDef) return false;
 
-                // FALLBACK FOR VOID/BROKEN TYPES
-                if (objType.includes('void')) {
-                    const varName = objectNode.text;
-                    try {
-                        const decls = helpers.query(`(declaration type: (_) @type declarator: [(identifier) @id (init_declarator declarator: (identifier) @id)])`, root);
-                        for (const d of decls) {
-                             if (d.captures.id.text === varName) {
-                                 objType = d.captures.type.text;
-                                 break;
-                             }
-                        }
-                    } catch (e) {}
-                }
+            let objType = helpers.getType(objDef);
+            let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
 
-                let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
-                let targetAlias = cleanTarget;
+            if (cleanObjType === cleanTarget) return true;
 
-                if (cleanObjType !== cleanTarget) {
-                    try {
-                        const typedefs = helpers.query(`(type_definition type: (_) @type declarator: (type_identifier) @name)`, root);
-                        for (const t of typedefs) {
-                             const nameText = t.captures.name.text;
-                             const typeText = t.captures.type.text.replace(/struct /g, '').trim();
-                             if (nameText === cleanTarget) targetAlias = typeText;
-                             if (nameText === cleanObjType) cleanObjType = typeText;
-                        }
-                    } catch(e) {}
-                }
-
-                if (cleanObjType !== cleanTarget && cleanObjType !== targetAlias) return null;
-            } else {
-                 return null;
+            // Try to resolve typedef
+            const typeDef = helpers.findDefinition(cleanObjType);
+            if (typeDef && typeDef.type === 'type_definition') {
+                 const typeNode = typeDef.children.find(c => 
+                    c.type !== 'type_identifier' && 
+                    c.type !== 'storage_class_specifier' && 
+                    c.text !== 'typedef' && 
+                    c.type !== ';'
+                 );
+                 
+                 if (typeNode) {
+                     let resolvedType = typeNode.text;
+                     let cleanResolved = resolvedType.replace(/\*/g, '').replace(/struct /g, '').trim();
+                     return cleanResolved === cleanTarget;
+                 }
             }
+            return false;
+        },
+        (callNode, helpers) => {
+            const funcNode = helpers.childForFieldName(callNode, 'function');
+            const targetNode = helpers.childForFieldName(funcNode, 'argument');
+            const argsNode = helpers.childForFieldName(callNode, 'arguments');
 
-            const objRef = operator === '.' ? `&(${objectNode.text})` : objectNode.text;
-            const argsText = argsNode.text.slice(1, -1);
-            const finalArgs = objRef + (argsText.trim() ? ', ' + argsText : '');
-            return helpers.code`${newName}(${finalArgs})`;
-        };
+            // Transform f.print() into _Foo_method_print(&f)
+            let argsText = argsNode ? argsNode.text : "()";
+            const separator = (argsText === "()") ? "" : ", ";
+            const innerArgs = (argsText === "()") ? "" : argsText.slice(1, -1);
+            
+            const objDef = helpers.findDefinitionOrNull(targetNode);
+            const objType = objDef ? helpers.getType(objDef) : "";
+            const isPointer = objType.includes('*');
+            const prefix = isPointer ? "" : "&";
 
-        const calls = helpers.query(`
-            (call_expression) @call
-        `, root);
-
-        for (const m of calls) {
-            const callNode = m.captures.call;
-            const funcNode = callNode.childForFieldName('function');
-
-            if (!funcNode || funcNode.type !== 'field_expression') continue;
-
-            const objectNode = funcNode.childForFieldName('argument');
-            const methodNode = funcNode.childForFieldName('field');
-            if (!objectNode || !methodNode) continue;
-
-            if (methodNode.text !== originalName) continue;
-
-            // field_expression structure: argument, operator, field
-            const opNode = funcNode.child(1);
-            const operator = opNode ? opNode.text : '.';
-
-            const argsNode = callNode.childForFieldName('arguments');
-
-            const result = transformCall(callNode, objectNode, argsNode, operator);
-            if (result) helpers.replace(callNode, result);
+            return `${newName}(${prefix}${targetNode.text}${separator}${innerArgs})`;
         }
-    });
+    );
 
-    // 6. Special Handling for Defer
-    if (!isExternDecl && originalName === 'Defer') {
-        const deferHandler = (node, varName) => {
-             const isConflict = upp.registry.helpers.replacements.some(r => {
-                return (r.start < node.endIndex && r.end > node.startIndex);
-            });
-            if (isConflict) return null;
-
-            return upp.code`${node} @defer ${varName}.Defer();`;
-        };
-
-        const decls = upp.query(`
-            (declaration
-                type: (type_identifier) @type
-                declarator: [(identifier) @id (init_declarator declarator: (identifier) @id)])
-            @decl
-        `, upp.root);
-
-        for (const m of decls) {
-            if (m.captures.type.text === cleanTarget) {
-                const result = deferHandler(m.captures.decl, m.captures.id.text);
-                if (result) upp.replace(m.captures.decl, result);
-            }
-        }
-    } // End of !isExternDecl
-
-    return outputText;
-
+    return null; // Node already updated in-place
 }
-
-@define useCreate(T) {
-    let node = upp.consume();
-    let name, init;
-    const text = node.text.trim();
-
-    if (node.type === 'type_identifier' || node.type === 'identifier') {
-        name = text;
-        init = "= {0}";
-        // Optional: consume the trailing semicolon if it exists to avoid ;;
-        if (node.nextSibling && node.nextSibling.type === ';') {
-            upp.replace(node.nextSibling, "");
-        }
-    } else {
-        const match = text.match(/^(\w+)\s*=\s*(.*);?$/);
-        name = match[1];
-        init = ' = ' + match[2].replace(/;$/, '');
-    }
-
-    // Check for renamed symbol in the AST
-    const renamedSymbol = `_${T}_method_Create`;
-    const hasCreate = upp.query(`
-        (function_definition
-            declarator: (function_declarator
-                declarator: (identifier) @name))
-    `, upp.root).some(m => m.captures.name.text === renamedSymbol);
-
-    if (hasCreate) {
-        upp.replace({start: node.endIndex, end: node.endIndex}, ` ${name}.Create();`);
-    }
-
-    return upp.code`${T} ${name} ${init};`;
-}
-
-#endif

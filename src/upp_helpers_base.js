@@ -1,259 +1,266 @@
-import Parser from 'tree-sitter';
-import path from 'path';
-const { Query } = Parser;
+let uniqueIdCounter = 1;
 
 /**
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
 class UppHelpersBase {
-    /**
-     * @param {import('./registry').Registry} registry - The registry instance.
-     */
-    constructor(registry) {
-        /** @type {import('./registry').Registry} */
+    get parentHelpers() { return this._parentHelpers; }
+    set parentHelpers(v) { this._parentHelpers = v; }
+
+    get isAuthoritative() { return this.registry.isAuthoritative; }
+    set isAuthoritative(v) { this.registry.isAuthoritative = v; }
+
+    constructor(root, registry, parentHelpers = null) {
+        this.root = root;
         this.registry = registry;
-        /** @type {Array<Object>} */
-        this.replacements = [];
-        /** @type {import('tree-sitter').SyntaxNode|null} */
-        this.root = null;
-        /** @type {import('tree-sitter').SyntaxNode|null} */
+        this.parentHelpers = parentHelpers; // Initial assignment will use the setter
         this.contextNode = null;
-        /** @type {Object|null} */
-        this.invocation = null; // Current macro invocation details
-        /** @type {import('tree-sitter').SyntaxNode|null} */
+        this.invocation = null;
         this.lastConsumedNode = null;
+        this.isDeferred = false;
+        this.currentInvocations = [];
+        this.consumedIds = new Set();
+        this.context = null; // Back-reference to the local transform context
+        this.parentTree = (registry && registry.parentRegistry) ? registry.parentRegistry.tree : null;
+        this.stdPath = registry ? registry.stdPath : null;
     }
 
-    /**
-     * Gets the parent registry if available.
-     * @returns {import('./registry').Registry|null}
-     */
-    get parentRegistry() {
-        return this.registry.parentRegistry;
-    }
-
-    /**
-     * Gets the parent tree's root node if available.
-     * @returns {import('tree-sitter').SyntaxNode|null}
-     */
-    get parentTree() {
-        if (this.registry.parentRegistry) {
-            if (this.registry.parentRegistry.mainTree) {
-                return this.registry.parentRegistry.mainTree.rootNode;
-            } else {
-                 console.log(`DEBUG: parentRegistry exists on ${this.registry.uid} but mainTree is null`);
-            }
-        } else {
-             console.log(`DEBUG: parentRegistry is null on ${this.registry.uid}`);
-        }
-        return null;
-    }
-
-    /**
-     * Debugs a node by printing its type and text.
-     * @param {import('tree-sitter').SyntaxNode} node - The tree-sitter node to debug.
-     */
-    debug(node) {
-        console.log(`Debug Node: type=${node.type}, text="${node.text.slice(0, 50)}${node.text.length > 50 ? '...' : ''}"`);
-    }
-
-    /**
-     * Creates a unique identifier with the given prefix.
-     * @param {string} [prefix='v'] - The prefix for the identifier.
-     * @returns {string} A unique identifier.
-     */
-    createUniqueIdentifier(prefix = 'v') {
-        const id = this.registry.idCounter++;
-        return `${prefix}_${id}`;
-    }
-
-    /**
-     * Tagged template literal for generating code and parse trees.
-     * @param {TemplateStringsArray} strings - Template strings.
-     * @param {...any} values - Interpolated values.
-     * @returns {{text: string, tree: function(): import('tree-sitter').Tree}} An object containing the generated text and a lazy tree parser.
-     */
     code(strings, ...values) {
-        const result = strings.reduce((acc, str, i) => {
-            let value = values[i] !== undefined ? values[i] : '';
-            if (value && typeof value === 'object' && value.text !== undefined) {
-                value = value.text;
+        let result = "";
+        for (let i = 0; i < strings.length; i++) {
+            result += strings[i];
+            if (i < values.length) {
+                const val = values[i];
+                result += (val && typeof val === 'object' && val.text !== undefined) ? val.text : String(val);
             }
-            return acc + str + value;
-        }, '');
-
-        return {
-            text: result,
-            tree: () => {
-                const parser = new Parser();
-                parser.setLanguage(this.registry.language);
-                return parser.parse(result);
-            }
-        };
+        }
+        return result;
     }
 
-    /**
-     * Replaces a node with new content.
-     * @param {import('tree-sitter').SyntaxNode|{start: number, end: number}} n - The node or range to replace.
-     * @param {string|{text: string}} newContent - The new content string or object with text property.
-     */
+    codeTree(strings, ...values) {
+        let text = "";
+        const nodeMap = new Map();
+        const usedNodes = new Set();
+        for (let i = 0; i < strings.length; i++) {
+            text += strings[i];
+            if (i < values.length) {
+                const val = values[i];
+                if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
+                    if (!val.isValid) {
+                        const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
+                        console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
+                        text += val.text;
+                        continue;
+                    }
+                    if (usedNodes.has(val)) {
+                        throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                    }
+                    usedNodes.add(val);
+                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                    nodeMap.set(placeholder, val);
+                    text += placeholder;
+                } else if (val === null || val === undefined) {
+                    throw new Error(`upp.codeTree: Invalid null or undefined value at index ${i}`);
+                } else {
+                    text += String(val);
+                }
+            }
+        }
+
+        const prepared = this.registry.prepareSource(text, this.registry.originPath);
+        const cleanText = prepared.cleanSource;
+
+        const SourceTree = this.registry.tree.constructor;
+        const fragment = SourceTree.fragment(cleanText, this.registry.language);
+        if (!fragment) {
+            throw new Error("upp.codeTree: Failed to parse code fragment");
+        }
+
+        // Walk and replace placeholders with actual nodes
+        const placeholders = Array.from(nodeMap.keys());
+        for (const placeholder of placeholders) {
+            const placeholderNodes = fragment.find(n => n.text === placeholder);
+            if (placeholderNodes.length === 0) {
+                // This might happen if the placeholder was somehow mangled or in a comment (though unlikely with our naming)
+                throw new Error(`upp.codeTree: Placeholder ${placeholder} not found in parsed fragment`);
+            }
+
+            const originalNode = nodeMap.get(placeholder);
+            originalNode.remove();
+
+            // Replace placeholder with original node
+            for (const pNode of placeholderNodes) {
+                pNode.replaceWith(originalNode);
+            }
+        }
+
+        return fragment;
+    }
+
+    atRoot(callback) {
+        const root = this.findRoot();
+        if (!root) return "";
+        return this.withNode(root, callback);
+    }
+
+    withScope(callback) {
+        const scope = this.findScope();
+        if (!scope) return "";
+        return this.withNode(scope, callback);
+    }
+
+    withRoot(callback) {
+        return this.withNode(this.findRoot(), callback);
+    }
+
+    registerTransform(callback) {
+        return this.atRoot(callback);
+    }
+
+    registerTransformRule(rule) {
+        this.registry.registerTransformRule(rule);
+    }
+
     replace(n, newContent) {
-        const start = n.startIndex !== undefined ? n.startIndex : n.start;
-        const end = n.endIndex !== undefined ? n.endIndex : n.end;
-
-        let isGlobal = false;
-        if (n.tree) {
-            isGlobal = this.registry.mainTree && (n.tree === this.registry.mainTree);
-        } else {
-            isGlobal = (this === this.registry.helpers);
+        if (!n) return "";
+        if (n.replaceWith) {
+            const result = n.replaceWith(newContent);
+            if (this.contextNode === n) this.contextNode = result;
+            return result;
         }
 
-        if (isGlobal && this.registry.isInsideInvocation(start, end)) {
-            if (!(this.invocation && this.invocation.startIndex === start && this.invocation.endIndex === end)) {
-                return;
+        // Handle range object { start, end } implementation for root insertion
+        if (typeof n.start === 'number' && typeof n.end === 'number') {
+
+            const root = this.root || this.findRoot();
+            if (root && n.start === 0 && n.end === 0) {
+                if (root.children.length > 0) {
+                    return root.children[0].insertBefore(newContent);
+                } else {
+                    // Empty root, direct edit
+                    root.tree.edit(0, 0, newContent);
+                    // If we want to return nodes, we'd need to parse and attach.
+                    // For now just return string to avoid crash.
+                    return newContent;
+                }
             }
+            // For other ranges, we might need a more complex lookup, 
+            // but lambda.hup only uses {start:0, end:0}.
         }
+        return "";
+    }
 
-        const replacement = {
-            start: start,
-            end: end,
-            content: typeof newContent === 'object' ? newContent.text : String(newContent),
-            isLocal: !isGlobal,
-            node: n
-        };
+    findRoot() {
+        return (this.context && this.context.tree) ? this.context.tree.root : this.root;
+    }
 
-        if (isGlobal && this.registry.helpers !== this) {
-            this.registry.helpers.replacements.push(replacement);
-        } else {
-            this.replacements.push(replacement);
-        }
+    findParent(node) {
+        return this.parent(node);
+    }
+
+
+    withNode(node, callback) {
+        if (!node) return "";
+        node.markers.push({
+            callback: (target, helpers) => callback(target, helpers),
+            data: {}
+        });
+        return "";
+    }
+
+    wrapNode(node) {
+        return node; // No longer needed, but kept for compatibility during transition
     }
 
     /**
-     * Wraps a node (placeholder for future extensibility).
-     * @param {import('tree-sitter').SyntaxNode} node - The node to wrap.
-     * @returns {import('tree-sitter').SyntaxNode} The wrapped node.
+     * Finds macro invocations in the tree.
+     * @param {string} macroName
+     * @param {SourceNode} [node]
+     * @returns {SourceNode[]}
      */
-    wrapNode(node) {
+    findInvocations(macroName, node = null) {
+        let target = node || this.root;
+        if (!target && this.registry) {
+            target = this.registry.tree ? this.registry.tree.root : null;
+        }
+
+        if (!target) {
+            const source = this.registry.source || (this.context && this.context.tree && this.context.tree.source);
+            // console.log(`[UPP DEBUG] findInvocations(${macroName}) no target, using registry source (${source ? source.length : 0} bytes)`);
+            if (!source) return [];
+
+            const invs = this.registry.findInvocations(source);
+            return invs.filter(i => i.name === macroName).map(i => ({
+                ...i,
+                text: `@${i.name}(${i.args.join(',')})`,
+                // Mock includes for package.hup
+                includes: (str) => i.args.some(arg => arg.includes(str))
+            }));
+        }
+
+        const pattern = new RegExp(`@${macroName}\\s*\\(`);
+        const results = target.find(n => {
+            if (n.type === 'preproc_def') return pattern.test(n.text);
+            if (n.type === 'comment') {
+                return n.text.startsWith('/*@') && pattern.test(n.text);
+            }
+            return false;
+        });
+        return results;
+    }
+
+    isConsumed(node) {
+        if (!node) return false;
+        return this.consumedIds.has(node.id);
+    }
+
+    loadDependency(file) {
+        this.registry.loadDependency(file, this.context.originPath, this);
+    }
+
+    registerParentTransform(callback) {
+        if (!this.parentHelpers) {
+            console.warn("registerParentTransform called without a parent context");
+            return;
+        }
+        // Simplified: just run it on the parent's root node now
+        callback(this.parentTree, this.parentHelpers);
+    }
+
+    /**
+     * Finds the next logical node after the macro invocation.
+     * @private
+     */
+    _getNextNode(expectedTypes = null) {
+        const root = this.root || this.findRoot();
+        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode.endIndex);
+        if (index === undefined) return null;
+        return this.findNextNodeAfter(root, index);
+    }
+
+    /**
+     * Retrieves the next node without removing it from the tree.
+     * @param {string|string[]} [types] 
+     * @returns {SourceNode|null}
+     */
+    nextNode(types = null) {
+        const expectedTypes = typeof types === 'string' ? [types] : types;
+        const node = this._getNextNode(expectedTypes);
+        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
+            return null;
+        }
         return node;
     }
 
-    /**
-     * Registers a global transformation function.
-     * @param {function(import('tree-sitter').Tree, UppHelpersBase): void} transformFn - The transformation function.
-     */
-    registerTransform(transformFn) {
-        this.registry.registerTransform(transformFn);
-    }
-
-    /**
-     * Registers a transformation function on the PARENT registry.
-     * @param {function(import('tree-sitter').Tree, UppHelpersBase): void} transformFn - The transformation function.
-     */
-    registerParentTransform(transformFn) {
-        if (this.registry.parentRegistry) {
-            this.registry.parentRegistry.registerTransform(transformFn);
-        } else {
-            console.warn("registerParentTransform called but no parent registry exists.");
-        }
-    }
-
-    /**
-     * Recursively walks the tree calling the callback for each node.
-     * @param {import('tree-sitter').SyntaxNode} node - The starting node.
-     * @param {function(import('tree-sitter').SyntaxNode): void} callback - The callback function.
-     */
-    walk(node, callback) {
-        if (!node) return;
-        callback(node);
-        const count = node.childCount;
-        for (let i = 0; i < count; i++) {
-            try {
-                this.walk(node.child(i), callback);
-            } catch (e) {
-                // Ignore traversal errors for bad nodes (e.g. NodeClass constructor issues)
-            }
-        }
-    }
-
-    /**
-     * Finds the nearest enclosing node of a specific type.
-     * @param {import('tree-sitter').SyntaxNode} node - The starting node.
-     * @param {string} type - The node type to search for.
-     * @returns {import('tree-sitter').SyntaxNode|null} The enclosing node or null.
-     */
-    findEnclosing(node, type) {
-        let current = node.parent;
-        while (current) {
-            if (current.type === type) return current;
-            current = current.parent;
-        }
-        return null;
-    }
-
-    /**
-     * Returns all subsequent named siblings of a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The reference node.
-     * @returns {Array<import('tree-sitter').SyntaxNode>} List of sibling nodes.
-     */
-    nextSiblings(node) {
-        const siblings = [];
-        let current = node.nextNamedSibling;
-        while (current) {
-            siblings.push(current);
-            current = current.nextNamedSibling;
-        }
-        return siblings;
-    }
-
-    /**
-     * Executes a tree-sitter query.
-     * @param {string} pattern - The S-expression query pattern.
-     * @param {import('tree-sitter').SyntaxNode} [node] - The scope node for the query.
-     * @returns {Array<{pattern: number, captures: Object<string, import('tree-sitter').SyntaxNode>}>} Query matches with named captures.
-     */
-    query(pattern, node) {
-        const query = new Query(this.registry.language, pattern);
-        let targetNode = node || this.root;
-        if (targetNode && targetNode.rootNode) {
-            targetNode = targetNode.rootNode;
-        }
-        if (!targetNode) {
-            console.error("UppHelpersBase.query: targetNode is null/undefined");
-            return [];
-        }
-        const matches = query.matches(targetNode);
-
-        return matches.map(m => {
-            const captures = {};
-            for (const c of m.captures) {
-                captures[c.name] = c.node;
-            }
-            return {
-                pattern: m.pattern,
-                captures: captures
-            };
-        });
-    }
-
-    /**
-     * Consumes the next available node, optionally validating its type.
-     * Automatically marks the consumed node for deletion.
-     * @param {string|string[]|{type: string|string[], message: string, validate: function(import('tree-sitter').SyntaxNode): boolean}} [expectedTypeOrOptions] - Expected type(s) or validation options.
-     * @param {string} [errorMessage] - Custom error message if validation fails.
-     * @returns {import('tree-sitter').SyntaxNode|null} The consumed node.
-     */
     consume(expectedTypeOrOptions, errorMessage) {
         let expectedTypes = null;
         let internalErrorMessage = errorMessage;
         let validateFn = null;
 
-        if (typeof expectedTypeOrOptions === 'string') {
-            expectedTypes = [expectedTypeOrOptions];
-        } else if (Array.isArray(expectedTypeOrOptions)) {
-            expectedTypes = expectedTypeOrOptions;
-        } else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
+        if (typeof expectedTypeOrOptions === 'string') expectedTypes = [expectedTypeOrOptions];
+        else if (Array.isArray(expectedTypeOrOptions)) expectedTypes = expectedTypeOrOptions;
+        else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
             expectedTypes = Array.isArray(expectedTypeOrOptions.type) ? expectedTypeOrOptions.type : (expectedTypeOrOptions.type ? [expectedTypeOrOptions.type] : null);
             internalErrorMessage = expectedTypeOrOptions.message || errorMessage;
             validateFn = expectedTypeOrOptions.validate;
@@ -262,255 +269,204 @@ class UppHelpersBase {
         const reportFailure = (foundNode) => {
             const macroName = this.invocation ? `@${this.invocation.name}` : "macro";
             let msg = internalErrorMessage;
-
             if (!msg) {
                 const expectedStr = expectedTypes ? expectedTypes.join(' or ') : 'an additional code block';
                 const foundStr = foundNode ? `found ${foundNode.type}` : 'nothing found';
                 msg = `${macroName} expected ${expectedStr}, but ${foundStr}`;
             }
-
             this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode, msg);
         };
 
-        let node = null;
-        if (!this.lastConsumedNode) {
-            if (this.invocation && !this.invocation.hasNodeParam) {
-                node = this.contextNode;
-            }
-        }
-
-        // Check for pending macro invocations in the gap
-        if (this.currentInvocations) {
-            let searchStart = this.invocation ? this.invocation.endIndex : 0;
-            if (this.lastConsumedNode) {
-                if (this.lastConsumedNode.endIndex !== undefined) {
-                    searchStart = this.lastConsumedNode.endIndex;
-                }
-            } else if (this.invocation && !this.invocation.hasNodeParam && this.contextNode) {
-                 // Start searching after the current invocation
-                 searchStart = this.invocation.endIndex;
-            }
-
-            const candidates = this.currentInvocations.filter(i => i.startIndex >= searchStart && i !== this.invocation);
-            candidates.sort((a,b) => a.startIndex - b.startIndex);
-            const nextInv = candidates[0];
-
-            if (nextInv) {
-                // Check gap first. If gap is clean, we consume the macro,
-                // regardless of what contextNode/node thinks (it might be a surrounding node).
-                const gap = this.registry.sourceCode.slice(searchStart, nextInv.startIndex);
-                const isGapClean = !gap.trim() || (this.registry.config.comments && gap.trim().startsWith('/*'));
-
-                if (isGapClean) {
-                     this.replace({start: nextInv.startIndex, end: nextInv.endIndex}, "");
-                     nextInv.skipped = true;
-
-                     const text = this.registry.sourceCode.slice(nextInv.startIndex, nextInv.endIndex);
-                     const fakeNode = {
-                         type: 'macro_invocation',
-                         text: text,
-                         startIndex: nextInv.startIndex,
-                         endIndex: nextInv.endIndex,
-                         childCount: 0,
-                         namedChildCount: 0,
-                         toString: () => text
-                     };
-                     this.lastConsumedNode = fakeNode;
-                     return fakeNode;
-                }
-            }
-        }
-
-        // Fallback to normal AST consumption
-        if (!node) {
-            let anchor = this.lastConsumedNode || this.contextNode;
-            if (anchor) {
-                if (anchor.type === 'macro_invocation') {
-                     // Find valid AST node after the fake node
-                     let searchIdx = anchor.endIndex;
-                     while (searchIdx < this.registry.sourceCode.length && /\s/.test(this.registry.sourceCode[searchIdx])) searchIdx++;
-
-                     // Look in cleanTree
-                     let next = this.registry.cleanTree.rootNode.namedDescendantForIndex(searchIdx);
-
-                     // Ensure we didn't land "inside" something covering the anchor or previous stuff
-                     if (next && next.startIndex < anchor.endIndex) {
-                          while (next && next.startIndex < anchor.endIndex) {
-                              next = next.nextNamedSibling || next.parent;
-                          }
-                     }
-                     if (next) {
-                        // Resync context level: if next is a child of translation_unit, great.
-                        // Or if next is same level as contextNode?
-                        // Just ensure we get a block-level item if possible.
-                        while (next.parent &&
-                               next.parent.type !== 'translation_unit' &&
-                               next.parent.startIndex === next.startIndex) {
-                             next = next.parent;
-                        }
-                        node = next;
-                     }
-                } else {
-                    node = anchor.nextNamedSibling;
-                    while (node && node.type.includes('comment')) {
-                        node = node.nextNamedSibling;
-                    }
-                }
-            }
-        }
+        const node = this._getNextNode(expectedTypes);
 
         if (!node) {
             if (expectedTypes || validateFn) reportFailure(null);
             return null;
         }
 
-        // Structural drilling if type mismatch
-        if (node && expectedTypes && !expectedTypes.includes(node.type)) {
-            let current = node;
-            while (current && current.namedChildCount > 0 && !expectedTypes.includes(current.type)) {
-                let firstChild = current.namedChild(0);
-                if (firstChild && firstChild.startIndex === current.startIndex) {
-                    current = firstChild;
-                    if (expectedTypes.includes(current.type)) {
-                        node = current;
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
+        if (expectedTypes && !expectedTypes.includes(node.type)) reportFailure(node);
+        if (validateFn && !validateFn(node)) reportFailure(node);
+
+        const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
+
+        const captureText = (n) => {
+            n._capturedText = n.text;
+            n.children.forEach(captureText);
+        };
+        captureText(node);
+        const wrapped = node;
+
+        const nextSearchIndex = node.startIndex;
+
+        if (!isHoisted) {
+            node.remove();
         }
 
-        if (expectedTypes && !expectedTypes.includes(node.type)) {
-            reportFailure(node);
-        }
-
-        if (validateFn && !validateFn(node)) {
-            reportFailure(node);
-        }
-
-        this.replace(node, "");
+        this.consumedIds.add(node.id);
         this.lastConsumedNode = node;
-        return node;
+        this.lastConsumedIndex = nextSearchIndex;
+        return wrapped;
     }
 
-    /**
-     * Checks if a node is a descendant of a parent.
-     * @param {import('tree-sitter').SyntaxNode} parent - The parent node.
-     * @param {import('tree-sitter').SyntaxNode} node - The potential descendant.
-     * @returns {boolean} True if node is a descendant.
-     */
     isDescendant(parent, node) {
         let current = node;
+        const rawParent = parent ? (parent.__internal_raw_node || parent) : null;
         while (current) {
-            if (current === parent || current.id === parent.id) return true;
-            current = this.parent(current);
+            const rawCurrent = current.__internal_raw_node || current;
+            if (rawCurrent === rawParent) return true;
+            current = rawCurrent.parent;
         }
         return false;
     }
 
-    /**
-     * Gets the parent node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The parent node.
-     */
+    walk(node, callback) {
+        if (!node) return;
+        callback(node);
+        const rawNode = node.__internal_raw_node || node;
+        const lateBound = !!node.__isLateBound; // We might need to track this
+        const sourceOverride = node.__sourceOverride; // And this
+
+        for (let i = 0; i < rawNode.childCount; i++) {
+            this.walk(this.wrapNode(rawNode.child(i), lateBound, sourceOverride), callback);
+        }
+    }
+
+    getLiveOffset(node, type = 'start') {
+        const raw = node.__internal_raw_node || node;
+        if (type === 'start') {
+            return raw.__marker_bound ? raw.__marker_bound.offset : raw.startIndex;
+        } else {
+            return raw.__marker_bound_end ? raw.__marker_bound_end.offset : raw.endIndex;
+        }
+    }
+
     parent(node) {
-        try { return node ? node.parent : null; } catch (e) { return null; }
+        return node ? node.parent : null;
     }
 
-    /**
-     * Gets the next named sibling.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The sibling node.
-     */
-    nextNamedSibling(node) {
-        try { return node ? node.nextNamedSibling : null; } catch (e) { return null; }
+    childForFieldName(node, fieldName) {
+        if (!node) return null;
+        return node.findChildByFieldName(fieldName);
     }
 
-    /**
-     * Gets a child node by index.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @param {number} index - The child index.
-     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
-     */
-    child(node, index) {
-        try { return node ? node.child(index) : null; } catch (e) { return null; }
+    findNextNodeAfter(root, index) {
+        if (!root) return null;
+
+        const findNextSibling = (node) => {
+            if (!node || !node.parent || node === root) return null;
+            const idx = node.parent.children.indexOf(node);
+            if (idx === -1) return null;
+            for (let i = idx + 1; i < node.parent.children.length; i++) {
+                const sibling = node.parent.children[i];
+                if (sibling.startIndex >= index) return sibling;
+            }
+            return findNextSibling(node.parent);
+        };
+
+        let current = root.descendantForIndex(index, index);
+
+        while (current && current.startIndex < index && current.endIndex > index && current.children.length > 0) {
+            let nextChild = null;
+            for (const child of current.children) {
+                if (child.endIndex > index) {
+                    nextChild = child;
+                    break;
+                }
+            }
+            if (nextChild) current = nextChild;
+            else break;
+        }
+
+        while (current && current.endIndex <= index) {
+            current = findNextSibling(current);
+        }
+
+        if (!current || current === root) return null;
+
+        while (current.children.length > 0) {
+            if (current.startIndex >= index && current.isNamed) break;
+
+            let found = false;
+            for (const child of current.children) {
+                if (child.startIndex >= index) {
+                    current = child;
+                    found = true;
+                    break;
+                } else if (child.endIndex > index) {
+                    current = child;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) break;
+        }
+
+        const isSafe = (current && current.startIndex >= index && current !== root);
+        if (isSafe) {
+            let p = current.parent;
+            let ok = false;
+            while (p) {
+                if (p === root) { ok = true; break; }
+                p = p.parent;
+            }
+            if (!ok) return null;
+        }
+
+        return isSafe ? current : null;
     }
 
-    /**
-     * Gets the number of children.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @returns {number} The child count.
-     */
+
+    registerTransformRule(rule) {
+        this.registry.registerTransformRule(rule);
+    }
+
+    findScope() {
+        const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
+        return this.findEnclosing(startNode, ['compound_statement', 'translation_unit']);
+    }
+
+    findEnclosing(node, types) {
+        if (!node) return null;
+        const typeArray = Array.isArray(types) ? types : [types];
+        let p = node.parent;
+        while (p) {
+            if (typeArray.includes(p.type)) return p;
+            p = p.parent;
+        }
+        return null;
+    }
+
+    createUniqueIdentifier(prefix = 'v') {
+        const id = uniqueIdCounter++;
+        return `${prefix}_${id}`;
+    }
+
     childCount(node) {
-        try { return node ? node.childCount : 0; } catch (e) { return 0; }
+        return node ? node.childCount : 0;
     }
 
-    /**
-     * Gets a child node by field name.
-     * @param {import('tree-sitter').SyntaxNode} node - The parent node.
-     * @param {string} name - The field name.
-     * @returns {import('tree-sitter').SyntaxNode|null} The child node.
-     */
-    childForFieldName(node, name) {
-        try { return (node && node.childForFieldName) ? node.childForFieldName(name) : null; } catch (e) { return null; }
+    child(node, index) {
+        return node ? node.child(index) : null;
     }
 
-    /**
-     * Gets the last named child.
-     * @param {import('tree-sitter').SyntaxNode} node - The node.
-     * @returns {import('tree-sitter').SyntaxNode|null} The last named child.
-     */
-    lastNamedChild(node) {
-        try { return node ? node.lastNamedChild : null; } catch (e) { return null; }
+    childForFieldName(node, fieldName) {
+        if (!node) return null;
+        return node.findChildByFieldName(fieldName);
     }
 
-    /**
-     * Parses a code fragment into a fresh AST.
-     * @param {string} text - The source code fragment.
-     * @returns {import('tree-sitter').SyntaxNode} The root node of the fresh tree.
-     */
-    parseFragment(text) {
-        try {
-             // Use registry._parse which returns a Tree
-             const tree = this.registry._parse(text);
-             return tree.rootNode;
-        } catch (e) {
-             console.error(`Fragment parse failed: ${e.message}`);
-             return null;
-        }
-    }
-
-    /**
-     * Throws a UPP-specific error associated with a node.
-     * @param {import('tree-sitter').SyntaxNode} node - The node where the error occurred.
-     * @param {string} message - The error message.
-     * @throws {Error} The associated error.
-     */
     error(node, message) {
-        const err = new Error(message);
-        err.isUppError = true;
-        err.node = node;
-        throw err;
-    }
+        let finalNode = node;
+        let finalMessage = message;
 
-    /**
-     * Loads a dependency file.
-     * @param {string} filePath - Path to the dependency.
-     */
-    loadDependency(filePath) {
-        // Resolve path relative to current file if not absolute
-        let resolvedPath = filePath;
-        if (!path.isAbsolute(filePath)) { // we need path module here, or assume registry handles it?
-             // Registry.resolveInclude handles path resolution logic.
-             // But we want to trigger the specific load.
-             // We can use registry.resolveInclude to find it first.
-             const resolved = this.registry.resolveInclude(filePath);
-             if (resolved) {
-                 resolvedPath = resolved;
-             }
+        if (arguments.length === 1 && typeof node === 'string') {
+            finalMessage = node;
+            finalNode = this.contextNode || (this.invocation && this.invocation.invocationNode);
         }
-        this.registry.loadDependency(resolvedPath);
+
+        const err = new Error(finalMessage);
+        err.isUppError = true;
+        err.node = finalNode;
+        throw err;
     }
 }
 

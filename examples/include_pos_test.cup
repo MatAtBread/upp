@@ -1,0 +1,14 @@
+// Test file
+
+@include(method.hup)
+
+typedef struct { int x; } Point;
+
+@method(Point)
+void setX(Point *p, int v) { p->x = v; }
+
+int main() {
+    Point p = {10};
+    p.setX(20);
+    return 0;
+}

@@ -1,0 +1,35 @@
+==== examples/struct_access.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+#include "method.h"
+struct Point {
+    int x;
+    int y;
+};
+typedef struct Point Point;
+ int _Point_method_distance(Point * p) {
+    return p -> x * p -> x + p -> y * p -> y;
+}
+int main() {
+    Point p = { 3, 4};
+    int r = _Point_method_distance(&p);
+    printf("distance: %d\n", r);
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+distance: 25
+

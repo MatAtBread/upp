@@ -1,0 +1,17 @@
+==== examples/include_pos_test.c ===
+// Test file
+#include "method.h"
+typedef struct { int x; } Point;
+
+void _Point_method_setX(Point *p, int v) { p->x = v; }
+int main() {
+    Point p = {10};
+    _Point_method_setX(&p, 20);
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+

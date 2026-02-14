@@ -1,0 +1,9 @@
+==== examples/simple_macro_test.c ===
+
+int main() {
+    int x = 5;
+    return x;
+}
+
+==== RUN OUTPUT ===
+

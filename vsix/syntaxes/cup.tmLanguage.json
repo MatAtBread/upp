@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "UPP",
+  "scopeName": "source.cup",
+  "patterns": [
+    {
+      "include": "#macro-definition"
+    },
+    {
+      "include": "#macro-invocation"
+    },
+    {
+      "include": "source.c"
+    }
+  ],
+  "repository": {
+    "macro-definition": {
+      "begin": "(@define(?:@[a-zA-Z0-9]+)?)\\s+([a-zA-Z0-9_]+)\\s*(\\()",
+      "beginCaptures": {
+        "1": { "name": "keyword.control.upp" },
+        "2": { "name": "entity.name.function.upp" },
+        "3": { "name": "punctuation.section.parameters.begin.upp" }
+      },
+      "end": "(\\})",
+      "endCaptures": {
+        "1": { "name": "punctuation.section.block.end.upp" }
+      },
+      "patterns": [
+        {
+          "begin": "(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.section.parameters.end.upp" },
+            "2": { "name": "punctuation.section.block.begin.upp" }
+          },
+          "end": "(?=\\})",
+          "contentName": "source.js",
+          "patterns": [
+            {
+              "include": "source.js"
+            }
+          ]
+        },
+        {
+          "match": "[^\\)]+",
+          "name": "variable.parameter.upp"
+        }
+      ]
+    },
+    "macro-invocation": {
+      "match": "(@[a-zA-Z0-9_]+)",
+      "name": "entity.name.function.macro.upp"
+    }
+  }
+}

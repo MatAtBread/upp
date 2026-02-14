@@ -1,4 +1,9 @@
 {
-    "includePaths": ["${UPP}/std"],
-    "core": ["include.hup"]
+    "includePaths": [
+        "${UPP}/std"
+    ],
+    "core": [
+        "defer.hup",
+        "method.hup"
+    ]
 }

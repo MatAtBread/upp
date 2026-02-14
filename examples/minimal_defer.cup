@@ -1,0 +1,12 @@
+#include "io-lite.h"
+
+@include(defer.hup)
+
+int main() {
+    char *str1 = malloc(100);
+    printf("allocated\n");
+    @defer { free(str1); str1 = NULL; printf("deferred\n"); }
+    str1[0] = 0;
+    printf("returning\n");
+    return 0;
+}

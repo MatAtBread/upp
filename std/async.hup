@@ -2,42 +2,33 @@
 #define __UPP_STDLIB_ASYNC_H__
 
 @define async() {
-    const node = upp.contextNode;
-    let def = (node.type === 'expression_statement' || node.type === 'declaration') ? node.child(0) : node;
-    // Note: function_definition is usually top-level, but check anyway
-    if (node.type !== 'function_definition') {
-        upp.error(node, `@async must be applied to a function definition, not ${node.type}`);
-    }
-    let name = "";
-    // Save the range of the definition to avoid self-transforming the declarator
-    const defStart = node.startIndex;
-    const defEnd = node.endIndex;
+    let node = upp.nextNode(['function_definition', 'declaration']);
+    if (!node) return "";
+    const sig = upp.getFunctionSignature(node);
+    if (!sig.nameNode) return "";
 
-    const declarator = node.childForFieldName('declarator');
-    // Find the identifier within the potentially complex declarator
-    const idMatches = upp.query(`(identifier) @id`, declarator);
-    if (idMatches.length > 0) {
-        name = idMatches[0].captures.id.text;
-    }
+    const idNode = sig.nameNode;
+    const name = sig.name;
 
-    // Find all references to this function in the WHOLE tree
-    if (name) {
-        upp.registerTransform((root, helpers) => {
-            const calls = helpers.query(`(call_expression function: (identifier) @id) @call`, root);
-            for (const m of calls) {
-                const callNode = m.captures.call;
-                if (m.captures.id.text === name) {
-                    const isInside = callNode.startIndex >= defStart && callNode.endIndex <= defEnd;
-                    if (!isInside) {
-                        helpers.replace(callNode, helpers.code`os_start(${name})`);
-                    }
-                }
+    // Use withReferences to transform call sites
+    upp.withReferences(node, (refNode, helpers) => {
+        // Find the call_expression ancestor
+        let callNode = refNode;
+        while (callNode && callNode.type !== 'call_expression' && callNode.startIndex === refNode.startIndex) {
+            callNode = callNode.parent;
+        }
+
+        if (callNode && callNode.type === 'call_expression') {
+            const funcNode = helpers.childForFieldName(callNode, 'function');
+            // Ensure we are the function being called, not an argument
+            if (funcNode && (funcNode === refNode || helpers.isDescendant(funcNode, refNode))) {
+                helpers.replace(callNode, helpers.code`os_start(${name})`);
+                return undefined; // Skip default replacement of the identifier itself
             }
-        });
-    }
+        }
+    });
 
-
-    return "";
+    return null;
 }
 
 #endif

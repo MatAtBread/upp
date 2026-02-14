@@ -1,0 +1,19 @@
+==== examples/two_methods_test.c ===
+#include "method.h"
+typedef struct { int x; } Point;
+
+void _Point_method_setX(Point *p, int v) { p->x = v; }
+
+int _Point_method_getX(Point *p) { return p->x; }
+int main() {
+    Point p = {10};
+    _Point_method_setX(&p, 20);
+    int val = _Point_method_getX(&p);
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+

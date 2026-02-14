@@ -1,0 +1,13 @@
+==== examples/with_references_test.c ===
+// Simple test for withReferences transformation rule tracking
+
+int main() {
+    int renamedX = 10;
+    
+    int y = renamedX + 5; // This should become: int y = renamedX + 5
+    int z = renamedX * 2; // This should become: int z = renamedX * 2
+    return renamedX; // This should become: return renamedX;
+}
+
+==== RUN OUTPUT ===
+

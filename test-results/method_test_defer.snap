@@ -1,0 +1,47 @@
+==== examples/method_test_defer.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+#include "method.h"
+#include "defer.h"
+struct TestStruct {
+    int x;
+};
+typedef struct TestStruct TestStruct;
+ void _TestStruct_method_Defer(TestStruct *t) {
+    printf("Defer called for x=%d\n", t->x);
+}
+int main() {
+    printf("Scope Start\n");
+    {
+        TestStruct t;
+        t.x = 42;
+        printf("Inner scope\n");
+    }
+    printf("Scope End\n");
+    return 0;
+}
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+Scope Start
+Inner scope
+Scope End
+

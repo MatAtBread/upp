@@ -1,0 +1,37 @@
+#include "io-lite.h"
+
+@define typeOf(id) {
+    const node = upp.findDefinition(id);
+    const type = upp.getType(node);
+    return upp.code`"${type}"`;
+}
+
+@define longify(name) {
+    upp.matchReplace(upp.root, `int ${name} = $val__number_literal;`, ({ val }) => {
+        return upp.code`char *${name} = "${val}";`;
+    }, { deep: true });
+}
+
+@longify(bar)
+@longify(baz)
+
+int foo = 100;
+int bar = 200;
+int baz = 5;
+
+void f() {
+    int bar = 4;
+}
+
+void global() {
+    printf("global\n");
+    printf("bar is of type %s\nbaz is of type %s\n", @typeOf(bar), @typeOf(baz));
+}
+
+int main() {
+    int bar = 5;
+    printf("main\n");
+    printf("bar is of type %s\nbaz is of type %s\n", @typeOf(bar), @typeOf(baz));
+    global();
+    return 0;
+}

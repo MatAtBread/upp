@@ -1,0 +1,42 @@
+==== examples/match_stringify.c ===
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+
+/*@longify(bar)*/
+/*@longify(baz)*/
+int foo = 100;
+char *bar = "200";
+char *baz = "5";
+void f() {
+    char *bar = "4";
+}
+void global() {
+    printf("global\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "char *", "char *");
+}
+int main() {
+    char *bar = "5";
+    printf("main\n");
+    printf("bar is of type %s\nbaz is of type %s\n", "char *", "char *");
+    global();
+    return 0;
+}
+
+==== RUN OUTPUT ===
+main
+bar is of type char *
+baz is of type char *
+global
+bar is of type char *
+baz is of type char *
+

@@ -1,10 +1,32 @@
 @define import(nameSpace) {
-    const path = upp.consume('expression_statement')?.firstNamedChild;
-    if (path.type !== 'string_literal') {
+    let pathNode = upp.consume('expression_statement');
+    if (!pathNode) {
+        // Fallback for when tree-sitter parses it differently (e.g. at top level)
+        pathNode = upp.consume('string_literal');
+        if (!pathNode) {
+            const next = upp.nextNode();
+
+             // Try to handle ERROR node if it contains string
+             if (next && next.type === 'ERROR') {
+                 // Try to find string child
+                 const str = next.children.find(c => c.type === 'string_literal');
+                 if (str) pathNode = str;
+             }
+        }
+    }
+
+    // Recover specific literal from expression statement if needed
+    let literal = pathNode;
+    if (pathNode && pathNode.type === 'expression_statement') {
+        literal = pathNode.firstNamedChild;
+    }
+    
+    if (!literal || literal.type !== 'string_literal') {
         throw new Error('@import requires a string literal path');
     }
-    upp.registerTransform((root, helpers) => {
-        helpers.matchReplaceAll(root, `${nameSpace}.$field`, ({field}) => field);
+
+    upp.registerTransformRule((root, helpers) => {
+        helpers.matchReplace(root, `${nameSpace}.$field`, ({field}) => field);
     });
-    return upp.code`\n#include ${path.text}`;
+    return upp.code`\n#include ${literal.text}`;
 }

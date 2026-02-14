@@ -1,0 +1,38 @@
+#include "io-lite.h"
+
+@include(defer.hup)
+
+@define allocate(n) {
+    const node = upp.consume(['declaration']);
+    const declarator = upp.childForFieldName(node, 'declarator');
+    if (declarator?.type === 'pointer_declarator') {
+        const identifier = upp.childForFieldName(declarator, 'declarator');
+        if (identifier) {
+            const type = upp.childForFieldName(node, 'type');
+            if (type) {
+                const repl = upp.codeTree`
+                    ${node.text.split(';')[0]} = malloc(${n} * sizeof(${type}));
+                    @defer { free(${identifier}); ${identifier.text} = NULL; }`;
+                return repl;
+            }
+        }
+    }
+    upp.error("@allocate expected <type> *<identifier>;")
+}
+
+int some_condition;
+int main() {
+    @allocate(100) char * str1;
+    @allocate(100) char * str2;
+
+    {
+        @allocate(100) char * nested;
+        if (some_condition) {
+            // should defer here, str1
+            return 1;
+        }
+    }
+
+    // should defer here, str2 then str1
+    return 0;
+}

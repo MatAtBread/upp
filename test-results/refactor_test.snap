@@ -1,0 +1,10 @@
+==== examples/refactor_test.c ===
+
+// Added at root
+// Added at root }
+int myVar = 10;
+void main() {
+    int localVal = 10;
+}
+==== RUN OUTPUT ===
+

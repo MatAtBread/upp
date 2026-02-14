@@ -1,0 +1,58 @@
+==== examples/method_test.c ===
+#include "method.h"
+/* A minimal C stdio/stdlib for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern void *stderr;
+extern void *_stderr;
+
+struct Base {
+    int x;
+};
+typedef struct Base BaseTypedef;
+typedef struct {
+    int y;
+} Unique;
+// 1. method(struct Tag)
+ int _Base_method_getX(struct Base *b) {
+    return b->x;
+}
+// 2. method(Typedef)
+ void _BaseTypedef_method_setX(BaseTypedef *b, int v) {
+    b->x = v;
+}
+// 3. method(UniqueTypedef)
+ int _Unique_method_getY(Unique *u) {
+    return u->y;
+}
+int main() {
+    struct Base b = { 10 };
+    BaseTypedef bt = { 20 };
+    Unique u = { 100 };
+    // Usage 1
+    int val1 = _Base_method_getX(&b);
+    // Usage 2
+    _BaseTypedef_method_setX(&bt, 50);
+    int val2 = _Base_method_getX(&bt);
+    // Usage 3
+    int val3 = _Unique_method_getY(&u);
+    printf("val1: %d\n", val1);
+    printf("val2: %d\n", val2);
+    printf("val3: %d\n", val3);
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+val1: 10
+val2: 50
+val3: 100
+

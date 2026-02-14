@@ -1,0 +1,15 @@
+#include "io-lite.h"
+
+@define Inner(val) {
+    return upp.code`(${val} * 2)`;
+}
+
+@define Outer(a, b) {
+    return upp.code`int result = @Inner(${a}) + @Inner(${b});`;
+}
+
+int main() {
+    @Outer(5, 10)
+    printf("Result: %d\n", result);
+    return 0;
+}

@@ -1,0 +1,38 @@
+==== examples/rule_tracking_test.c ===
+// Test transformation rule tracking
+// This tests if rules registered by withReferences get re-evaluated on generated code
+#include "method.h"
+struct Point {
+    int x;
+    int y;
+};
+ int _Point_method_getX() {
+    return this->x;
+}
+
+int main() {
+    Point p = {10, 20};
+        int val = _Point_method_getX(&p);
+    
+    return 0;
+}
+
+==== std/method.h ===
+
+
+==== COMPILATION ERROR ===
+./examples/rule_tracking_test.c:9:12: error: use of undeclared identifier 'this'
+    9 |     return this->x;
+      |            ^
+./examples/rule_tracking_test.c:13:5: error: must use 'struct' tag to refer to type 'Point'
+   13 |     Point p = {10, 20};
+      |     ^
+      |     struct 
+./examples/rule_tracking_test.c:14:40: warning: too many arguments in call to '_Point_method_getX'
+   14 |         int val = _Point_method_getX(&p);
+      |                   ~~~~~~~~~~~~~~~~~~   ^
+./examples/rule_tracking_test.c:14:37: warning: passing arguments to '_Point_method_getX' without a prototype is deprecated in all versions of C and is not supported in C23 [-Wdeprecated-non-prototype]
+   14 |         int val = _Point_method_getX(&p);
+      |                                     ^
+2 warnings and 2 errors generated.
+

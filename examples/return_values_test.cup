@@ -1,0 +1,17 @@
+@define Replace(val) {
+    return `int replaced = ${val};`;
+}
+
+@define Delete() {
+    return null;
+}
+
+@define Ignore() {
+    // Returns undefined by default
+}
+
+void main() {
+    @Replace(42)
+    @Delete()
+    @Ignore()
+}

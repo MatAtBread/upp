@@ -1,107 +1,57 @@
 @define implements(pkgName) {
-    return "";
+    // Marker macro used by @package
 }
 
 @define package(pkgName) {
-    if (!upp.parentTree) {
+    if (!upp.parentHelpers) {
         // This macro is intended to be run from an included file (like pkg.hup)
         // inspecting the parent (like pkg.cup).
-        console.warn("@package used without a parent context (should be used inside an @included file)");
-        return;
+        return "";
     }
 
     const nameSpace = pkgName + "_";
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    const parentInvocations = upp.parentRegistry.invocations;
-    const parentSource = upp.parentRegistry.sourceCode;
-    const isImpl = parentInvocations.some(inv =>
-        (inv.name === 'implements' || inv.name === 'implement') && inv.args[0] === pkgName
-    ) || new RegExp(`@(implements|implement)\\s*\\(\\s*${pkgName}\\s*\\)`).test(parentSource);
+    const isImpl = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
 
-    const root = upp.parentTree;
-
-    // 2. Scan Parent Tree for Definitions to generate Public Prototypes
-    // We always do this so that the header (this file) contains the exported symbols.
-    const definitions = upp.parentRegistry.helpers.query('(function_definition) @fn', root);
-
-    for (const match of definitions) {
-        const fn = match.captures.fn;
-
-        let isStatic = false;
-        for(let i=0; i<fn.childCount; i++) {
-             const child = fn.child(i);
-             if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                 isStatic = true;
-                 break;
-             }
-        }
-
-        const { returnType, name, params } = upp.parentRegistry.helpers.getFunctionSignature(fn);
-        if (name === "unknown" || name.startsWith(nameSpace)) continue;
-
-        if (!isStatic) {
-            publicProtos.push(`${returnType} ${nameSpace}${name}${params};`);
-        }
-    }
-
-    // 3. Registering Transform for the Parent (only if IMPLEMENTING)
     if (isImpl) {
-        upp.registerParentTransform((_root, pHelpers) => {
-             // Rename definitions
-             pHelpers.matchReplaceAll(_root, '$fn__function_definition', ({fn}) => {
-                 let isStatic = false;
-                 try {
-                     for(let i=0; i<fn.childCount; i++) {
-                         const child = fn.child(i);
-                         if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                             isStatic = true;
-                             break;
-                         }
-                     }
-                 } catch (e) {}
+        upp.isAuthoritative = true;
+        upp.registry.shouldMaterializeDependency = true;
+        if (upp.parentHelpers.registry) {
+            upp.parentHelpers.registry.shouldMaterializeDependency = true;
+        }
 
-                 if (isStatic) return;
+        // Find public functions to generate headers
+        const functions = upp.parentHelpers.root.find('function_definition');
+        for (const fn of functions) {
+            const isStatic = fn.children.some(c => c.type === 'storage_class_specifier' && c.text === 'static');
+            if (isStatic) continue;
 
-                 const { returnType, name, params } = pHelpers.getFunctionSignature(fn);
-                 const body = pHelpers.childForFieldName(fn, 'body');
-                 if (name === "unknown" || name.startsWith(nameSpace)) return;
+            const { returnType, name, params, nameNode } = upp.parentHelpers.getFunctionSignature(fn);
+            if (name !== 'unknown' && !name.startsWith(nameSpace)) {
+                publicProtos.push(`extern ${returnType} ${nameSpace}${name}${params};`);
+                
+                const originalName = name;
+                
+                // Immediately rename all existing references in the tree
+                const refs = upp.parentHelpers.findReferences(fn);
+                for (const ref of refs) {
+                    ref.text = nameSpace + originalName;
+                }
 
-                 return pHelpers.code`${returnType} ${nameSpace}${name}${params} ${body}`;
-             });
+                // Register a rule via withPattern for any future references (like from other macros)
+                // We use withPattern instead of withReferences because findDefinition 
+                // will fail to resolve 'add' to 'mypkg_add' once renamed.
+                upp.parentHelpers.withPattern('identifier',
+                    (node, h) => node.text === originalName,
+                    (node, h) => nameSpace + originalName
+                );
 
-             // Rename local calls
-             pHelpers.matchReplaceAll(_root, '$call__call_expression', ({call}) => {
-                 const funcNode = pHelpers.childForFieldName(call, 'function');
-                 if (!funcNode) return null;
-                 const funcName = funcNode.text;
-
-                 const def = pHelpers.getDefinition(funcNode);
-                 if (def && pHelpers.isDescendant(_root, def)) {
-                     let fnDef = def;
-                     while(fnDef && fnDef.type !== 'function_definition') fnDef = fnDef.parent;
-
-                     if (fnDef) {
-                         let isStaticVal = false;
-                         try {
-                              for(let i=0; i<fnDef.childCount; i++) {
-                                 const child = fnDef.child(i);
-                                 if (child.type === 'storage_class_specifier' && child.text === 'static') {
-                                     isStaticVal = true;
-                                     break;
-                                 }
-                             }
-                         } catch (e) {}
-
-                         if (!isStaticVal && !funcName.startsWith(nameSpace)) {
-                             const args = pHelpers.childForFieldName(call, 'arguments');
-                             return pHelpers.code`${nameSpace}${funcName}${args}`;
-                         }
-                     }
-                 }
-             });
-        });
+                // Rename definition
+                nameNode.text = nameSpace + originalName;
+            }
+        }
     }
 
     return publicProtos.join('\n');

@@ -1,0 +1,11 @@
+==== examples/nested_macros_4.c ===
+static int expanded_inner;
+
+
+int main() {
+    expanded_inner ;
+    return 0;
+}
+
+==== RUN OUTPUT ===
+

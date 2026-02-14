@@ -1,0 +1,9 @@
+==== examples/minimal_test.c ===
+// Minimal test - no macros
+int main() {
+    int x = 10;
+    return x;
+}
+
+==== RUN OUTPUT ===
+
