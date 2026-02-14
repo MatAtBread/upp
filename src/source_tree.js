@@ -263,6 +263,14 @@ export class SourceNode {
         return this.type !== undefined && this.type !== null && !/^[^a-zA-Z_]/.test(this.type);
     }
 
+    /** @returns {boolean} */
+    get isValid() {
+        return this.startIndex !== -1 &&
+            this.tree &&
+            this.tree.nodeCache &&
+            this.tree.nodeCache.get(this.id) === this;
+    }
+
     /** @returns {SourceNode|null} */
     get nextNamedSibling() {
         if (!this.parent) return null;

@@ -47,6 +47,12 @@ class UppHelpersBase {
             if (i < values.length) {
                 const val = values[i];
                 if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
+                    if (!val.isValid) {
+                        const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
+                        console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
+                        text += val.text;
+                        continue;
+                    }
                     if (usedNodes.has(val)) {
                         throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
                     }
