@@ -41,12 +41,16 @@ class UppHelpersBase {
     codeTree(strings, ...values) {
         let text = "";
         const nodeMap = new Map();
-
+        const usedNodes = new Set();
         for (let i = 0; i < strings.length; i++) {
             text += strings[i];
             if (i < values.length) {
                 const val = values[i];
                 if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
+                    if (usedNodes.has(val)) {
+                        throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                    }
+                    usedNodes.add(val);
                     const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
                     nodeMap.set(placeholder, val);
                     text += placeholder;
@@ -58,8 +62,11 @@ class UppHelpersBase {
             }
         }
 
+        const prepared = this.registry.prepareSource(text, this.registry.originPath);
+        const cleanText = prepared.cleanSource;
+
         const SourceTree = this.registry.tree.constructor;
-        const fragment = SourceTree.fragment(text, this.registry.language);
+        const fragment = SourceTree.fragment(cleanText, this.registry.language);
         if (!fragment) {
             throw new Error("upp.codeTree: Failed to parse code fragment");
         }
@@ -74,8 +81,6 @@ class UppHelpersBase {
             }
 
             const originalNode = nodeMap.get(placeholder);
-
-            // Move node from its source tree
             originalNode.remove();
 
             // Replace placeholder with original node

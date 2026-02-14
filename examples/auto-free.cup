@@ -10,9 +10,9 @@
         if (identifier) {
             const type = upp.childForFieldName(node, 'type');
             if (type) {
-                const repl = upp.code`
+                const repl = upp.codeTree`
                     ${node.text.split(';')[0]} = malloc(${n} * sizeof(${type}));
-                    @defer { free(${identifier}); ${identifier} = NULL; }`;
+                    @defer { free(${identifier}); ${identifier.text} = NULL; }`;
                 return repl;
             }
         }
