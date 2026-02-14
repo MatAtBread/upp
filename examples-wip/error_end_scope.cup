@@ -42,7 +42,7 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
 
                 // 1. Declare return variable at the top of the body
                 if (!isVoid) {
-                    targetBody.children[0].insertAfter(helpers.code` \n    ${data.returnType} ${data.returnVarName};`);
+                    targetBody.children[0].insertAfter(helpers.codeTree` \n    ${data.returnType} ${data.returnVarName};`);
                 }
 
                 // 2. Use withPattern for returns to catch all of them persistently
@@ -60,9 +60,9 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
                         const expr = retNode.child(1);
 
                         if (!isVoid && expr && expr.text !== ';') {
-                            return h.code`{ ${dataInner.returnVarName} = ${expr.text}; goto ${dataInner.labelPrefix}_${labelId}; }`;
+                            return h.codeTree`{ ${dataInner.returnVarName} = ${expr.text}; goto ${dataInner.labelPrefix}_${labelId}; }`;
                         } else {
-                            return h.code`goto ${dataInner.labelPrefix}_${labelId};`;
+                            return h.codeTree`goto ${dataInner.labelPrefix}_${labelId};`;
                         }
                     }
                 );
@@ -76,7 +76,7 @@ NB: this macro impl doesn't work. It frees "nested" long after the scope has gon
                         cleanup += `${data.labelPrefix}_${i}:\n { ${sortedBlocks[i].text} }\n`;
                     }
                     cleanup += ` return ${isVoid ? '' : data.returnVarName};`;
-                    lastBrace.insertBefore(helpers.code`\n${cleanup}`);
+                    lastBrace.insertBefore(helpers.codeTree`\\n${cleanup}`);
                 }
 
                 data.applied = true;

@@ -597,23 +597,6 @@ class UppHelpersC extends UppHelpersBase {
         });
     }
 
-    /**
-     * Mark a node as visited.
-     * @param {SourceNode} node - The node.
-     * @returns {boolean} True if new visit.
-     */
-    visit(node) {
-        return this.registry.visit(this.transformKey, node);
-    }
-
-    /**
-     * Check if visited.
-     * @param {SourceNode} node - The node.
-     * @returns {boolean} True if visited.
-     */
-    isVisited(node) {
-        return this.registry.isVisited(this.transformKey, node);
-    }
 }
 
 export { UppHelpersC };

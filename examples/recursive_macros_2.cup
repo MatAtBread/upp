@@ -56,7 +56,7 @@
                 const ids = declNode.find('identifier');
                 for (const id of ids) {
                     if (id.parent.type.includes('declarator') || id.parent === declNode) {
-                        declNode.insertAfter(upp.code`@defer ${id.text}.Defer();`);
+                        declNode.insertAfter(upp.codeTree`@defer ${id.text}.Defer();`);
                     }
                 }
             }

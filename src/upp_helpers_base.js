@@ -28,24 +28,6 @@ class UppHelpersBase {
         this.stdPath = registry ? registry.stdPath : null;
     }
 
-    code(strings, ...values) {
-        let result = "";
-        for (let i = 0; i < strings.length; i++) {
-            result += strings[i];
-            if (i < values.length) {
-                const val = values[i];
-                result += (val && typeof val === 'object' && val.text !== undefined) ? val.text : String(val);
-            }
-        }
-
-        // If the result contains macro invocations, wrap them so they are expanded
-        if (result.includes('@')) {
-            const prepared = this.registry.prepareSource(result, this.registry.originPath);
-            return prepared.cleanSource;
-        }
-
-        return result;
-    }
 
     codeTree(strings, ...values) {
         let text = "";
@@ -134,6 +116,9 @@ class UppHelpersBase {
         return this.withNode(this.findRoot(), callback);
     }
 
+    /**
+     * @deprecated Use codeTree or withPattern instead.
+     */
     registerTransform(callback) {
         return this.atRoot(callback);
     }
@@ -172,9 +157,6 @@ class UppHelpersBase {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
 
-    findParent(node) {
-        return this.parent(node);
-    }
 
 
     withNode(node, callback) {
@@ -227,23 +209,11 @@ class UppHelpersBase {
         return results;
     }
 
-    isConsumed(node) {
-        if (!node) return false;
-        return this.consumedIds.has(node.id);
-    }
 
     loadDependency(file) {
         this.registry.loadDependency(file, this.context.originPath, this);
     }
 
-    registerParentTransform(callback) {
-        if (!this.parentHelpers) {
-            console.warn("registerParentTransform called without a parent context");
-            return;
-        }
-        // Simplified: just run it on the parent's root node now
-        callback(this.parentTree, this.parentHelpers);
-    }
 
     /**
      * Finds the next logical node after the macro invocation.
@@ -348,14 +318,6 @@ class UppHelpersBase {
         }
     }
 
-    getLiveOffset(node, type = 'start') {
-        const raw = node.__internal_raw_node || node;
-        if (type === 'start') {
-            return raw.__marker_bound ? raw.__marker_bound.offset : raw.startIndex;
-        } else {
-            return raw.__marker_bound_end ? raw.__marker_bound_end.offset : raw.endIndex;
-        }
-    }
 
     parent(node) {
         return node ? node.parent : null;

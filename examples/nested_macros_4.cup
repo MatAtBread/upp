@@ -5,7 +5,7 @@ static int expanded_inner;
 }
 
 @define outer() {
-    return upp.code`${upp.consume()}`;
+    return upp.consume();
 }
 
 int main() {
