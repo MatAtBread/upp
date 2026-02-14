@@ -15,17 +15,17 @@ extern void *_stderr;
 /*@longify(bar)*/
 /*@longify(baz)*/
 int foo = 100;
-long bar = 200L;
-long baz = 5L;
+long bar = (long)(200);
+long baz = (long)(5);
 void f() {
-    long bar = 4L;
+    long bar = (long)(4);
 }
 void global() {
     printf("global\n");
     printf("bar is of type " "long" "\nbaz is of type " "long" "\n");
 }
 int main() {
-    long bar = 5L;
+    long bar = (long)(5);
     printf("main\n");
     printf("bar is of type %s\nbaz is of type %s\n", "long", "long");
     global();

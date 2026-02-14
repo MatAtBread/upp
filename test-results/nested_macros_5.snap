@@ -15,8 +15,7 @@ static int expanded_inner = 5;
 
 
 int main() {
-    int n = expanded_inner + 10
-+ 20 ;
+    int n = expanded_inner + 10 + 20 ;
     printf("%d\n", n);
     return 0;
 }

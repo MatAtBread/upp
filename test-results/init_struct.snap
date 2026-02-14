@@ -42,10 +42,3 @@ Point created(5, 9)
 Point(0, 0)
 Point(5, 9)
 
-./examples/init_struct.cup:22:51: warning: empty character constant [-Winvalid-pp-token]
-   22 |             init = ' = ' + match[2].replace(/;$/, '');
-      |                                                   ^
-./examples/init_struct.cup:24:38: warning: empty character constant [-Winvalid-pp-token]
-   24 |             name = text.replace(';', '').trim();
-      |                                      ^
-2 warnings generated.

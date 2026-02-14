@@ -6,7 +6,7 @@
         upp.error(upp.peek(), "@map requires an even { block } and an odd { block }");
     }
 
-    return upp.code`
+    return upp.codeTree`
     for (int _i = 0; _i < sizeof(${arrayName})/sizeof(${arrayName}[0]); _i++) {
         int ${varName} = ${arrayName}[_i];
         if (_i % 2 == 0) {
@@ -19,7 +19,7 @@
 }
 
 int main() {
-    int arr[] = {1, 2, 3, 4};
+    int arr[] = { 1, 2, 3, 4};
     @map(arr, z) { z = z + 10; } { z = z + 100; };
     return 0;
 }

@@ -35,7 +35,3 @@ _String_method_Defer(&(s1));}
 ==== RUN OUTPUT ===
 Freeing string: Hello
 
-./examples/recursive_macros_2.cup:43:77: warning: empty character constant [-Winvalid-pp-token]
-   43 |             const finalArgs = objRef + (argsText.trim() ? ', ' + argsText : '');
-      |                                                                             ^
-1 warning generated.

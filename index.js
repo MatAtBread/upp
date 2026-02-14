@@ -29,7 +29,7 @@ function preprocess(filePath, extraFlags = []) {
     const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
         const cmd = `${compiler} ${flags} "${filePath}"`;
-        return execSync(cmd, { encoding: 'utf8' });
+        return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
     } catch (e) {
         process.exit(1);
     }

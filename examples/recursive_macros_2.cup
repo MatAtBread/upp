@@ -38,10 +38,13 @@
             const obj = fn.childForFieldName('argument');
             const args = call.childForFieldName('arguments');
             const operator = fn.text.includes('->') ? '->' : '.';
-            const objRef = operator === '.' ? `&(${obj.text})` : obj.text;
-            const argsText = args.text.slice(1, -1);
-            const finalArgs = objRef + (argsText.trim() ? ', ' + argsText : '');
-            return helpers.code`${newName}(${finalArgs})`;
+            const innerArgs = args.children.slice(1, -1);
+            const hasArgs = innerArgs.length > 0;
+            if (operator === '.') {
+                return helpers.codeTree`${newName}(&(${obj})${hasArgs ? ', ' : ''}${innerArgs})`;
+            } else {
+                return helpers.codeTree`${newName}(${obj}${hasArgs ? ', ' : ''}${innerArgs})`;
+            }
         }
     );
 
@@ -60,7 +63,7 @@
         }
     }
 
-    return upp.code`${returnType.text} ${newName}${params.text} ${body.text}`;
+    return upp.codeTree`${returnType.text} ${newName}${params.text} ${body.text}`;
 }
 
 @define defer() {
@@ -78,14 +81,14 @@
         },
         (m, helpers) => {
             // Replace return with { defer_code; return; } to avoid infinite recursion
-            return helpers.code`{ ${node.text} ${m.text} }`;
+            return helpers.codeTree`{ ${node.text} ${m.text} }`;
         }
     );
 
     // Also handle the end of scope
     const lastBrace = scope.children.find(c => c.text === '}');
     if (lastBrace) {
-        lastBrace.insertBefore(upp.code`${node.text} `);
+        lastBrace.insertBefore(upp.codeTree`${node.text} `);
     }
 }
 

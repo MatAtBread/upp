@@ -25,7 +25,7 @@
                     // So we check type manually or use constraint?
                     if (captures.then.type !== 'compound_statement') {
                         helpers.replace(captures.node,
-                            helpers.code`if (${captures.cond}) { ${captures.then} }`
+                            helpers.codeTree`if (${captures.cond}) { ${captures.then} }`
                         );
                     }
                 });

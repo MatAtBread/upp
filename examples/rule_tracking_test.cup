@@ -16,12 +16,10 @@ struct Point {
 @define testMacro() {
     // This macro generates code that contains a method call
     // The @method rule should detect and transform it
-    const code = upp.code(`
+    return upp.codeTree`
         struct Point p = {10, 20};
         int val = p.getX();
-    `);
-
-    return code.toString();
+    `;
 }
 
 int main() {

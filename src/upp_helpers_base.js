@@ -1,3 +1,5 @@
+import { SourceNode } from './source_tree.js';
+
 let uniqueIdCounter = 1;
 
 /**
@@ -49,29 +51,40 @@ class UppHelpersBase {
         let text = "";
         const nodeMap = new Map();
         const usedNodes = new Set();
+
+        const processValue = (val, index) => {
+            if (val instanceof SourceNode) {
+                if (!val.isValid) {
+                    const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
+                    console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
+                    text += val.text;
+                    return;
+                }
+                if (usedNodes.has(val)) {
+                    throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                }
+                usedNodes.add(val);
+                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                nodeMap.set(placeholder, val);
+                text += placeholder;
+            } else if (val === null || val === undefined) {
+                throw new Error(`upp.codeTree: Invalid null or undefined value at index ${index}`);
+            } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
+                let first = true;
+                for (const item of val) {
+                    if (!first) text += '\n';
+                    first = false;
+                    processValue(item, index);
+                }
+            } else {
+                text += String(val);
+            }
+        };
+
         for (let i = 0; i < strings.length; i++) {
             text += strings[i];
             if (i < values.length) {
-                const val = values[i];
-                if (val && typeof val === 'object' && val.constructor.name === 'SourceNode') {
-                    if (!val.isValid) {
-                        const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
-                        console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
-                        text += val.text;
-                        continue;
-                    }
-                    if (usedNodes.has(val)) {
-                        throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
-                    }
-                    usedNodes.add(val);
-                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
-                    nodeMap.set(placeholder, val);
-                    text += placeholder;
-                } else if (val === null || val === undefined) {
-                    throw new Error(`upp.codeTree: Invalid null or undefined value at index ${i}`);
-                } else {
-                    text += String(val);
-                }
+                processValue(values[i], i);
             }
         }
 
@@ -130,8 +143,6 @@ class UppHelpersBase {
     }
 
     replace(n, newContent) {
-        if (!n) return "";
-
         let finalContent = newContent;
         if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && this.registry.prepareSource) {
             const prepared = this.registry.prepareSource(finalContent, this.registry.originPath);
@@ -144,11 +155,7 @@ class UppHelpersBase {
             return result;
         }
 
-        // Handle range object { start, end } implementation (DEPRECATED and REMOVED)
-        if (typeof n.start === 'number' && typeof n.end === 'number') {
-            throw new Error(`Range-based replace({start, end}) is no longer supported to preserve node reference stability. Use tree-based operations like node.insertBefore(), node.insertAfter(), or helpers.replace(node, content).`);
-        }
-        return "";
+        throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
     findRoot() {

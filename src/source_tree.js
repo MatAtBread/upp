@@ -468,7 +468,7 @@ export class SourceNode {
      * @returns {SourceNode}
      */
     replaceWith(newNodeContent) {
-        const isNewObject = newNodeContent instanceof SourceNode || (newNodeContent && newNodeContent.constructor && newNodeContent.constructor.name === 'SourceTree');
+        const isNewObject = newNodeContent instanceof SourceNode || newNodeContent instanceof SourceTree;
         let newNode = newNodeContent;
         const originalText = this.text;
         const oldCaptured = this._capturedText;
@@ -709,7 +709,7 @@ export class SourceNode {
 
             migrate(newNode);
             rootNode = newNode;
-        } else if (newNode.constructor && newNode.constructor.name === 'SourceTree') {
+        } else if (newNode instanceof SourceTree) {
             rootNode = newNode.root;
             newNode.mergeInto(this.tree, insertionOffset);
         }
