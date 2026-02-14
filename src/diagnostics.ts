@@ -38,7 +38,7 @@ export class DiagnosticsManager {
      * @param {string | null} [sourceCode=null] - Optional source code for context.
      */
     reportWarning(code: string | number, message: string, filePath: string, line: number = 0, col: number = 0, sourceCode: string | null = null): void {
-        if (this.suppressed.has(code as any)) return;
+        if (this.suppressed.has(code)) return;
 
         const loc = line > 0 ? `:${line}:${col}` : '';
         console.warn(`\x1b[33m${filePath}${loc}: warning: [${code}] ${message}\x1b[0m`);

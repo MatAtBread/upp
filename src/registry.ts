@@ -36,8 +36,11 @@ export interface Invocation {
     invocationNode?: SourceNode;
 }
 
+import type { MaterializeOptions } from './types.ts';
+export type { MaterializeOptions };
+
 export interface RegistryConfig {
-    onMaterialize?: (outputPath: string, content: string, options: { isAuthoritative: boolean }) => void;
+    onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
     filePath?: string;
     stdPath?: string;
     cache?: DependencyCache;
@@ -47,8 +50,8 @@ export interface RegistryConfig {
 }
 
 export interface Marker {
-    callback: (node: SourceNode, helpers: UppHelpersC) => any;
-    data?: any;
+    callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+    data?: unknown;
 }
 
 export interface RegistryContext {
@@ -111,7 +114,7 @@ class Registry {
         this.language = lang;
 
         this.helpers = null;
-        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null as any, parentRegistry, null)) : null;
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
         this.parentTree = parentRegistry ? parentRegistry.tree! : null;
 
         this.materializedFiles = new Set();
@@ -165,7 +168,7 @@ class Registry {
         return undefined;
     }
 
-    registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: UppHelpersC) => any)): void {
+    registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined)): void {
         if (typeof rule === 'function') {
             rule = {
                 active: true,
@@ -289,7 +292,7 @@ class Registry {
             } else {
                 this.tree = new SourceTree(cleanSource, this.language);
             }
-            if (this.helpers) (this.helpers as any).root = this.tree.root; // Update helpers root
+            if (this.helpers) this.helpers.root = this.tree.root; // Update helpers root
         }
         const sourceTree = this.tree!;
 
@@ -302,7 +305,7 @@ class Registry {
         };
 
         if (!sourceTree) throw new Error("Could not create source tree for transformation.");
-        const helpers = new (this.UppHelpersC as any)(sourceTree.root, this, parentHelpers) as UppHelpersC;
+        const helpers = new this.UppHelpersC(sourceTree.root, this, parentHelpers) as UppHelpersC;
         context.helpers = helpers;
         helpers.context = context;
         helpers.root = sourceTree.root;
@@ -375,7 +378,7 @@ class Registry {
                         const isNode = result instanceof SourceNode;
                         const isArray = Array.isArray(result);
 
-                        let finalResult: any = result;
+                        let finalResult = result;
 
                         if (!isNode && !isArray) {
                             finalResult = (result === null) ? "" : String(result);
@@ -478,7 +481,7 @@ class Registry {
         }
     }
 
-    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersC, filePath: string): any {
+    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersC, filePath: string): SourceNode | SourceNode[] | SourceTree | string | null | undefined {
         const macro = this.getMacro(invocation.name);
 
         const oldInvocation = helpers.invocation;
@@ -504,10 +507,10 @@ class Registry {
             upp.invocation = { ...invocation, invocationNode };
 
             const macroFn = this.createMacroFunction(macro);
-            const args = [...invocation.args];
+            const args: (string | SourceNode)[] = [...invocation.args];
             let isTransformer = false;
             if (macro.params.length > 0 && macro.params[0] === 'node') {
-                args.unshift(contextNode as any);
+                args.unshift(contextNode);
                 isTransformer = true;
             }
 

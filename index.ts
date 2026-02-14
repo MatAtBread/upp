@@ -3,6 +3,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execSync, spawnSync } from 'child_process';
+import type { MaterializeOptions } from './src/registry.ts';
 import { Registry } from './src/registry.ts';
 import { DependencyCache } from './src/dependency_cache.ts';
 import { DiagnosticsManager } from './src/diagnostics.ts';
@@ -141,7 +142,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                 includePaths: finalIncludePaths,
                 stdPath,
                 diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p: string, content: string, options: any = {}) => {
+                onMaterialize: (p: string, content: string, options: MaterializeOptions) => {
                     if (materializations.has(p)) {
                         const existing = materializations.get(p);
                         if (existing === content) return;
@@ -197,7 +198,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             // 1. Print all materialized files
             const sortedPaths = Array.from(materializations.keys()).sort();
             for (const p of sortedPaths) {
-                const content = materializations.get(p);
+                const content = materializations.get(p)!;
                 const relPath = path.relative(process.cwd(), p);
                 console.log(`==== ${relPath} ===`);
                 console.log(content);
@@ -252,7 +253,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
             process.stdout.write(mainOutput);
             process.exit(0);
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
         console.error(`[upp] Error:`);
         console.error(e);
         process.exit(1);
@@ -295,7 +296,7 @@ if (command.sources) {
                     includePaths: finalIncludePaths,
                     stdPath,
                     diagnostics: new DiagnosticsManager({}),
-                    onMaterialize: (p: string, content: string, options: any = {}) => {
+                    onMaterialize: (p: string, content: string, options: MaterializeOptions) => {
                         if (materializations.has(p)) {
                             const existing = materializations.get(p);
                             if (existing === content) return;
@@ -390,14 +391,14 @@ if (command.sources) {
                 }
 
                 // Add resolved include paths to the FINAL compiler command so it can find generated headers
-                if (!(command as any).additionalIncludes) (command as any).additionalIncludes = [];
+                if (!command.additionalIncludes) command.additionalIncludes = [];
                 for (const inc of resolvedConfigIncludes) {
-                    (command as any).additionalIncludes.push(inc);
+                    command.additionalIncludes.push(inc);
                 }
 
             } catch (e: any) {
                 console.error(`[upp] Error processing ${source.cupFile}:`);
-                console.error(e.message);
+                console.error(e.message ?? e);
                 process.exit(1);
             }
         }
@@ -413,8 +414,8 @@ const finalArgs = (command.fullCommand || []).slice(1).map(arg => {
 });
 
 // Append additional include paths from config
-if ((command as any).additionalIncludes) {
-    for (const inc of (command as any).additionalIncludes) {
+if (command.additionalIncludes) {
+    for (const inc of command.additionalIncludes) {
         finalArgs.push('-I', inc);
     }
 }

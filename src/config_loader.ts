@@ -34,7 +34,7 @@ function deepMerge(a: any, b: any): any {
 }
 
 export interface UppConfig {
-    lang?: Record<string, any>;
+    lang?: Record<string, unknown>;
     includePaths?: string[];
     core?: string[];
     cache?: DependencyCache | null;
@@ -53,7 +53,7 @@ function loadConfig(configPath: string): UppConfig {
     if (!fs.existsSync(configPath)) return {};
 
     const configDir = path.dirname(configPath);
-    let config: any = {};
+    let config: Partial<UppConfig> = {};
     try {
         const content = fs.readFileSync(configPath, 'utf8');
         config = JSON.parse(content);

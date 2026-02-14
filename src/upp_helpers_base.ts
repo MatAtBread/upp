@@ -8,7 +8,7 @@ let uniqueIdCounter = 1;
  * @class
  */
 class UppHelpersBase {
-    public root: SourceNode;
+    public root: SourceNode | null;
     public registry: Registry;
     public _parentHelpers: UppHelpersBase | null;
     public contextNode: SourceNode | null;
@@ -34,7 +34,7 @@ class UppHelpersBase {
     get isAuthoritative(): boolean { return this.registry.isAuthoritative; }
     set isAuthoritative(v: boolean) { this.registry.isAuthoritative = v; }
 
-    constructor(root: SourceNode, registry: Registry, parentHelpers: UppHelpersBase | null = null) {
+    constructor(root: SourceNode | null, registry: Registry, parentHelpers: UppHelpersBase | null = null) {
         this.root = root;
         this.registry = registry;
         this._parentHelpers = parentHelpers;

@@ -1,4 +1,5 @@
 import type { Tree, SyntaxNode } from 'tree-sitter';
+import type { PatternMatchableNode } from './types.ts';
 
 export interface ConstraintSpec {
     type: string;
@@ -8,7 +9,7 @@ export interface ConstraintSpec {
 export type ConstraintMap = Map<string, ConstraintSpec[]>;
 
 export interface CaptureResult {
-    node?: SyntaxNode;
+    node?: PatternMatchableNode;
     [key: string]: any;
 }
 
@@ -32,12 +33,12 @@ export class PatternMatcher {
 
     /**
      * Matches a target node against a pattern string.
-     * @param {SyntaxNode} targetNode - The node to match against.
+     * @param {PatternMatchableNode} targetNode - The node to match against.
      * @param {string} patternStr - The code pattern (e.g., "int $x = 0;").
      * @param {boolean} [deep=false] - Whether to search the subtree.
      * @returns {CaptureResult | null} Captures object or null.
      */
-    match(targetNode: SyntaxNode, patternStr: string, deep: boolean = false): CaptureResult | null {
+    match(targetNode: PatternMatchableNode, patternStr: string, deep: boolean = false): CaptureResult | null {
         const { patternRoot, constraints } = this.prepare(patternStr);
         if (deep) {
             return this.findMatch(targetNode, patternRoot, constraints);
@@ -55,7 +56,7 @@ export class PatternMatcher {
      * Matches all occurrences of a pattern.
      * @returns {Array<CaptureResult>} Array of capture objects.
      */
-    matchAll(targetNode: SyntaxNode, patternStr: string, deep: boolean = false): CaptureResult[] {
+    matchAll(targetNode: PatternMatchableNode, patternStr: string, deep: boolean = false): CaptureResult[] {
         const { patternRoot, constraints } = this.prepare(patternStr);
         if (deep) {
             return this.findAllMatches(targetNode, patternRoot, constraints);
@@ -114,7 +115,7 @@ export class PatternMatcher {
     /**
      * Recursively searches for a match in the subtree.
      */
-    private findMatch(node: SyntaxNode, patternNode: SyntaxNode, constraints: ConstraintMap): CaptureResult | null {
+    private findMatch(node: PatternMatchableNode, patternNode: SyntaxNode, constraints: ConstraintMap): CaptureResult | null {
         const captures: CaptureResult = {};
         if (this.structuralMatch(node, patternNode, captures, constraints)) {
             captures.node = node;
@@ -130,7 +131,7 @@ export class PatternMatcher {
         return null;
     }
 
-    private findAllMatches(node: SyntaxNode, patternNode: SyntaxNode, constraints: ConstraintMap, results: CaptureResult[] = []): CaptureResult[] {
+    private findAllMatches(node: PatternMatchableNode, patternNode: SyntaxNode, constraints: ConstraintMap, results: CaptureResult[] = []): CaptureResult[] {
         const captures: CaptureResult = {};
         // Important: check if node matches
         if (this.structuralMatch(node, patternNode, captures, constraints)) {
@@ -155,13 +156,13 @@ export class PatternMatcher {
 
     /**
      * Compares two nodes structurally with wildcards.
-     * @param {SyntaxNode} target
+     * @param {PatternMatchableNode} target
      * @param {SyntaxNode} pattern
      * @param {CaptureResult} captures
      * @param {ConstraintMap} constraints
      * @returns {boolean}
      */
-    private structuralMatch(target: SyntaxNode, pattern: SyntaxNode, captures: CaptureResult, constraints: ConstraintMap): boolean {
+    private structuralMatch(target: PatternMatchableNode, pattern: SyntaxNode, captures: CaptureResult, constraints: ConstraintMap): boolean {
         // console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
         const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
         if (match) {
@@ -221,12 +222,12 @@ export class PatternMatcher {
         return true;
     }
 
-    private getChildren(node: SyntaxNode): SyntaxNode[] {
-        const kids: SyntaxNode[] = [];
+    private getChildren<T extends PatternMatchableNode | SyntaxNode>(node: T): T[] {
+        const kids: T[] = [];
         for (let i = 0; i < node.childCount; i++) {
             const child = node.child(i);
-            if (child && child.type !== 'comment') {
-                kids.push(child);
+            if (child && (child as any).type !== 'comment') {
+                kids.push(child as T);
             }
         }
         return kids;

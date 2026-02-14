@@ -1,5 +1,5 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
-import type { Invocation, Registry, RECURSION_LIMITER_ENABLED, TransformRule } from './registry.ts';
+import type { Invocation, Registry, TransformRule } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import { SourceNode } from './source_tree.ts';
 import Parser from 'tree-sitter';
@@ -65,18 +65,25 @@ class UppHelpersC extends UppHelpersBase {
         for (const s of srcs) {
             const matches = this.matcher.matchAll(node as any, s, deep);
             for (const m of matches) {
-                if (m.node && !seenIds.has(m.node.id)) {
-                    const matchNode = node.tree.wrap(m.node);
+                const syntaxNode = m.node as any;
+                if (syntaxNode && !seenIds.has(syntaxNode.id)) {
+                    const matchNode = node.tree.wrap(syntaxNode);
                     if (matchNode) {
                         const captures: Record<string, SourceNode> = {};
                         for (const key in m) {
                             if (key !== 'node' && m[key]) {
-                                const wrapped = node.tree.wrap(m[key]);
-                                if (wrapped) captures[key] = wrapped;
+                                const val = m[key] as any;
+                                if (val && typeof val.id !== 'undefined') {
+                                    const wrapped = node.tree.wrap(val);
+                                    if (wrapped) captures[key] = wrapped;
+                                } else {
+                                    // Keep non-node captures as is? Use caution.
+                                    captures[key] = val;
+                                }
                             }
                         }
                         allMatches.push({ node: matchNode, captures: captures });
-                        seenIds.add(m.node.id);
+                        seenIds.add(syntaxNode.id);
                     }
                 }
             }

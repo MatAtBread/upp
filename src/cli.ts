@@ -18,6 +18,7 @@ export interface CompilerCommand {
     mode?: string;
     file?: string;
     files?: string[];
+    additionalIncludes?: string[];
 }
 
 /**

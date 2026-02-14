@@ -114,7 +114,7 @@ export class SourceTree {
         if (typeof code !== 'string') {
             if (code instanceof SourceNode) return code;
             if (code instanceof SourceTree) return code.root;
-            return code as any;
+            throw new Error('SourceTree.fragment: Invalid parameter');
         }
 
         const trimmed = code.trim();
@@ -140,7 +140,7 @@ export class SourceTree {
         });
 
         let hasError = false;
-        if (typeof (tree.rootNode as any).hasError === 'function') {
+        if (typeof tree.rootNode.hasError === 'function') {
             hasError = (tree.rootNode as any).hasError();
         } else {
             hasError = tree.rootNode.toString().includes("ERROR");
@@ -243,7 +243,7 @@ export class SourceNode {
     public parent: SourceNode | null;
     public fieldName: string | null;
     public markers: Marker[];
-    public data: Record<string, any>;
+    public data: Record<string, unknown>;
     public _capturedText?: string;
     public _snapshotSearchable?: string;
 
@@ -366,7 +366,7 @@ export class SourceNode {
     /**
      * @returns {Object}
      */
-    toJSON(): any {
+    toJSON(): Object {
         return {
             id: this.id,
             type: this.type,
@@ -487,7 +487,7 @@ export class SourceNode {
      */
     replaceWith(newNodeContent: SourceNode | SourceTree | string | Array<SourceNode | string>): SourceNode | SourceNode[] | null {
         const isNewObject = newNodeContent instanceof SourceNode || newNodeContent instanceof SourceTree;
-        let newNode: any = newNodeContent;
+        let newNode = newNodeContent;
         const originalText = this.text;
         const oldCaptured = this._capturedText;
 
@@ -502,7 +502,7 @@ export class SourceNode {
 
         if (Array.isArray(newNode)) {
             // Handle array of nodes/text
-            const textParts = newNode.map(n => typeof n === 'string' ? n : (n as any).text);
+            const textParts = newNode.map(n => typeof n === 'string' ? n : n.text);
             const combinedText = textParts.join('');
             const start = this.startIndex;
             const end = this.endIndex;
@@ -530,7 +530,7 @@ export class SourceNode {
 
         const start = this.startIndex;
         const end = this.endIndex;
-        const newText = (newNode as any).text || "";
+        const newText = newNode.text || "";
 
         // Capture parent before we are detached
         const parent = this.parent;
@@ -637,7 +637,7 @@ export class SourceNode {
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment(newNode, this.tree.language);
         }
-        const text = (newNode as any).text;
+        const text = newNode.text;
 
         // Insert at END of this node
         const insertPos = this.endIndex;
