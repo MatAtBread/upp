@@ -1,0 +1,46 @@
+@define expressionType() {
+    // 1. Look-ahead: analyze the next node while it's still attached to the tree
+    const next = upp.nextNode();
+    
+    const getExprType = (n) => {
+        if (!n) return "unknown";
+        let target = n;
+        if (target.type === 'expression_statement') target = target.child(0);
+        
+        // 1. Cast expression check (highest priority as it's an explicit type declaration)
+        const cast = target.type === 'cast_expression' ? target : target.find(x => x.type === 'cast_expression')[0];
+        if (cast) {
+            const typeNode = cast.findChildByFieldName('type');
+            return typeNode ? typeNode.text : "void *";
+        }
+
+        // 2. Variable type: find the first identifier
+        const ids = (target.type === 'identifier' || target.type === 'type_identifier') ? [target] : target.find(x => x.type === 'identifier' || x.type === 'type_identifier');
+        if (ids.length > 0) {
+            try {
+                const def = upp.findDefinition(ids[0]);
+                return upp.getType(def);
+            } catch (e) {
+                // Not found, fall through to literal analysis
+            }
+        }
+
+        if (target.type === 'string_literal') return "char *";
+        if (target.type === 'char_literal') return "char";
+
+        if (target.type === 'number_literal') {
+            const text = target.text;
+            if (text.includes('.')) return "double";
+            const lower = text.toLowerCase();
+            if (lower.endsWith('ull')) return "unsigned long long";
+            if (lower.endsWith('ll')) return "long long";
+            if (lower.endsWith('ul')) return "unsigned long";
+            if (lower.endsWith('l')) return "long";
+            if (lower.endsWith('u')) return "unsigned int";
+            return "int";
+        }
+        return "unknown";
+    };
+
+    return `"${getExprType(next)}"`;
+}

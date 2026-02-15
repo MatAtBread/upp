@@ -14,9 +14,10 @@ import type { CompilerCommand, SourceInfo } from './src/cli.ts';
 const command: CompilerCommand = parseArgs(process.argv.slice(2));
 
 if (!command.isUppCommand) {
-    console.error("Usage: upp <compiler_command>");
+    console.error("Usage: upp [--transoile|--test] <compiler_command>");
     console.error("Example: upp gcc -c main.c -o main.o");
-    console.error("Support: upp --transpile <file.cup>");
+    console.error("Transpile: upp --transpile <file.cup>");
+    console.error("Test: upp --test <file.cup>");
     process.exit(1);
 }
 

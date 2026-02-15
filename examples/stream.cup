@@ -1,29 +1,116 @@
-@define typeOf(id) {
-    const node = upp.findDefinition(id);
-    const type = upp.getType(node);
-    return upp.code`"${type}"`;
-}
+@include (expressionType.hup)
 
-@define stream(name) {
-    let node = upp.consume('compound_statement');
+#include "io-lite.h"
+
+@define stream(name, len) {
+    // 1. Analyze the block BEFORE consuming it to preserve scope
+    const block = upp.nextNode('compound_statement');
+    
+    const getExprType = (n) => {
+        if (!n) return "unknown";
+        let target = n;
+        if (target.type === 'expression_statement') target = target.child(0);
+
+        // 1. Cast expression check (highest priority)
+        const cast = target.type === 'cast_expression' ? target : target.find(x => x.type === 'cast_expression')[0];
+        if (cast) {
+            const typeNode = cast.findChildByFieldName('type');
+            return typeNode ? typeNode.text : "void *";
+        }
+
+        const ids = (target.type === 'identifier' || target.type === 'type_identifier') ? [target] : target.find(x => x.type === 'identifier' || x.type === 'type_identifier');
+        if (ids.length > 0) {
+            try {
+                const def = upp.findDefinition(ids[0]);
+                return upp.getType(def);
+            } catch (e) { }
+        }
+        
+        if (target.type === 'string_literal') return "char *";
+        if (target.type === 'char_literal') return "char";
+        if (target.type === 'number_literal') {
+            const text = target.text;
+            if (text.includes('.')) return "double";
+            const lower = text.toLowerCase();
+            if (lower.endsWith('ull')) return "unsigned long long";
+            if (lower.endsWith('ll')) return "long long";
+            if (lower.endsWith('ul')) return "unsigned long";
+            if (lower.endsWith('l')) return "long";
+            if (lower.endsWith('u')) return "unsigned int";
+            return "int";
+        }
+        return "unknown";
+    };
+
+    const results = block.children.slice(1, -1).map(c => ({
+        type: getExprType(c).replaceAll(' ', '_').replaceAll('*', 'ptr'),
+        expr: c.type === 'expression_statement' ? c.child(0) : c
+    }));
+
+    upp.consume('compound_statement');
+
     return [
-        $`char ${name}[1024] = {0};\n\t`,
-        ...node.children.slice(1, -1).map(
-            c => [
-                $`strcat(${name}, ${c.children.slice(0,-1)});`,
-                '\n\t'
-            ]
-        ).flat()
+        $`char ${name}[${len}] = {0};\n\t`,
+        ...results.map(r => [
+            $`strncat_${r.type}(${name}, ${r.expr}, sizeof(${name}));`,
+            '\n\t'
+        ]).flat()
     ];
 }
 
-int main() {
-    int y;
-    @stream(x) {
-        10;
-        "abc";
-        y+3;
-        3.14;
+void strncat_char_ptr(char *dest, char *src, unsigned int size) {
+    strncat(dest, src, size);
+}
+void strncat_char(char *dest, char src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        dest[len] = src;
+        dest[len + 1] = '\0';
     }
+}
+void strncat_int(char *dest, int src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%u", src);
+    }
+}
+void strncat_long(char *dest, long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%ld", src);
+    }
+}
+void strncat_unsigned_long(char *dest, unsigned long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%lu", src);
+    }
+}
+void strncat_long_long(char *dest, long long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%lld", src);
+    }
+}
+void strncat_unsigned_long_long(char *dest, unsigned long long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%llu", src);
+    }
+}
+void strncat_double(char *dest, double src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%f", src);
+    }
+}
+
+int main() {
+    int y = 4;
+    void *p = "ABCDE";
+    @stream(x, 128) {
+        10; "abc"; y + 3; 3.14; ((char *)p) + 1; 100ULL; 'a';
+    }
+    printf("%s\n", x);
     return 0;
 }
