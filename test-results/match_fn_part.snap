@@ -1,4 +1,4 @@
-==== examples/trace.c ===
+==== examples/match_fn_part.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -14,21 +14,27 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-int my_function(int x) {
-    puts("Entering my_function\n");
-    int g = 1;;
-for (int i = 1; i < x; i++) {
-        g = g * i;
-    };
-return g;;
-} 
+int my_fn(int x, int y) {
+    int a = 5;
+    int b = 4;
+    int c = 3;
+    int d = 2;
+    return a + b * c / d;
+}
+
+int my_fn_v2(int x , int y) {
+        int a = 5; int b = 4;
+        puts("Setting c");
+        int c = 3;
+        int d = 2; return a + b * c / d;;
+    } 
 int main() {
-    printf("magic number %d\n", my_function(10));
+    int res = my_fn(5, 6);
+    printf("Result %d: %s\n", res, res == my_fn_v2(5, 6) ? "PASS" : "FAIL");
     return 0;
 }
 
 ==== RUN OUTPUT ===
-Entering my_function
-
-magic number 362880
+Setting c
+Result 11: PASS
 

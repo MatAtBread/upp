@@ -29,7 +29,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Match options.
      * @returns {any} Result of callback or captures object (or null).
      */
-    match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, SourceNode>) => any, options: { deep?: boolean } = {}): any {
+    match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, any>) => any, options: { deep?: boolean } = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -38,8 +38,19 @@ class UppHelpersC extends UppHelpersBase {
         for (const s of srcs) {
             const result = this.matcher.match(node as any, s, deep);
             if (result) {
-                if (callback) return callback(result as Record<string, SourceNode>);
-                return result;
+                const captures: Record<string, any> = {};
+                for (const key in result) {
+                    const val = result[key];
+                    if (Array.isArray(val)) {
+                        captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                    } else if (val && (val as any).id !== undefined) {
+                        captures[key] = node.tree.wrap(val as any);
+                    } else {
+                        captures[key] = val;
+                    }
+                }
+                if (callback) return callback(captures);
+                return captures;
             }
         }
         return null;
@@ -53,7 +64,7 @@ class UppHelpersC extends UppHelpersBase {
      * @param {any} [options] - Options.
      * @returns {any[]} Matches.
      */
-    matchAll(node: SourceNode, src: string | string[], callback?: (match: { node: SourceNode, captures: Record<string, SourceNode> }) => any, options: { deep?: boolean } = {}): any[] {
+    matchAll(node: SourceNode, src: string | string[], callback?: (match: { node: SourceNode, captures: Record<string, any> }) => any, options: { deep?: boolean } = {}): any[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -69,15 +80,16 @@ class UppHelpersC extends UppHelpersBase {
                 if (syntaxNode && !seenIds.has(syntaxNode.id)) {
                     const matchNode = node.tree.wrap(syntaxNode);
                     if (matchNode) {
-                        const captures: Record<string, SourceNode> = {};
+                        const captures: Record<string, any> = {};
                         for (const key in m) {
                             if (key !== 'node' && m[key]) {
                                 const val = m[key] as any;
-                                if (val && typeof val.id !== 'undefined') {
+                                if (Array.isArray(val)) {
+                                    captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                                } else if (val && typeof val.id !== 'undefined') {
                                     const wrapped = node.tree.wrap(val);
                                     if (wrapped) captures[key] = wrapped;
                                 } else {
-                                    // Keep non-node captures as is? Use caution.
                                     captures[key] = val;
                                 }
                             }
@@ -90,7 +102,7 @@ class UppHelpersC extends UppHelpersBase {
         }
 
         if (callback) {
-            return allMatches.map(m => callback(m as { node: SourceNode, captures: Record<string, SourceNode> }));
+            return allMatches.map(m => callback(m as { node: SourceNode, captures: Record<string, any> }));
         }
         return allMatches;
     }
@@ -595,6 +607,30 @@ class UppHelpersC extends UppHelpersBase {
         });
     }
 
+    /**
+     * Determines how an array should be expanded based on its C/UPP parent context.
+     * @param {any[]} values The values to expand.
+     * @param {string} parentType The tree-sitter node type of the parent.
+     * @returns {any[]} The expanded list of nodes/text.
+     */
+    protected override getArrayExpansion(values: any[], parentType: string): any[] {
+        const result: any[] = [];
+        const isStatementBlock = parentType === 'compound_statement' || parentType === 'translation_unit';
+        const isList = parentType === 'parameter_list' || parentType === 'argument_list' || parentType === 'initializer_list';
+
+        let first = true;
+        for (const val of values) {
+            if (!first) {
+                if (isStatementBlock) result.push('\n');
+                else if (isList) result.push(', ');
+                else result.push(' ');
+            }
+            first = false;
+            result.push(val);
+            if (isStatementBlock) result.push(';');
+        }
+        return result;
+    }
 }
 
 export { UppHelpersC };
