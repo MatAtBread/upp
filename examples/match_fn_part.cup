@@ -1,0 +1,29 @@
+#include "io-lite.h"
+
+@define xxx() {
+    const fn = upp.consume('function_definition');
+    return [
+        fn.text+"\n\n",
+        upp.match(fn, '$returnType $name($params__until) { $body__until; int c = $cVal; $next__until; }', 
+    ({ returnType, name, params, body, next, cVal }) => upp.code`
+    ${returnType} ${name.text}_v2(${params}) {
+        ${body}
+        puts("Setting c");
+        int c = ${cVal};
+        ${next};
+    }`)];
+}
+
+@xxx int my_fn(int x, int y) {
+    int a = 5;
+    int b = 4;
+    int c = 3;
+    int d = 2;
+    return a + b * c / d;
+}
+
+int main() {
+    int res = my_fn(5, 6);
+    printf("Result %d: %s\n", res, res == my_fn_v2(5, 6) ? "PASS" : "FAIL");
+    return 0; 
+}
