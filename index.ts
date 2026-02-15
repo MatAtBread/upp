@@ -31,8 +31,11 @@ function preprocess(filePath: string, extraFlags: string[] = []): string {
     const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
         const cmd = `${compiler} ${flags} "${filePath}"`;
-        return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
-    } catch (e) {
+        return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (e: any) {
+        if (e.stderr) {
+            console.error(e.stderr.toString());
+        }
         process.exit(1);
         throw e; // Unreachable but for types
     }

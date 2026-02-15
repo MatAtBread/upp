@@ -7,10 +7,13 @@
 @define stream(name) {
     let node = upp.consume('compound_statement');
     return [
-        $`char ${name}[1024] = {0};\n`,
+        $`char ${name}[1024] = {0};\n\t`,
         ...node.children.slice(1, -1).map(
-            c => $`strcat(${name}, ${c.children.slice(0,-1)});\n`
-        )
+            c => [
+                $`strcat(${name}, ${c.children.slice(0,-1)});`,
+                '\n\t'
+            ]
+        ).flat()
     ];
 }
 

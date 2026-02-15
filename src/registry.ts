@@ -156,7 +156,28 @@ class Registry {
     }
 
     registerMacro(name: string, params: string[], body: string, language: string = 'js', origin: string = 'unknown', startIndex: number = 0): void {
-        this.macros.set(name, { name, params, body, language, origin, startIndex });
+        const macro = { name, params, body, language, origin, startIndex };
+
+        // Eagerly validate JavaScript macros
+        if (language === 'js') {
+            try {
+                this.createMacroFunction(macro);
+            } catch (e: any) {
+                const lines = body.split('\n');
+                const lineCount = lines.length;
+                this.diagnostics.reportError(
+                    'UPP003',
+                    `Syntax error in @${name} macro definition: ${e.message}`,
+                    origin,
+                    (this.source?.slice(0, startIndex).match(/\n/g) || []).length + 1,
+                    startIndex - (this.source?.lastIndexOf('\n', startIndex) ?? 0),
+                    this.source || null,
+                    false // Don't exit yet, let it be reported
+                );
+            }
+        }
+
+        this.macros.set(name, macro);
         if (this.parentRegistry) {
             this.parentRegistry.registerMacro(name, params, body, language, origin, startIndex);
         }
@@ -548,9 +569,13 @@ class Registry {
 
         try {
             return new Function('upp', 'console', '$', ...macro.params, finalBody);
-        } catch (e) {
-            console.log("SYNTAX ERROR IN MACRO", macro.name);
-            console.log("FINAL BODY:\n", finalBody);
+        } catch (e: any) {
+            console.error(`\n[upp] Syntax error in definition of @${macro.name}:`);
+            console.error(e.message);
+            console.error("\nMacro body:");
+            console.error("--------------------------------------------------------------------------------");
+            console.error(finalBody);
+            console.error("--------------------------------------------------------------------------------\n");
             throw e;
         }
     }
