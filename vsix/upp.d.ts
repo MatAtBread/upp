@@ -395,6 +395,13 @@ export class UppHelpersBase {
 	set isAuthoritative(v: boolean);
 	constructor(root: SourceNode | null, registry: Registry, parentHelpers?: UppHelpersBase | null);
 	code(strings: TemplateStringsArray, ...values: any[]): SourceNode;
+	/**
+	 * Determines how an array should be expanded based on its parent context.
+	 * @param {any[]} values The values to expand.
+	 * @param {string} parentType The tree-sitter node type of the parent.
+	 * @returns {any[]} The expanded list of nodes/text.
+	 */
+	protected getArrayExpansion(values: any[], parentType: string): any[];
 	atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
 	withScope(callback: (scope: SourceNode, helpers: UppHelpersBase) => any): string;
 	withRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
@@ -499,6 +506,7 @@ export class PatternMatcher {
 	 * @returns {boolean}
 	 */
 	private structuralMatch;
+	private getWildcard;
 	private getChildren;
 	/**
 	 * Pre-processes pattern string to extract constraints.
@@ -530,7 +538,7 @@ export class UppHelpersC extends UppHelpersBase {
 	 * @param {any} [options] - Match options.
 	 * @returns {any} Result of callback or captures object (or null).
 	 */
-	match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, SourceNode>) => any, options?: {
+	match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, any>) => any, options?: {
 		deep?: boolean;
 	}): any;
 	/**
@@ -543,7 +551,7 @@ export class UppHelpersC extends UppHelpersBase {
 	 */
 	matchAll(node: SourceNode, src: string | string[], callback?: (match: {
 		node: SourceNode;
-		captures: Record<string, SourceNode>;
+		captures: Record<string, any>;
 	}) => any, options?: {
 		deep?: boolean;
 	}): any[];
@@ -663,6 +671,13 @@ export class UppHelpersC extends UppHelpersBase {
 	 * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
 	 */
 	withMatch(scope: SourceNode, pattern: string, callback: (captures: Record<string, SourceNode>, helpers: UppHelpersC) => string | null | undefined): void;
+	/**
+	 * Determines how an array should be expanded based on its C/UPP parent context.
+	 * @param {any[]} values The values to expand.
+	 * @param {string} parentType The tree-sitter node type of the parent.
+	 * @returns {any[]} The expanded list of nodes/text.
+	 */
+	protected getArrayExpansion(values: any[], parentType: string): any[];
 }
 
 
