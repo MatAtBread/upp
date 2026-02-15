@@ -27,11 +27,12 @@ const stdPath = path.join(projectRoot, 'std');
 const cache = new DependencyCache();
 let extraDeps: string[] = []; // Collected from -M flags during preprocessing
 
-function preprocess(filePath: string, extraFlags: string[] = []): string {
+function preprocess(filePath: string, extraFlags: string[] = [], includePaths: string[] = []): string {
     const compiler = command.compiler || 'cc';
+    const iFlags = includePaths.map(p => `-I"${p}"`).join(' ');
     const flags = [...extraFlags, '-E', '-P', '-C', '-x', 'c'].join(' ');
     try {
-        const cmd = `${compiler} ${flags} "${filePath}"`;
+        const cmd = `${compiler} ${flags} ${iFlags} "${filePath}"`;
         return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (e: any) {
         if (e.stderr) {
@@ -45,15 +46,18 @@ function preprocess(filePath: string, extraFlags: string[] = []): string {
 // Helper for core transpilation of a single file
 function transpileOne(sourceFile: string, outputCFile: string | null = null): string {
     const absSource = path.resolve(sourceFile);
-    const preProcessed = preprocess(absSource, command.depFlags || []);
     const loadedConfig = resolveConfig(absSource);
 
     const resolvedConfigIncludes = loadedConfig.includePaths || [];
     const finalIncludePaths = [
         path.dirname(absSource),
         ...resolvedConfigIncludes,
-        ...(command.includePaths || [])
+        ...(command.includePaths || []),
+        stdPath,
+        projectRoot
     ];
+
+    const preProcessed = preprocess(absSource, command.depFlags || [], finalIncludePaths);
 
     const config = {
         cache,
@@ -61,8 +65,7 @@ function transpileOne(sourceFile: string, outputCFile: string | null = null): st
         stdPath: path.join(path.dirname(new URL(import.meta.url).pathname), 'std'),
         diagnostics: new DiagnosticsManager({}),
         preprocess: (file: string) => {
-            // ... same logic as below but simplified or shared ...
-            return preprocess(file);
+            return preprocess(file, [], config.includePaths);
         }
     };
     const registry = new Registry(config);
@@ -120,7 +123,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
 
         if (command.mode === 'ast') {
             const absSource = path.resolve(expandedFiles[0]);
-            const preProcessed = preprocess(absSource, command.depFlags || []);
+            const preProcessed = preprocess(absSource, command.depFlags || [], command.includePaths || []);
             const registry = new Registry({ diagnostics: new DiagnosticsManager({}) });
             const tree = registry.parser.parse(preProcessed);
             console.log(tree.rootNode.toString());
@@ -130,7 +133,6 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
         let mainOutput = "";
 
         for (const absSource of expandedFiles) {
-            const preProcessed = preprocess(absSource, command.depFlags || []);
             const loadedConfig = resolveConfig(absSource);
             const resolvedConfigIncludes = loadedConfig.includePaths || [];
             const finalIncludePaths = [
@@ -140,6 +142,8 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                 stdPath,
                 projectRoot // So #include "std/package.h" works
             ];
+
+            const preProcessed = preprocess(absSource, command.depFlags || [], finalIncludePaths);
 
             const config = {
                 cache,
@@ -170,7 +174,7 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
                     materializations.set(p, content);
                     if (options.isAuthoritative) authoritativeMaterials.add(p);
                 },
-                preprocess: (file: string) => preprocess(file)
+                preprocess: (file: string) => preprocess(file, [], finalIncludePaths)
             };
 
             const registry = new Registry(config);
@@ -276,9 +280,6 @@ if (command.sources) {
         extraDeps = []; // Reset for each source
         if (fs.existsSync(source.absCupFile)) {
             try {
-                // Run Pre-processor on main input with Main Dep Flags
-                const preProcessed = preprocess(source.cupFile, command.depFlags);
-
                 // Resolve config (Search up tree for upp.json, supports extends and UPP fallback)
                 const loadedConfig = resolveConfig(source.absCupFile);
 
@@ -294,6 +295,9 @@ if (command.sources) {
                     stdPath,
                     projectRoot
                 ];
+
+                // Run Pre-processor on main input with Main Dep Flags
+                const preProcessed = preprocess(source.cupFile, command.depFlags, finalIncludePaths);
 
                 const config = {
                     cache,
@@ -341,7 +345,7 @@ if (command.sources) {
                                 throw e;
                             }
                         }
-                        return preprocess(file);
+                        return preprocess(file, [], finalIncludePaths);
                     }
                 };
                 const registry = new Registry(config);

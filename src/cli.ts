@@ -33,27 +33,40 @@ export function parseArgs(args: string[]): CompilerCommand {
     }
 
     if (args[0] === '--transpile' || args[0] === '--translate' || args[0] === '-T' || args[0] === '--ast' || args[0] === '--test' || args[0] === '-t') {
-        const fileArgs = args.slice(1).filter(a => !a.startsWith('-'));
-        if (fileArgs.length === 0) {
+        const includePaths: string[] = [];
+        const files: string[] = [];
+
+        for (let i = 1; i < args.length; i++) {
+            const arg = args[i];
+            if (arg === '-I') {
+                if (i + 1 < args.length) {
+                    includePaths.push(path.resolve(args[++i]));
+                }
+            } else if (arg.startsWith('-I')) {
+                includePaths.push(path.resolve(arg.slice(2)));
+            } else if (!arg.startsWith('-')) {
+                files.push(path.resolve(arg));
+            }
+        }
+
+        if (files.length === 0) {
             console.error(`Error: ${args[0]} requires at least one file or directory argument.`);
             process.exit(1);
         }
+
         let mode = 'transpile';
         if (args[0] === '--ast') mode = 'ast';
         else if (args[0] === '--test' || args[0] === '-t') mode = 'test';
 
-        // Support multiple files/directories
-        const files = fileArgs.map(f => path.resolve(f));
-
         return {
             mode,
-            file: files[0], // Keep for backward compatibility if needed
+            file: files[0],
             files,
             isUppCommand: true,
             fullCommand: args,
             compiler: 'cc',
             sources: [],
-            includePaths: [],
+            includePaths: includePaths,
             depFlags: []
         };
     }

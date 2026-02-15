@@ -80,7 +80,7 @@ export function activate(context: vscode.ExtensionContext) {
 
                 return new Promise((resolve) => {
                     // Strategy 1: Use 'upp' from PATH if available and no custom path is set
-                    const cmd = customPath ? `node "${path.join(customPath, 'index.js')}" --transpile "${tempPath}"` : `upp --transpile "${tempPath}"`;
+                    const cmd = customPath ? `node "${path.join(customPath, 'index.js')}" --transpile "${tempPath}" -I "${path.dirname(originalPath)}"` : `upp --transpile "${tempPath}" -I "${path.dirname(originalPath)}"`;
 
                     exec(cmd, { cwd: path.dirname(originalPath) }, (err, stdout, stderr) => {
                         // If Strategy 1 fails (upp not in path) and we didn't have a custom path, try auto-detection
@@ -141,7 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
             const indexScript = path.join(rootPath, hasJs ? 'index.js' : 'index.ts');
             const nodeArgs = hasJs ? '' : '--experimental-strip-types';
 
-            exec(`node ${nodeArgs} "${indexScript}" --transpile "${tempPath}"`, { cwd: rootPath }, (err, stdout, stderr) => {
+            exec(`node ${nodeArgs} "${indexScript}" --transpile "${tempPath}" -I "${path.dirname(originalPath)}"`, { cwd: rootPath }, (err, stdout, stderr) => {
                 if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 
                 let result = stdout.trim();

@@ -101,7 +101,7 @@ function activate(context) {
                 fs.writeFileSync(tempPath, doc.getText());
                 return new Promise((resolve) => {
                     // Strategy 1: Use 'upp' from PATH if available and no custom path is set
-                    const cmd = customPath ? `node "${path.join(customPath, 'index.js')}" --transpile "${tempPath}"` : `upp --transpile "${tempPath}"`;
+                    const cmd = customPath ? `node "${path.join(customPath, 'index.js')}" --transpile "${tempPath}" -I "${path.dirname(originalPath)}"` : `upp --transpile "${tempPath}" -I "${path.dirname(originalPath)}"`;
                     (0, child_process_1.exec)(cmd, { cwd: path.dirname(originalPath) }, (err, stdout, stderr) => {
                         // If Strategy 1 fails (upp not in path) and we didn't have a custom path, try auto-detection
                         if (err && !customPath) {
@@ -160,7 +160,7 @@ function activate(context) {
             const hasJs = fs.existsSync(path.join(rootPath, 'index.js'));
             const indexScript = path.join(rootPath, hasJs ? 'index.js' : 'index.ts');
             const nodeArgs = hasJs ? '' : '--experimental-strip-types';
-            (0, child_process_1.exec)(`node ${nodeArgs} "${indexScript}" --transpile "${tempPath}"`, { cwd: rootPath }, (err, stdout, stderr) => {
+            (0, child_process_1.exec)(`node ${nodeArgs} "${indexScript}" --transpile "${tempPath}" -I "${path.dirname(originalPath)}"`, { cwd: rootPath }, (err, stdout, stderr) => {
                 if (fs.existsSync(tempPath))
                     fs.unlinkSync(tempPath);
                 let result = stdout.trim();
