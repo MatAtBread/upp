@@ -106,7 +106,22 @@ class UppHelpersBase {
             const keys = Array.from(pMap.keys());
             for (const placeholder of keys) {
                 let placeholderNodes = fragment.find((n: SourceNode) => n.text === placeholder);
-                if (placeholderNodes.length === 0) continue;
+                if (placeholderNodes.length === 0) {
+                    // Fallback: search for mangled placeholders (inside other tokens or comments)
+                    const mangledNodes = fragment.find((n: SourceNode) => n.text.indexOf(placeholder) !== -1);
+                    if (mangledNodes.length > 0) {
+                        const originalValue = pMap.get(placeholder);
+                        const replacementText = Array.isArray(originalValue)
+                            ? originalValue.map(v => (v instanceof SourceNode ? v.text : String(v))).join('')
+                            : (originalValue instanceof SourceNode ? originalValue.text : String(originalValue));
+
+                        for (const mNode of mangledNodes) {
+                            if (!mNode.isValid) continue;
+                            mNode.text = mNode.text.split(placeholder).join(replacementText);
+                        }
+                    }
+                    continue;
+                }
 
                 // Filter to only leaf-most nodes matching the placeholder to avoid redundant replacements
                 // (e.g. if a declaration only contains the placeholder, both the declaration and identifier match)

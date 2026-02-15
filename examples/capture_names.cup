@@ -1,0 +1,19 @@
+@define xxx() {
+    const fn = upp.consume('function_definition');
+    return upp.match(fn, '$returnType $name($params__until) { $body__until; }', 
+    ({ returnType, name, params, body }) => upp.code`
+    ${returnType} ${name}_v2(${params}) {
+        ${body}
+    }`);
+}
+
+#include "io-lite.h"
+
+@xxx int my_fn(int x, int y) {
+    return 123;
+}
+
+int main() {
+    printf("%d\n", my_fn_v2(1, 2)); 
+    return 0;
+}
