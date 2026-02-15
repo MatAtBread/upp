@@ -27,7 +27,7 @@
     const varName = varNode.text;
     const body = bodyNode.text;
 
-    return upp.codeTree`
+    return upp.code`
     for (int _i = 0; _i < sizeof(${arrayName})/sizeof(${arrayName}[0]); _i++) {
         int ${varName} = ${arrayName}[_i];
         ${body}

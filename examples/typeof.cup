@@ -7,7 +7,7 @@ struct x {
 @define typeOf(id) {
     const node = upp.findDefinition(id);
     const type = upp.getType(node);
-    return upp.codeTree`"${type}"`;
+    return upp.code`"${type}"`;
 }
 
 struct x myX = { 0 };

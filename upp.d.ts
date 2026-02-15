@@ -386,12 +386,12 @@ declare class UppHelpersBase {
 	get isAuthoritative(): boolean;
 	set isAuthoritative(v: boolean);
 	constructor(root: SourceNode | null, registry: Registry, parentHelpers?: UppHelpersBase | null);
-	codeTree(strings: TemplateStringsArray, ...values: any[]): SourceNode;
+	code(strings: TemplateStringsArray, ...values: any[]): SourceNode;
 	atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
 	withScope(callback: (scope: SourceNode, helpers: UppHelpersBase) => any): string;
 	withRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
 	/**
-	 * @deprecated Use codeTree or withPattern instead.
+	 * @deprecated Use code or withPattern instead.
 	 */
 	registerTransform(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
 	registerTransformRule(rule: any): void;
@@ -657,4 +657,4 @@ export declare class UppHelpersC extends UppHelpersBase {
 	withMatch(scope: SourceNode, pattern: string, callback: (captures: Record<string, SourceNode>, helpers: UppHelpersC) => string | null | undefined): void;
 }
 
-export {};
+export { };

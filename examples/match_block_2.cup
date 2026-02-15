@@ -1,7 +1,7 @@
 @define transform_if() {
     upp.withMatch(upp.root, "if ($cond) $then;", ({ cond, then }) => {
         if (then.type !== 'compound_statement') {
-            return upp.codeTree`if (${cond}) { ${then} }`;
+            return upp.code`if (${cond}) { ${then} }`;
         }
     });
 }

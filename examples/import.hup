@@ -26,5 +26,5 @@
     }
 
     upp.withMatch(upp.root, `${nameSpace}.$field`, ({field}) => field);
-    return upp.codeTree`\n#include ${literal.text}`;
+    return upp.code`\n#include ${literal.text}`;
 }

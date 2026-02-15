@@ -2,7 +2,7 @@
     const evenBlock = upp.consume('compound_statement', "@map requires an even { block }");
     const oddBlock = upp.consume('compound_statement', "@map requires an odd { block }");
 
-    return upp.codeTree`
+    return upp.code`
     for (int _i = 0; _i < sizeof(${arrayName})/sizeof(${arrayName}[0]); _i++) {
         int ${varName} = ${arrayName}[_i];
         if (_i % 2 == 0) {

@@ -6,7 +6,7 @@
     const body = fnNode.childForFieldName('body');
 
     if (body) {
-        return upp.codeTree`${returnType} ${name}${params} {
+        return upp.code`${returnType} ${name}${params} {
     puts("Entering ${name}\\n");
     ${body.children.slice(1, -1)}
 }`;

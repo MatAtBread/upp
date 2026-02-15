@@ -1,0 +1,40 @@
+==== examples/stream_2.c ===
+
+int main() {
+    int y;
+    char x[1024] = {0}; 
+strcat(x, 10); 
+strcat(x, "abc"); 
+strcat(x, y+3); 
+strcat(x, 3.14); 
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/stream_2.c:4:24: warning: treating Unicode character as whitespace [-Wunicode-whitespace]
+    4 |     char x[1024] = {0}; 
+      |                        ^
+./examples/stream_2.c:5:1: error: call to undeclared library function 'strcat' with type 'char *(char *, const char *)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    5 | strcat(x, 10); 
+      | ^
+./examples/stream_2.c:5:1: note: include the header <string.h> or explicitly provide a declaration for 'strcat'
+./examples/stream_2.c:5:11: error: incompatible integer to pointer conversion passing 'int' to parameter of type 'const char *' [-Wint-conversion]
+    5 | strcat(x, 10); 
+      |           ^~
+./examples/stream_2.c:5:15: warning: treating Unicode character as whitespace [-Wunicode-whitespace]
+    5 | strcat(x, 10); 
+      |               ^
+./examples/stream_2.c:6:18: warning: treating Unicode character as whitespace [-Wunicode-whitespace]
+    6 | strcat(x, "abc"); 
+      |                  ^
+./examples/stream_2.c:7:11: error: incompatible integer to pointer conversion passing 'int' to parameter of type 'const char *' [-Wint-conversion]
+    7 | strcat(x, y+3); 
+      |           ^~~
+./examples/stream_2.c:7:16: warning: treating Unicode character as whitespace [-Wunicode-whitespace]
+    7 | strcat(x, y+3); 
+      |                ^
+./examples/stream_2.c:8:11: error: passing 'double' to parameter of incompatible type 'const char *'
+    8 | strcat(x, 3.14); 
+      |           ^~~~
+4 warnings and 4 errors generated.
+

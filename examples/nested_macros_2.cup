@@ -5,7 +5,7 @@ int expanded_inner;
 }
 
 @define outer() {
-    return upp.codeTree`@inner`;
+    return upp.code`@inner`;
 }
 
 int main() {

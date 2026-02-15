@@ -7,7 +7,7 @@
         upp.error(node, "@task must be applied to a function call");
     }
     const name = call.childForFieldName('function').text;
-    return upp.codeTree`os_start(${name});`;
+    return upp.code`os_start(${name});`;
 }
 
 void hello() {

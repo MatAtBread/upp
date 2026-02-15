@@ -1,0 +1,28 @@
+@define stream(name) {
+    let node = upp.consume('expression_statement');
+    if (node.child(0).type != 'binary_expression')
+        return upp.error("Expected binary expression");
+
+    let left;
+    let values = [];
+    node = node.child(0);
+    while (node?.type == 'binary_expression' && node.child(1).text == "<<") {
+        left = node.named.left;
+        values.unshift(node.named.right);
+        node = node.named.left;
+    }
+    values.unshift(left);
+    return [
+        upp.code`char ${name}[1024] = {0};`,
+        ...values.map(v => upp.code`\xA0\nstrcat(${name}, ${v});`)
+    ];
+}
+
+int main() {
+    int y;
+    @stream(x) 10 
+    << "abc" 
+    << y+3 
+    << 3.14;
+    return 0;
+}

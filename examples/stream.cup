@@ -1,0 +1,26 @@
+@define typeOf(id) {
+    const node = upp.findDefinition(id);
+    const type = upp.getType(node);
+    return upp.code`"${type}"`;
+}
+
+@define stream(name) {
+    let node = upp.consume('compound_statement');
+    return [
+        $`char ${name}[1024] = {0};\n`,
+        ...node.children.slice(1, -1).map(
+            c => $`strcat(${name}, ${c.children.slice(0,-1)});\n`
+        )
+    ];
+}
+
+int main() {
+    int y;
+    @stream(x) {
+        10;
+        "abc";
+        y+3;
+        3.14;
+    }
+    return 0;
+}

@@ -176,7 +176,7 @@ export class SourceTree {
         const body = funcDef.children.find(c => c.type === 'compound_statement');
         if (!body) throw new Error("Failed to parse wrapped fragment body.");
 
-        const innerNodes = body.children.filter(c => c.type !== '{' && c.type !== '}' && c.text.length > 0);
+        const innerNodes = body.children.slice(1, -1);
 
         if (innerNodes.length === 0) {
             return new SourceTree("", language).root;

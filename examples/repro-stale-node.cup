@@ -11,7 +11,7 @@
 
     // Now we try to use the 'identifier' node which belonged to the old 'node'.
     // In a mature system, this should warn that 'identifier' is stale.
-    return upp.codeTree`
+    return upp.code`
         // Using stale identifier: ${identifier}
         int another_var = 456;
     `;

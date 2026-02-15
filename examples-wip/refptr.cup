@@ -160,7 +160,7 @@ extern void free(void * ptr);
                   RefPtr_${typeSuffix}: _copy_${typeSuffix})(${valText})`);
               }
             }
-            declaration.insertAfter(helpers.codeTree` @defer { _release_${typeSuffix}(${varName}); }`);
+            declaration.insertAfter(helpers.code` @defer { _release_${typeSuffix}(${varName}); }`);
           }
         }
         return undefined;
@@ -179,7 +179,7 @@ extern void free(void * ptr);
         const varName = left.text;
         const typeSuffix = upp.registry.state.refPtrVars.get(varName);
         if (helpers.findEnclosing(assign, 'parenthesized_expression')?.text.includes(`_assign_`)) return undefined;
-        return helpers.codeTree`_Generic((${right.text}),
+        return helpers.code`_Generic((${right.text}),
             struct ${typeSuffix} *: _assign_wrap_${typeSuffix},
             void *: _assign_wrap_${typeSuffix},
             RefPtr_${typeSuffix}: _assign_copy_${typeSuffix})(&${varName}, ${right.text})`;
@@ -194,7 +194,7 @@ extern void free(void * ptr);
       },
       (fieldExpr, helpers) => {
         const arg = fieldExpr.childForFieldName('argument');
-        return helpers.codeTree`${arg.text}.ptr`;
+        return helpers.code`${arg.text}.ptr`;
       }
     );
 
@@ -207,7 +207,7 @@ extern void free(void * ptr);
       },
       (ptrExpr, helpers) => {
         const arg = ptrExpr.childForFieldName('argument');
-        return helpers.codeTree`${arg.text}.ptr`;
+        return helpers.code`${arg.text}.ptr`;
       }
     );
 

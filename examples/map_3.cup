@@ -6,7 +6,7 @@
         upp.error(upp.peek(), "@map requires an even { block } and an odd { block }");
     }
 
-    return upp.codeTree`
+    return upp.code`
     for (int _i = 0; _i < sizeof(${arrayName})/sizeof(${arrayName}[0]); _i++) {
         int ${varName} = ${arrayName}[_i];
         if (_i % 2 == 0) {

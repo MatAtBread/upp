@@ -50,10 +50,10 @@ class UppHelpersBase {
     }
 
 
-    codeTree(strings: TemplateStringsArray, ...values: any[]): SourceNode {
+    code(strings: TemplateStringsArray, ...values: any[]): SourceNode {
         let text = "";
         const nodeMap = new Map<string, SourceNode>();
-        const usedNodes = new Set<SourceNode>();
+        const usedNodes = new Map<SourceNode, string>();
 
         const processValue = (val: any, index: number) => {
             if (val instanceof SourceNode) {
@@ -64,14 +64,19 @@ class UppHelpersBase {
                     return;
                 }
                 if (usedNodes.has(val)) {
-                    throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                    // If we've already used this node, reuse the placeholder
+                    // so the same node reference is used multiple times
+                    // Note: this turns the tree into a cyclic graph
+                    const placeholder = usedNodes.get(val);
+                    text += placeholder;
+                } else {
+                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                    usedNodes.set(val, placeholder);
+                    nodeMap.set(placeholder, val);
+                    text += placeholder;
                 }
-                usedNodes.add(val);
-                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
-                nodeMap.set(placeholder, val);
-                text += placeholder;
             } else if (val === null || val === undefined) {
-                throw new Error(`upp.codeTree: Invalid null or undefined value at index ${index}`);
+                throw new Error(`upp.code: Invalid null or undefined value at index ${index}`);
             } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
                 let first = true;
                 for (const item of val) {
@@ -92,12 +97,12 @@ class UppHelpersBase {
         }
 
         const prepared = (this.registry as any).prepareSource(text, (this.registry as any).originPath);
-        const cleanText = prepared.cleanSource;
+        let cleanText = prepared.cleanSource;
 
         const SourceTree: any = this.registry.tree!.constructor;
         const fragment = SourceTree.fragment(cleanText, this.registry.language);
         if (!fragment) {
-            throw new Error("upp.codeTree: Failed to parse code fragment");
+            throw new Error("upp.code: Failed to parse code fragment");
         }
 
         // Walk and replace placeholders with actual nodes
@@ -106,7 +111,7 @@ class UppHelpersBase {
             const placeholderNodes = fragment.find((n: SourceNode) => n.text === placeholder);
             if (placeholderNodes.length === 0) {
                 // This might happen if the placeholder was somehow mangled or in a comment (though unlikely with our naming)
-                throw new Error(`upp.codeTree: Placeholder ${placeholder} not found in parsed fragment`);
+                throw new Error(`upp.code: Placeholder ${placeholder} not found in parsed fragment`);
             }
 
             const originalNode = nodeMap.get(placeholder)!;
@@ -138,7 +143,7 @@ class UppHelpersBase {
     }
 
     /**
-     * @deprecated Use codeTree or withPattern instead.
+     * @deprecated Use code or withPattern instead.
      */
     registerTransform(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
         return this.atRoot(callback);

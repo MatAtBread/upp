@@ -1,7 +1,7 @@
 #include "io-lite.h"
 
 @define join(...items) {
-    return upp.codeTree`"${items.join('')}"`;
+    return upp.code`"${items.join('')}"`;
 }
 
 

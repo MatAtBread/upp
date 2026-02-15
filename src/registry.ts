@@ -522,7 +522,7 @@ class Registry {
                 throw new Error(`@${invocation.name} expected at least ${macro.params.length - 1} arguments, found ${invocation.args.length}`);
             }
 
-            return macroFn(upp, console, ...args);
+            return macroFn(upp, console, upp.code.bind(upp), ...args);
         } catch (err: any) {
             // console.error(`Macro @${invocation.name} failed:`, err);
             this.diagnostics.reportError(0, `Macro @${invocation.name} failed: ${err.message}`, filePath, invocation.line || 1, invocation.col || 1, source);
@@ -547,7 +547,7 @@ class Registry {
         const finalBody = shouldWrap && !body.includes(';') && !body.includes('\n') ? `return (${body})` : body;
 
         try {
-            return new Function('upp', 'console', ...macro.params, finalBody);
+            return new Function('upp', 'console', '$', ...macro.params, finalBody);
         } catch (e) {
             console.log("SYNTAX ERROR IN MACRO", macro.name);
             console.log("FINAL BODY:\n", finalBody);

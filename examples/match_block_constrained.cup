@@ -4,7 +4,7 @@
         // Replace with: if ($cond) { $then } (enforce braces)
         // Loop deep match
         helpers.matchReplace(root, "if ($cond) $then__NOT_compound_statement;",
-            ({ cond, then }) => helpers.codeTree`if (${cond}) { ${then} }`,
+            ({ cond, then }) => helpers.code`if (${cond}) { ${then} }`,
             { deep: true });
     });
 }

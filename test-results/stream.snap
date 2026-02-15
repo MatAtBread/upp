@@ -1,0 +1,26 @@
+==== examples/stream.c ===
+
+
+int main() {
+    int y;
+    char x[1024] = {0};
+strcat(x, 10);strcat(x, "abc");strcat(x, y+3);strcat(x, 3.14); 
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/stream.c:6:1: error: call to undeclared library function 'strcat' with type 'char *(char *, const char *)'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    6 | strcat(x, 10);strcat(x, "abc");strcat(x, y+3);strcat(x, 3.14); 
+      | ^
+./examples/stream.c:6:1: note: include the header <string.h> or explicitly provide a declaration for 'strcat'
+./examples/stream.c:6:11: error: incompatible integer to pointer conversion passing 'int' to parameter of type 'const char *' [-Wint-conversion]
+    6 | strcat(x, 10);strcat(x, "abc");strcat(x, y+3);strcat(x, 3.14); 
+      |           ^~
+./examples/stream.c:6:42: error: incompatible integer to pointer conversion passing 'int' to parameter of type 'const char *' [-Wint-conversion]
+    6 | strcat(x, 10);strcat(x, "abc");strcat(x, y+3);strcat(x, 3.14); 
+      |                                          ^~~
+./examples/stream.c:6:57: error: passing 'double' to parameter of incompatible type 'const char *'
+    6 | strcat(x, 10);strcat(x, "abc");strcat(x, y+3);strcat(x, 3.14); 
+      |                                                         ^~~~
+4 errors generated.
+
