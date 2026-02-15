@@ -53,6 +53,7 @@ class UppHelpersBase {
     code(strings: TemplateStringsArray, ...values: any[]): SourceNode {
         let text = "";
         const nodeMap = new Map<string, SourceNode>();
+        const listMap = new Map<string, any[]>();
         const usedNodes = new Map<SourceNode, string>();
 
         const processValue = (val: any, index: number) => {
@@ -64,9 +65,6 @@ class UppHelpersBase {
                     return;
                 }
                 if (usedNodes.has(val)) {
-                    // If we've already used this node, reuse the placeholder
-                    // so the same node reference is used multiple times
-                    // Note: this turns the tree into a cyclic graph
                     const placeholder = usedNodes.get(val);
                     text += placeholder;
                 } else {
@@ -78,12 +76,10 @@ class UppHelpersBase {
             } else if (val === null || val === undefined) {
                 throw new Error(`upp.code: Invalid null or undefined value at index ${index}`);
             } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
-                let first = true;
-                for (const item of val) {
-                    if (!first) text += '\n';
-                    first = false;
-                    processValue(item, index);
-                }
+                // Unified Array Placeholder: use a single placeholder for the entire list
+                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('l')}`;
+                listMap.set(placeholder, Array.from(val));
+                text += placeholder;
             } else {
                 text += String(val);
             }
@@ -106,24 +102,59 @@ class UppHelpersBase {
         }
 
         // Walk and replace placeholders with actual nodes
-        const placeholders = Array.from(nodeMap.keys());
-        for (const placeholder of placeholders) {
-            const placeholderNodes = fragment.find((n: SourceNode) => n.text === placeholder);
-            if (placeholderNodes.length === 0) {
-                // This might happen if the placeholder was somehow mangled or in a comment (though unlikely with our naming)
-                throw new Error(`upp.code: Placeholder ${placeholder} not found in parsed fragment`);
-            }
+        const processReplacement = (pMap: Map<string, any>, isList: boolean) => {
+            const keys = Array.from(pMap.keys());
+            for (const placeholder of keys) {
+                let placeholderNodes = fragment.find((n: SourceNode) => n.text === placeholder);
+                if (placeholderNodes.length === 0) continue;
 
-            const originalNode = nodeMap.get(placeholder)!;
-            originalNode.remove();
+                // Filter to only leaf-most nodes matching the placeholder to avoid redundant replacements
+                // (e.g. if a declaration only contains the placeholder, both the declaration and identifier match)
+                placeholderNodes = placeholderNodes.filter((n: SourceNode) =>
+                    !n.children.some(c => fragment.find((child: SourceNode) => child.id === c.id && child.text === placeholder).length > 0)
+                );
 
-            // Replace placeholder with original node
-            for (const pNode of placeholderNodes) {
-                pNode.replaceWith(originalNode);
+                // Re-fetch nodes after filtering and sort by start index descending to avoid offset issues
+                placeholderNodes.sort((a: SourceNode, b: SourceNode) => b.startIndex - a.startIndex);
+
+                const originalValue = pMap.get(placeholder)!;
+                for (const pNode of placeholderNodes) {
+                    if (!pNode.isValid) continue;
+
+                    if (isList) {
+                        const parentType = pNode.parent ? pNode.parent.type : 'root';
+                        const expansion = this.getArrayExpansion(originalValue, parentType);
+                        pNode.replaceWith(expansion);
+                    } else {
+                        const nodeToInsert = originalValue as SourceNode;
+                        nodeToInsert.remove();
+                        pNode.replaceWith(nodeToInsert);
+                    }
+                }
             }
-        }
+        };
+
+        processReplacement(nodeMap, false);
+        processReplacement(listMap, true);
 
         return fragment;
+    }
+
+    /**
+     * Determines how an array should be expanded based on its parent context.
+     * @param {any[]} values The values to expand.
+     * @param {string} parentType The tree-sitter node type of the parent.
+     * @returns {any[]} The expanded list of nodes/text.
+     */
+    protected getArrayExpansion(values: any[], parentType: string): any[] {
+        const result: any[] = [];
+        let first = true;
+        for (const val of values) {
+            if (!first) result.push('\n');
+            first = false;
+            result.push(val);
+        }
+        return result;
     }
 
     atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {

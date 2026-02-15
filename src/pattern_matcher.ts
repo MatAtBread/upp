@@ -211,15 +211,59 @@ export class PatternMatcher {
         const targetChildren = this.getChildren(target);
         const patternChildren = this.getChildren(pattern);
 
-        if (targetChildren.length !== patternChildren.length) return false;
+        let ti = 0;
+        for (let pi = 0; pi < patternChildren.length; pi++) {
+            const pChild = patternChildren[pi];
+            const wildcardResult = this.getWildcard(pChild);
 
-        for (let i = 0; i < targetChildren.length; i++) {
-            if (!this.structuralMatch(targetChildren[i], patternChildren[i], captures, constraints)) {
-                return false;
+            if (wildcardResult && wildcardResult.isUntil) {
+                const { name } = wildcardResult;
+                if (pi === patternChildren.length - 1) {
+                    // Last child, consume all remaining
+                    captures[name] = targetChildren.slice(ti);
+                    ti = targetChildren.length;
+                } else {
+                    // Match until next node in pattern
+                    const terminator = patternChildren[pi + 1];
+                    const startTi = ti;
+                    let found = false;
+                    while (ti < targetChildren.length) {
+                        const tmpCaptures = { ...captures };
+                        if (this.structuralMatch(targetChildren[ti], terminator, tmpCaptures, constraints)) {
+                            found = true;
+                            break;
+                        }
+                        ti++;
+                    }
+                    if (!found) return false;
+                    captures[name] = targetChildren.slice(startTi, ti);
+                }
+            } else {
+                if (ti >= targetChildren.length) return false;
+                if (!this.structuralMatch(targetChildren[ti], pChild, captures, constraints)) {
+                    return false;
+                }
+                ti++;
             }
         }
 
-        return true;
+        return ti === targetChildren.length;
+    }
+
+    private getWildcard(node: SyntaxNode): { name: string; isUntil: boolean } | null {
+        // syntax: $name or $name;
+        const match = node.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
+        if (!match) return null;
+        let name = match[1];
+        let isUntil = false;
+        if (name.endsWith('__until')) {
+            name = name.slice(0, -7);
+            isUntil = true;
+        }
+        if (name.startsWith('opt$')) {
+            name = name.slice(4);
+        }
+        return { name, isUntil };
     }
 
     private getChildren<T extends PatternMatchableNode | SyntaxNode>(node: T): T[] {
@@ -227,6 +271,9 @@ export class PatternMatcher {
         for (let i = 0; i < node.childCount; i++) {
             const child = node.child(i);
             if (child && (child as any).type !== 'comment') {
+                const raw = child as any;
+                if (raw.isMissing === true) continue;
+                if (typeof raw.startIndex === 'number' && raw.startIndex === raw.endIndex) continue;
                 kids.push(child as T);
             }
         }
@@ -257,13 +304,18 @@ export class PatternMatcher {
      * @returns {{name: string; types: ConstraintSpec[]}}
      */
     private parseWildcard(rawId: string): { name: string; types: ConstraintSpec[] } {
-        // syntax: name__type1__type2 or opt$name__type1
+        // syntax: name__type1__type2 or opt$name__type1 or name__until
         const parts = rawId.split('__');
         let name = parts[0];
-        const rawTypes = parts.slice(1);
+        const rawTypes = parts.slice(1).filter(t => t !== 'until');
 
         if (name.startsWith('opt$')) {
             name = name.slice(4);
+        }
+
+        // Re-append __until if it was present
+        if (rawId.includes('__until')) {
+            name += '__until';
         }
 
         const types = rawTypes.map(t => {

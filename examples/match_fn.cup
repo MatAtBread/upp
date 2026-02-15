@@ -1,0 +1,24 @@
+#include "io-lite.h"
+
+@define xxx() {
+    const fn = upp.consume('function_definition');
+    return upp.match(fn, '$returnType $name($params__until) { $body__until }', 
+    ({ returnType, name, params, body }) => {
+        return upp.code`${returnType} ${name}(${params}) {
+    ${body}
+}`
+    });
+}
+
+@xxx int my_fn(int x, int y) {
+    int g = 1;
+    for (int i = 1; i < x; i++) {
+        g = g * i;
+    }
+    return g + y;
+}
+
+int main() {
+    printf("%s\n", my_fn(5, 6) == 30 ? "PASS" : "FAIL");
+    return 0; 
+}
