@@ -2,14 +2,13 @@
 
 @include(method.hup)
 
-struct Point {
+typedef struct {
     int x;
     int y;
-};
-typedef struct Point Point;
+} Point;
 
 @method(Point) int distance(Point * p) {
-    return p -> x * p -> x + p -> y * p -> y;
+    return p->x * p->x + p->y * p->y;
 }
 
 int main() {
@@ -18,5 +17,9 @@ int main() {
     p.y = 20;
     int r = p.distance();
     printf("distance: %d\n", r);
+
+    Point * q = &p;
+    int r2 = q->distance();
+    printf("distance: %d\n", r2);
     return 0;
 }

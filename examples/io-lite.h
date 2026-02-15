@@ -1,4 +1,4 @@
-/* A minimal C stdio/stdlib for upp to make it easy to
+/* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
 extern int puts(const char *s);
@@ -7,6 +7,9 @@ extern int fputs(const char *s, void *stream);
 extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 #define NULL ((void *)0)

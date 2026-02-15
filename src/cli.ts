@@ -1,13 +1,25 @@
 import path from 'path';
-import fs from 'fs';
 
-/**
- * @typedef {Object} CompilerCommand
- * @property {string[]} fullCommand - The full compiler command args.
- * @property {string} compiler - The compiler executable (e.g. 'gcc').
- * @property {Array<{cFile: string, cupFile: string}>} sources - Pairs of .c and .cup files found.
- * @property {boolean} isUppCommand - Whether this is a valid upp wrapper invocation.
- */
+export interface SourceInfo {
+    cFile: string;
+    absCFile: string;
+    cupFile: string;
+    absCupFile: string;
+}
+
+export interface CompilerCommand {
+    isUppCommand: boolean;
+    fullCommand?: string[];
+    compiler?: string;
+    sources?: SourceInfo[];
+    includePaths?: string[];
+    depFlags?: string[];
+    depOutputFile?: string | null;
+    mode?: string;
+    file?: string;
+    files?: string[];
+    additionalIncludes?: string[];
+}
 
 /**
  * Parses command line arguments for the upp compiler wrapper.
@@ -15,42 +27,55 @@ import fs from 'fs';
  * @param {string[]} args - Raw arguments from process.argv.slice(2).
  * @returns {CompilerCommand} The parsed command info.
  */
-export function parseArgs(args) {
+export function parseArgs(args: string[]): CompilerCommand {
     if (args.length === 0) {
         return { isUppCommand: false };
     }
 
     if (args[0] === '--transpile' || args[0] === '--translate' || args[0] === '-T' || args[0] === '--ast' || args[0] === '--test' || args[0] === '-t') {
-        const fileArgs = args.slice(1).filter(a => !a.startsWith('-'));
-        if (fileArgs.length === 0) {
+        const includePaths: string[] = [];
+        const files: string[] = [];
+
+        for (let i = 1; i < args.length; i++) {
+            const arg = args[i];
+            if (arg === '-I') {
+                if (i + 1 < args.length) {
+                    includePaths.push(path.resolve(args[++i]));
+                }
+            } else if (arg.startsWith('-I')) {
+                includePaths.push(path.resolve(arg.slice(2)));
+            } else if (!arg.startsWith('-')) {
+                files.push(path.resolve(arg));
+            }
+        }
+
+        if (files.length === 0) {
             console.error(`Error: ${args[0]} requires at least one file or directory argument.`);
             process.exit(1);
         }
+
         let mode = 'transpile';
         if (args[0] === '--ast') mode = 'ast';
         else if (args[0] === '--test' || args[0] === '-t') mode = 'test';
 
-        // Support multiple files/directories
-        const files = fileArgs.map(f => path.resolve(f));
-
         return {
             mode,
-            file: files[0], // Keep for backward compatibility if needed
+            file: files[0],
             files,
             isUppCommand: true,
             fullCommand: args,
             compiler: 'cc',
             sources: [],
-            includePaths: [],
+            includePaths: includePaths,
             depFlags: []
         };
     }
 
     const compiler = args[0];
-    const sources = [];
-    const includePaths = [];
-    const depFlags = [];
-    let depOutputFile = null;
+    const sources: SourceInfo[] = [];
+    const includePaths: string[] = [];
+    const depFlags: string[] = [];
+    let depOutputFile: string | null = null;
 
     // Simple heuristic: Find arguments ending in .c
     // Robust parsing of GCC flags is hard, but .c files are usually distinct.
@@ -107,4 +132,3 @@ export function parseArgs(args) {
         depOutputFile
     };
 }
-

@@ -7,31 +7,37 @@ export const DiagnosticCodes = {
     MACRO_REDEFINITION: 'UPP001',
     MISSING_INCLUDE: 'UPP002',
     SYNTAX_ERROR: 'UPP003'
-};
+} as const;
+
+export interface DiagnosticsConfig {
+    suppress?: string[];
+}
 
 /**
  * Manages reporting of warnings and errors with suppression support.
  * @class
  */
 export class DiagnosticsManager {
+    private suppressed: Set<string | number>;
+
     /**
-     * @param {Object} [config={}] - Configuration object with suppression list.
+     * @param {DiagnosticsConfig} [config={}] - Configuration object with suppression list.
      */
-    constructor(config = {}) {
-        /** @type {Set<string>} */
+    constructor(config: DiagnosticsConfig = {}) {
+        /** @type {Set<string | number>} */
         this.suppressed = new Set(config.suppress || []);
     }
 
     /**
      * Reports a warning if not suppressed.
-     * @param {string} code - The diagnostic code (e.g., UPP001).
+     * @param {string | number} code - The diagnostic code (e.g., UPP001).
      * @param {string} message - The warning message.
      * @param {string} filePath - File where warning occurred.
      * @param {number} [line=0] - Line number (1-indexed).
      * @param {number} [col=0] - Column number (1-indexed).
-     * @param {string} [sourceCode=null] - Optional source code for context.
+     * @param {string | null} [sourceCode=null] - Optional source code for context.
      */
-    reportWarning(code, message, filePath, line = 0, col = 0, sourceCode = null) {
+    reportWarning(code: string | number, message: string, filePath: string, line: number = 0, col: number = 0, sourceCode: string | null = null): void {
         if (this.suppressed.has(code)) return;
 
         const loc = line > 0 ? `:${line}:${col}` : '';
@@ -43,23 +49,23 @@ export class DiagnosticsManager {
             const lines = sourceCode.split('\n');
             const lineContent = lines[line - 1];
             if (lineContent !== undefined) {
-                 console.warn(lineContent);
-                 console.warn(' '.repeat(Math.max(0, col - 1)) + '\x1b[33m^\x1b[0m');
+                console.warn(lineContent);
+                console.warn(' '.repeat(Math.max(0, col - 1)) + '\x1b[33m^\x1b[0m');
             }
         }
     }
 
     /**
      * Reports an error and optionally exits.
-     * @param {string} code - The diagnostic code.
+     * @param {string | number} code - The diagnostic code.
      * @param {string} message - The error message.
      * @param {string} filePath - File where error occurred.
      * @param {number} [line=0] - Line number (1-indexed).
      * @param {number} [col=0] - Column number (1-indexed).
-     * @param {string} [sourceCode=null] - Optional source code.
+     * @param {string | null} [sourceCode=null] - Optional source code.
      * @param {boolean} [fatal=true] - Whether to exit the process.
      */
-    reportError(code, message, filePath, line = 0, col = 0, sourceCode = null, fatal = true) {
+    reportError(code: string | number, message: string, filePath: string, line: number = 0, col: number = 0, sourceCode: string | null = null, fatal: boolean = true): void {
         const loc = line > 0 ? `:${line}:${col}` : '';
         console.error(`\x1b[31m${filePath}${loc}: error: [${code}] ${message}\x1b[0m`);
 
@@ -67,8 +73,8 @@ export class DiagnosticsManager {
             const lines = sourceCode.split('\n');
             const lineContent = lines[line - 1];
             if (lineContent !== undefined) {
-                 console.error(lineContent);
-                 console.error(' '.repeat(Math.max(0, col - 1)) + '\x1b[31m^\x1b[0m');
+                console.error(lineContent);
+                console.error(' '.repeat(Math.max(0, col - 1)) + '\x1b[31m^\x1b[0m');
             }
         }
 
@@ -81,7 +87,7 @@ export class DiagnosticsManager {
      * @param {number} index - Character index.
      * @returns {{line: number, col: number}} 1-indexed line and col.
      */
-    static getLineCol(source, index) {
+    static getLineCol(source: string, index: number): { line: number; col: number } {
         let line = 1;
         let col = 1;
         for (let i = 0; i < index && i < source.length; i++) {

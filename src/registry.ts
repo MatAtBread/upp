@@ -2,19 +2,102 @@ import Parser from 'tree-sitter';
 import C from 'tree-sitter-c';
 import fs from 'fs';
 import path from 'path';
-import { UppHelpersC } from './upp_helpers_c.js';
-import { UppHelpersBase } from './upp_helpers_base.js';
-import { DiagnosticsManager } from './diagnostics.js';
-import { SourceTree, SourceNode } from './source_tree.js';
+import { UppHelpersC } from './upp_helpers_c.ts';
+import { UppHelpersBase } from './upp_helpers_base.ts';
+import { DiagnosticsManager } from './diagnostics.ts';
+import { SourceTree, SourceNode } from './source_tree.ts';
+import type { Tree, SyntaxNode } from 'tree-sitter';
+import type { DependencyCache } from './dependency_cache.ts';
 
 export const RECURSION_LIMITER_ENABLED = false;
 
+export interface Macro {
+    name: string;
+    params: string[];
+    body: string;
+    language: string;
+    origin: string;
+    startIndex: number;
+}
+
+export interface TransformRule {
+    active: boolean;
+    matcher: (node: SourceNode, helpers: UppHelpersC) => boolean;
+    callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+}
+
+export interface Invocation {
+    name: string;
+    args: string[];
+    startIndex: number;
+    endIndex: number;
+    line?: number;
+    col?: number;
+    invocationNode?: SourceNode;
+}
+
+import type { MaterializeOptions } from './types.ts';
+export type { MaterializeOptions };
+
+export interface RegistryConfig {
+    onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
+    filePath?: string;
+    stdPath?: string;
+    cache?: DependencyCache;
+    diagnostics?: DiagnosticsManager;
+    suppress?: string[];
+    comments?: boolean;
+}
+
+export interface Marker {
+    callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+    data?: unknown;
+}
+
+export interface RegistryContext {
+    source: string;
+    tree: SourceTree;
+    originPath: string;
+    invocations: Invocation[];
+    helpers: UppHelpersC | null;
+}
+
+type TreeSitterLang = unknown;
 /**
  * Main registry class for managing macros, parsing, and transformations.
  * @class
  */
 class Registry {
-    constructor(config = {}, parentRegistry = null) {
+    public config: RegistryConfig;
+    public parentRegistry: Registry | null;
+    public depth: number;
+    public filePath: string;
+    public diagnostics: DiagnosticsManager;
+    public language: TreeSitterLang; // Tree-sitter Language
+    public helpers: UppHelpersC | null;
+    public parentHelpers: UppHelpersBase | null;
+    public parentTree: SourceTree | null;
+    public materializedFiles: Set<string>;
+    public isAuthoritative: boolean;
+    public macros: Map<string, Macro>;
+    public parser: Parser;
+    public idCounter: number;
+    public stdPath: string | null;
+    public loadedDependencies: Map<string, string>;
+    public shouldMaterializeDependency: boolean;
+    public transformRules: TransformRule[];
+    public ruleIdCounter: number;
+    public isExecutingDeferred: boolean;
+    public onMaterialize: ((outputPath: string, content: string, options: { isAuthoritative: boolean }) => void) | null;
+    public mainContext: RegistryContext | null;
+    public UppHelpersC: typeof UppHelpersC;
+    public source?: string;
+    public tree?: SourceTree;
+    public deferredMarkers?: Marker[];
+    public activeTransformNode?: SourceNode | null;
+    public originPath?: string;
+
+    constructor(config: RegistryConfig = {}, parentRegistry: Registry | null = null) {
         this.config = config;
         this.parentRegistry = parentRegistry;
         this.onMaterialize = config.onMaterialize || (parentRegistry ? parentRegistry.onMaterialize : null);
@@ -26,13 +109,13 @@ class Registry {
         this.filePath = config.filePath || '';
         this.diagnostics = config.diagnostics || new DiagnosticsManager(config);
 
-        let lang = C;
+        let lang: any = C;
         if (lang && lang.default) lang = lang.default;
         this.language = lang;
 
         this.helpers = null;
         this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
-        this.parentTree = parentRegistry ? parentRegistry.tree : null;
+        this.parentTree = parentRegistry ? parentRegistry.tree! : null;
 
         this.materializedFiles = new Set();
         this.isAuthoritative = true;
@@ -72,20 +155,41 @@ class Registry {
         this.UppHelpersC = UppHelpersC; // Ensure this is available
     }
 
-    registerMacro(name, params, body, language = 'js', origin = 'unknown', startIndex = 0) {
-        this.macros.set(name, { name, params, body, language, origin, startIndex });
+    registerMacro(name: string, params: string[], body: string, language: string = 'js', origin: string = 'unknown', startIndex: number = 0): void {
+        const macro = { name, params, body, language, origin, startIndex };
+
+        // Eagerly validate JavaScript macros
+        if (language === 'js') {
+            try {
+                this.createMacroFunction(macro);
+            } catch (e: any) {
+                const lines = body.split('\n');
+                const lineCount = lines.length;
+                this.diagnostics.reportError(
+                    'UPP003',
+                    `Syntax error in @${name} macro definition: ${e.message}`,
+                    origin,
+                    (this.source?.slice(0, startIndex).match(/\n/g) || []).length + 1,
+                    startIndex - (this.source?.lastIndexOf('\n', startIndex) ?? 0),
+                    this.source || null,
+                    false // Don't exit yet, let it be reported
+                );
+            }
+        }
+
+        this.macros.set(name, macro);
         if (this.parentRegistry) {
             this.parentRegistry.registerMacro(name, params, body, language, origin, startIndex);
         }
     }
 
-    getMacro(name) {
+    getMacro(name: string): Macro | undefined {
         if (this.macros.has(name)) return this.macros.get(name);
         if (this.parentRegistry) return this.parentRegistry.getMacro(name);
         return undefined;
     }
 
-    registerTransformRule(rule) {
+    registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined)): void {
         if (typeof rule === 'function') {
             rule = {
                 active: true,
@@ -99,8 +203,8 @@ class Registry {
         }
     }
 
-    loadDependency(file, originPath = 'unknown', parentHelpers = null) {
-        let targetPath;
+    loadDependency(file: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): void {
+        let targetPath: string;
         if (path.isAbsolute(file)) {
             targetPath = file;
         } else {
@@ -127,7 +231,7 @@ class Registry {
             const cached = this.config.cache.get(targetPath);
 
             // Only use cache if it's authoritative, or if we don't care about authority (isDiscoveryOnly handled above)
-            if (cached.isAuthoritative) {
+            if (cached && cached.isAuthoritative) {
                 // Replay macros
                 for (const macro of cached.macros) {
                     this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
@@ -176,7 +280,7 @@ class Registry {
             }
 
             if (depRegistry.shouldMaterializeDependency) {
-                let outputPath = null;
+                let outputPath: string | null = null;
                 if (targetPath.endsWith('.hup')) outputPath = targetPath.slice(0, -4) + '.h';
                 else if (targetPath.endsWith('.cup')) outputPath = targetPath.slice(0, -4) + '.c';
 
@@ -187,18 +291,18 @@ class Registry {
         }
     }
 
-    generateRuleId() {
+    generateRuleId(): string {
         return `rule_${++this.ruleIdCounter}`;
     }
 
 
-    transform(source, originPath = 'unknown', parentHelpers = null) {
+    transform(source: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): string {
         this.source = source;
         if (!source) return "";
 
         // Initialize tree as early as possible so dependencies can see us
         this.tree = new SourceTree(source, this.language);
-        this.helpers = new this.UppHelpersC(this.tree.root, this, parentHelpers);
+        this.helpers = new (this.UppHelpersC as any)(this.tree.root, this, parentHelpers);
 
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
 
@@ -209,19 +313,20 @@ class Registry {
             } else {
                 this.tree = new SourceTree(cleanSource, this.language);
             }
-            this.helpers.root = this.tree.root; // Update helpers root
+            if (this.helpers) this.helpers.root = this.tree.root; // Update helpers root
         }
-        const sourceTree = this.tree;
+        const sourceTree = this.tree!;
 
-        const context = {
+        const context: RegistryContext = {
             source: cleanSource, // This will be stale, should use sourceTree.source
             tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
-            helpers: null
+            helpers: null as any
         };
 
-        const helpers = new this.UppHelpersC(sourceTree.root, this, parentHelpers);
+        if (!sourceTree) throw new Error("Could not create source tree for transformation.");
+        const helpers = new this.UppHelpersC(sourceTree.root, this, parentHelpers) as UppHelpersC;
         context.helpers = helpers;
         helpers.context = context;
         helpers.root = sourceTree.root;
@@ -236,8 +341,8 @@ class Registry {
             helpers.parentHelpers = parentHelpers;
             helpers.parentTree = parentHelpers.root;
             helpers.parentRegistry = {
-                invocations: parentHelpers.context.invocations,
-                sourceCode: (parentHelpers.context.tree && parentHelpers.context.tree.source) || parentHelpers.context.source,
+                invocations: parentHelpers.context?.invocations || [],
+                sourceCode: parentHelpers.context?.tree?.source || parentHelpers.context?.source || "",
                 helpers: parentHelpers
             };
             helpers.topLevelInvocation = parentHelpers.topLevelInvocation || parentHelpers.invocation;
@@ -253,7 +358,7 @@ class Registry {
         return sourceTree.source;
     }
 
-    transformNode(node, helpers, context) {
+    transformNode(node: SourceNode, helpers: UppHelpersC, context: RegistryContext): void {
         if (!node) return;
 
         // Skip invalidated nodes
@@ -311,9 +416,11 @@ class Registry {
                         // Recursively transform any new nodes in the current context
                         if (Array.isArray(newNodes)) {
                             for (const newNode of newNodes) {
-                                this.transformNode(newNode, helpers, context);
+                                if (newNode instanceof SourceNode) {
+                                    this.transformNode(newNode, helpers, context);
+                                }
                             }
-                        } else if (newNodes) {
+                        } else if (newNodes instanceof SourceNode) {
                             this.transformNode(newNodes, helpers, context);
                         }
                     }
@@ -347,7 +454,7 @@ class Registry {
     }
 
 
-    executeDeferredMarkers(helpers) {
+    executeDeferredMarkers(helpers: UppHelpersC): void {
         if (this.isExecutingDeferred) return;
         this.isExecutingDeferred = true;
 
@@ -357,14 +464,11 @@ class Registry {
 
             while (iterations < MAX_ITERATIONS) {
                 // Find all nodes that have pending markers
-                const nodesWithMarkers = this.tree.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
+                const nodesWithMarkers = this.tree!.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
 
                 if (nodesWithMarkers.length === 0) break;
 
                 iterations++;
-                for (const node of nodesWithMarkers) {
-
-                }
 
                 // Sort bottom-up and right-to-left for predictable execution
                 nodesWithMarkers.sort((a, b) => {
@@ -398,7 +502,7 @@ class Registry {
         }
     }
 
-    evaluateMacro(invocation, source, helpers, filePath) {
+    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersC, filePath: string): SourceNode | SourceNode[] | SourceTree | string | null | undefined {
         const macro = this.getMacro(invocation.name);
 
         const oldInvocation = helpers.invocation;
@@ -409,7 +513,7 @@ class Registry {
         try {
             if (!macro) throw new Error(`Macro @${invocation.name} not found`);
 
-            const invocationNode = invocation.invocationNode;
+            const invocationNode = invocation.invocationNode!;
             const contextNode = helpers.contextNode || invocationNode;
 
             helpers.invocation = { ...invocation, invocationNode };
@@ -424,7 +528,7 @@ class Registry {
             upp.invocation = { ...invocation, invocationNode };
 
             const macroFn = this.createMacroFunction(macro);
-            const args = [...invocation.args];
+            const args: (string | SourceNode)[] = [...invocation.args];
             let isTransformer = false;
             if (macro.params.length > 0 && macro.params[0] === 'node') {
                 args.unshift(contextNode);
@@ -439,8 +543,8 @@ class Registry {
                 throw new Error(`@${invocation.name} expected at least ${macro.params.length - 1} arguments, found ${invocation.args.length}`);
             }
 
-            return macroFn(upp, console, ...args);
-        } catch (err) {
+            return macroFn(upp, console, upp.code.bind(upp), ...args);
+        } catch (err: any) {
             // console.error(`Macro @${invocation.name} failed:`, err);
             this.diagnostics.reportError(0, `Macro @${invocation.name} failed: ${err.message}`, filePath, invocation.line || 1, invocation.col || 1, source);
             return undefined;
@@ -452,7 +556,7 @@ class Registry {
         }
     }
 
-    createMacroFunction(macro) {
+    createMacroFunction(macro: Macro): Function {
         const body = macro.body.trim();
         // Avoid wrapping empty or comment-only macros in 'return ()' which is invalid syntax
         const shouldWrap = macro.language === 'js' &&
@@ -464,28 +568,32 @@ class Registry {
         const finalBody = shouldWrap && !body.includes(';') && !body.includes('\n') ? `return (${body})` : body;
 
         try {
-            return new Function('upp', 'console', ...macro.params, finalBody);
-        } catch (e) {
-            console.log("SYNTAX ERROR IN MACRO", macro.name);
-            console.log("FINAL BODY:\n", finalBody);
+            return new Function('upp', 'console', '$', ...macro.params, finalBody);
+        } catch (e: any) {
+            console.error(`\n[upp] Syntax error in definition of @${macro.name}:`);
+            console.error(e.message);
+            console.error("\nMacro body:");
+            console.error("--------------------------------------------------------------------------------");
+            console.error(finalBody);
+            console.error("--------------------------------------------------------------------------------\n");
             throw e;
         }
     }
 
-    prepareSource(source, originPath) {
+    prepareSource(source: string, originPath: string): { cleanSource: string; invocations: Invocation[] } {
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
-        const tree = this.parser.parse((index) => {
+        const tree = this.parser.parse((index: number) => {
             if (index >= source.length) return null;
             return source.slice(index, index + 4096);
         });
 
-        const defines = [];
+        const defines: Array<{ index: number; length: number; original: string }> = [];
         let match;
         while ((match = definerRegex.exec(source)) !== null) {
             const node = tree.rootNode.descendantForIndex(match.index);
             let shouldSkip = false;
-            let curr = node;
+            let curr: SyntaxNode | null = node;
             const skipTypes = ['comment', 'string_literal', 'system_lib_string', 'char_literal'];
             while (curr) {
                 if (skipTypes.includes(curr.type)) { shouldSkip = true; break; }
@@ -515,7 +623,7 @@ class Registry {
         }
 
         // Must re-parse after cleaning defines to find invocations correctly
-        const cleanTree = this.parser.parse((index) => {
+        const cleanTree = this.parser.parse((index: number) => {
             if (index >= cleanSource.length) return null;
             return cleanSource.slice(index, index + 4096);
         });
@@ -542,11 +650,11 @@ class Registry {
         return { cleanSource, invocations };
     }
 
-    extractBody(source, startOffset) {
+    extractBody(source: string, startOffset: number): string {
         let depth = 1;
         let i = startOffset;
-        let inString = null;
-        let inComment = null; // 'line' or 'block'
+        let inString: string | null = null;
+        let inComment: string | null = null; // 'line' or 'block'
         let escaped = false;
 
         while (i < source.length && depth > 0) {
@@ -586,11 +694,11 @@ class Registry {
         return source.slice(startOffset, i - 1);
     }
 
-    findInvocations(source, tree = null) {
-        const invs = [];
+    findInvocations(source: string, tree: Tree | null = null): Invocation[] {
+        const invs: Invocation[] = [];
         const regex = /(?<![\/*])@(\w+)(\s*\(([^)]*)\))?/g;
         let match;
-        const currentTree = tree || this.parser.parse((index) => {
+        const currentTree = tree || this.parser.parse((index: number) => {
             if (index >= source.length) return null;
             return source.slice(index, index + 4096);
         });
@@ -600,7 +708,7 @@ class Registry {
 
             const node = currentTree.rootNode.descendantForIndex(match.index);
             let shouldSkip = false;
-            let curr = node;
+            let curr: SyntaxNode | null = node;
             const skipTypes = ['comment', 'string_literal', 'system_lib_string', 'char_literal'];
             while (curr) {
                 if (skipTypes.includes(curr.type)) { shouldSkip = true; break; }
@@ -622,7 +730,7 @@ class Registry {
         return invs;
     }
 
-    absorbInvocation(text, startIndex) {
+    absorbInvocation(text: string, startIndex: number): { name: string; args: string[] } | null {
         const regex = /@(\w+)(\s*\(([^)]*)\))?/;
         const match = text.slice(startIndex).match(regex);
         if (match) {
@@ -634,7 +742,7 @@ class Registry {
         return null;
     }
 
-    isInsideInvocation(start, end) {
+    isInsideInvocation(_start: number, _end: number): boolean {
         return false;
     }
 }

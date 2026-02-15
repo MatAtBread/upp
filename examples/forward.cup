@@ -1,7 +1,12 @@
 @include(forward.hup)
 #include "io-lite.h"
 
-@forward;
+@forward
+
+int main() {
+    foo();
+    return 0;
+}
 
 void foo() {
     printf("Foo calls bar\n");
@@ -12,7 +17,3 @@ void bar() {
     printf("Bar called\n");
 }
 
-int main() {
-    foo();
-    return 0;
-}

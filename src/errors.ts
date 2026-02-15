@@ -1,11 +1,13 @@
+import type { SyntaxNode } from 'tree-sitter';
+
 /**
  * Reports an error with formatted source context.
- * @param {import('tree-sitter').SyntaxNode} node - The AST node where the error occurred.
+ * @param {SyntaxNode} node - The AST node where the error occurred.
  * @param {string} sourceCode - The full source code content.
  * @param {string} message - The error message to display.
  * @param {string} [filePath='input'] - The file path for the error header.
  */
-function reportError(node, sourceCode, message, filePath = 'input') {
+function reportError(node: SyntaxNode | null | undefined, sourceCode: string, message: string, filePath: string = 'input'): void {
     if (!node || !node.startPosition) {
         console.error(`\x1b[1m${filePath}: error: ${message}\x1b[0m`);
         console.error('(No source location available)');

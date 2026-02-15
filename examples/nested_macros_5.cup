@@ -3,11 +3,11 @@
 static int expanded_inner = 5;
 
 @define inner(y) {
-    return upp.codeTree`expanded_inner + ${y}`;
+    return upp.code`expanded_inner + ${y}`;
 }
 
 @define outer(x) {
-    return upp.codeTree`${upp.consume()} + ${x}`;
+    return upp.code`${upp.consume()} + ${x}`;
 }
 
 int main() {

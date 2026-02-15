@@ -9,7 +9,7 @@
     const body = upp.childForFieldName(fnNode, 'body');
 
     if (body) {
-        return upp.codeTree
+        return upp.code
             `${returnType} ${name}${params} {
     puts("Entering: ${name}\\n");
     @lambda void _exit() { puts("Exiting: ${name}\\n"); };

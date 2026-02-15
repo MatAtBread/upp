@@ -1,4 +1,5 @@
-import { SourceNode } from './source_tree.js';
+import { SourceNode, SourceTree } from './source_tree.ts';
+import type { Invocation, Registry, RegistryContext } from './registry.ts';
 
 let uniqueIdCounter = 1;
 
@@ -7,16 +8,36 @@ let uniqueIdCounter = 1;
  * @class
  */
 class UppHelpersBase {
-    get parentHelpers() { return this._parentHelpers; }
-    set parentHelpers(v) { this._parentHelpers = v; }
+    public root: SourceNode | null;
+    public registry: Registry;
+    public _parentHelpers: UppHelpersBase | null;
+    public contextNode: SourceNode | null;
+    public invocation: Invocation | null;
+    public lastConsumedNode: SourceNode | null;
+    public isDeferred: boolean;
+    public currentInvocations: Invocation[];
+    public consumedIds: Set<number | string>;
+    public context: RegistryContext | null;
+    public parentTree: SourceNode | null;
+    public stdPath: string | null;
+    public lastConsumedIndex?: number;
+    public parentRegistry?: {
+        invocations: Invocation[];
+        sourceCode: string;
+        helpers: UppHelpersBase;
+    };
+    public topLevelInvocation?: Invocation | null;
 
-    get isAuthoritative() { return this.registry.isAuthoritative; }
-    set isAuthoritative(v) { this.registry.isAuthoritative = v; }
+    get parentHelpers(): UppHelpersBase | null { return this._parentHelpers; }
+    set parentHelpers(v: UppHelpersBase | null) { this._parentHelpers = v; }
 
-    constructor(root, registry, parentHelpers = null) {
+    get isAuthoritative(): boolean { return this.registry.isAuthoritative; }
+    set isAuthoritative(v: boolean) { this.registry.isAuthoritative = v; }
+
+    constructor(root: SourceNode | null, registry: Registry, parentHelpers: UppHelpersBase | null = null) {
         this.root = root;
         this.registry = registry;
-        this.parentHelpers = parentHelpers; // Initial assignment will use the setter
+        this._parentHelpers = parentHelpers;
         this.contextNode = null;
         this.invocation = null;
         this.lastConsumedNode = null;
@@ -24,17 +45,17 @@ class UppHelpersBase {
         this.currentInvocations = [];
         this.consumedIds = new Set();
         this.context = null; // Back-reference to the local transform context
-        this.parentTree = (registry && registry.parentRegistry) ? registry.parentRegistry.tree : null;
+        this.parentTree = (registry && registry.parentRegistry && registry.parentRegistry.tree) ? registry.parentRegistry.tree.root : null;
         this.stdPath = registry ? registry.stdPath : null;
     }
 
 
-    codeTree(strings, ...values) {
+    code(strings: TemplateStringsArray, ...values: any[]): SourceNode {
         let text = "";
-        const nodeMap = new Map();
-        const usedNodes = new Set();
+        const nodeMap = new Map<string, SourceNode>();
+        const usedNodes = new Map<SourceNode, string>();
 
-        const processValue = (val, index) => {
+        const processValue = (val: any, index: number) => {
             if (val instanceof SourceNode) {
                 if (!val.isValid) {
                     const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
@@ -43,14 +64,19 @@ class UppHelpersBase {
                     return;
                 }
                 if (usedNodes.has(val)) {
-                    throw new Error(`upp.codeTree: Node ${val.text} (type: ${val.type}) cannot be used more than once in a single codeTree template. Use \${node.text} to interpolate a clone of the node's text.`);
+                    // If we've already used this node, reuse the placeholder
+                    // so the same node reference is used multiple times
+                    // Note: this turns the tree into a cyclic graph
+                    const placeholder = usedNodes.get(val);
+                    text += placeholder;
+                } else {
+                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                    usedNodes.set(val, placeholder);
+                    nodeMap.set(placeholder, val);
+                    text += placeholder;
                 }
-                usedNodes.add(val);
-                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
-                nodeMap.set(placeholder, val);
-                text += placeholder;
             } else if (val === null || val === undefined) {
-                throw new Error(`upp.codeTree: Invalid null or undefined value at index ${index}`);
+                throw new Error(`upp.code: Invalid null or undefined value at index ${index}`);
             } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
                 let first = true;
                 for (const item of val) {
@@ -70,25 +96,25 @@ class UppHelpersBase {
             }
         }
 
-        const prepared = this.registry.prepareSource(text, this.registry.originPath);
-        const cleanText = prepared.cleanSource;
+        const prepared = (this.registry as any).prepareSource(text, (this.registry as any).originPath);
+        let cleanText = prepared.cleanSource;
 
-        const SourceTree = this.registry.tree.constructor;
+        const SourceTree: any = this.registry.tree!.constructor;
         const fragment = SourceTree.fragment(cleanText, this.registry.language);
         if (!fragment) {
-            throw new Error("upp.codeTree: Failed to parse code fragment");
+            throw new Error("upp.code: Failed to parse code fragment");
         }
 
         // Walk and replace placeholders with actual nodes
         const placeholders = Array.from(nodeMap.keys());
         for (const placeholder of placeholders) {
-            const placeholderNodes = fragment.find(n => n.text === placeholder);
+            const placeholderNodes = fragment.find((n: SourceNode) => n.text === placeholder);
             if (placeholderNodes.length === 0) {
                 // This might happen if the placeholder was somehow mangled or in a comment (though unlikely with our naming)
-                throw new Error(`upp.codeTree: Placeholder ${placeholder} not found in parsed fragment`);
+                throw new Error(`upp.code: Placeholder ${placeholder} not found in parsed fragment`);
             }
 
-            const originalNode = nodeMap.get(placeholder);
+            const originalNode = nodeMap.get(placeholder)!;
             originalNode.remove();
 
             // Replace placeholder with original node
@@ -100,75 +126,75 @@ class UppHelpersBase {
         return fragment;
     }
 
-    atRoot(callback) {
+    atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
         const root = this.findRoot();
         if (!root) return "";
         return this.withNode(root, callback);
     }
 
-    withScope(callback) {
+    withScope(callback: (scope: SourceNode, helpers: UppHelpersBase) => any): string {
         const scope = this.findScope();
         if (!scope) return "";
         return this.withNode(scope, callback);
     }
 
-    withRoot(callback) {
-        return this.withNode(this.findRoot(), callback);
+    withRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
+        return this.withNode(this.findRoot()!, callback);
     }
 
     /**
-     * @deprecated Use codeTree or withPattern instead.
+     * @deprecated Use code or withPattern instead.
      */
-    registerTransform(callback) {
+    registerTransform(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
         return this.atRoot(callback);
     }
 
-    registerTransformRule(rule) {
+    registerTransformRule(rule: any): void {
         this.registry.registerTransformRule(rule);
     }
 
-    replace(n, newContent) {
+    replace(n: SourceNode, newContent: string | SourceNode | SourceNode[] | SourceTree | null): SourceNode | SourceNode[] | null {
         let finalContent = newContent;
-        if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && this.registry.prepareSource) {
-            const prepared = this.registry.prepareSource(finalContent, this.registry.originPath);
+        if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && (this.registry as any).prepareSource) {
+            const prepared = (this.registry as any).prepareSource(finalContent, (this.registry as any).originPath);
             finalContent = prepared.cleanSource;
         }
 
         if (n.replaceWith) {
-            const result = n.replaceWith(finalContent);
-            if (this.contextNode === n) this.contextNode = result;
+            const result = n.replaceWith(finalContent as any);
+            if (this.contextNode === n) this.contextNode = result as any;
             return result;
         }
 
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
-    insertBefore(n, content) {
+    insertBefore(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
         if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
-        return n.insertBefore(content);
+        return n.insertBefore(content as any);
     }
 
-    insertAfter(n, content) {
+    insertAfter(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
         if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
-        return n.insertAfter(content);
+        return n.insertAfter(content as any);
     }
 
-    findRoot() {
+    findRoot(): SourceNode | null {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
 
 
 
-    withNode(node, callback) {
+    withNode(node: SourceNode | null, callback: (target: SourceNode, helpers: UppHelpersBase) => any): string {
         if (!node) return "";
         node.markers.push({
-            callback: (target, helpers) => callback(target, helpers),
+            callback: (target: SourceNode, helpers: UppHelpersBase) => callback(target, helpers),
             data: {}
         });
         return "";
     }
 
-    wrapNode(node) {
+    wrapNode(node: SourceNode): SourceNode {
         return node; // No longer needed, but kept for compatibility during transition
     }
 
@@ -176,42 +202,41 @@ class UppHelpersBase {
      * Finds macro invocations in the tree.
      * @param {string} macroName
      * @param {SourceNode} [node]
-     * @returns {SourceNode[]}
+     * @returns {any[]}
      */
-    findInvocations(macroName, node = null) {
+    findInvocations(macroName: string, node: SourceNode | null = null): Invocation[] {
         let target = node || this.root;
         if (!target && this.registry) {
-            target = this.registry.tree ? this.registry.tree.root : null;
+            target = this.registry.tree ? this.registry.tree.root : null as any;
         }
 
         if (!target) {
-            const source = this.registry.source || (this.context && this.context.tree && this.context.tree.source);
-            // console.log(`[UPP DEBUG] findInvocations(${macroName}) no target, using registry source (${source ? source.length : 0} bytes)`);
+            const source = (this.registry as any).source || (this.context && this.context.tree && this.context.tree.source);
             if (!source) return [];
 
-            const invs = this.registry.findInvocations(source);
-            return invs.filter(i => i.name === macroName).map(i => ({
+            const invs = (this.registry as any).findInvocations(source);
+            return invs.filter((i: Invocation) => i.name === macroName).map((i: Invocation) => ({
                 ...i,
                 text: `@${i.name}(${i.args.join(',')})`,
                 // Mock includes for package.hup
-                includes: (str) => i.args.some(arg => arg.includes(str))
+                includes: (str: string) => i.args.some((arg: string) => arg.includes(str))
             }));
         }
 
         const pattern = new RegExp(`@${macroName}\\s*\\(`);
-        const results = target.find(n => {
+        const results = target.find((n: SourceNode) => {
             if (n.type === 'preproc_def') return pattern.test(n.text);
             if (n.type === 'comment') {
                 return n.text.startsWith('/*@') && pattern.test(n.text);
             }
             return false;
         });
-        return results;
+        return results as any;
     }
 
 
-    loadDependency(file) {
-        this.registry.loadDependency(file, this.context.originPath, this);
+    loadDependency(file: string): void {
+        this.registry.loadDependency(file, this.context?.originPath || 'unknown', this as any);
     }
 
 
@@ -219,19 +244,19 @@ class UppHelpersBase {
      * Finds the next logical node after the macro invocation.
      * @private
      */
-    _getNextNode(expectedTypes = null) {
+    public _getNextNode(expectedTypes: string[] | null = null): SourceNode | null {
         const root = this.root || this.findRoot();
-        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode.endIndex);
-        if (index === undefined) return null;
+        const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode?.endIndex);
+        if (index === undefined || index === null) return null;
         return this.findNextNodeAfter(root, index);
     }
 
     /**
      * Retrieves the next node without removing it from the tree.
-     * @param {string|string[]} [types] 
+     * @param {string|string[] | null} [types] 
      * @returns {SourceNode|null}
      */
-    nextNode(types = null) {
+    nextNode(types: string | string[] | null = null): SourceNode | null {
         const expectedTypes = typeof types === 'string' ? [types] : types;
         const node = this._getNextNode(expectedTypes);
         if (node && expectedTypes && !expectedTypes.includes(node.type)) {
@@ -240,20 +265,20 @@ class UppHelpersBase {
         return node;
     }
 
-    consume(expectedTypeOrOptions, errorMessage) {
-        let expectedTypes = null;
+    consume(expectedTypeOrOptions?: string | string[] | { type?: string | string[], message?: string, validate?: (n: SourceNode) => boolean }, errorMessage?: string): SourceNode | null {
+        let expectedTypes: string[] | null = null;
         let internalErrorMessage = errorMessage;
-        let validateFn = null;
+        let validateFn: ((n: SourceNode) => boolean) | null = null;
 
         if (typeof expectedTypeOrOptions === 'string') expectedTypes = [expectedTypeOrOptions];
         else if (Array.isArray(expectedTypeOrOptions)) expectedTypes = expectedTypeOrOptions;
         else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
             expectedTypes = Array.isArray(expectedTypeOrOptions.type) ? expectedTypeOrOptions.type : (expectedTypeOrOptions.type ? [expectedTypeOrOptions.type] : null);
-            internalErrorMessage = expectedTypeOrOptions.message || errorMessage;
-            validateFn = expectedTypeOrOptions.validate;
+            internalErrorMessage = (expectedTypeOrOptions as any).message || errorMessage;
+            validateFn = (expectedTypeOrOptions as any).validate;
         }
 
-        const reportFailure = (foundNode) => {
+        const reportFailure = (foundNode: SourceNode | null) => {
             const macroName = this.invocation ? `@${this.invocation.name}` : "macro";
             let msg = internalErrorMessage;
             if (!msg) {
@@ -261,7 +286,7 @@ class UppHelpersBase {
                 const foundStr = foundNode ? `found ${foundNode.type}` : 'nothing found';
                 msg = `${macroName} expected ${expectedStr}, but ${foundStr}`;
             }
-            this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode, msg);
+            this.error(foundNode || (this.invocation && this.invocation.invocationNode) || this.contextNode!, msg!);
         };
 
         const node = this._getNextNode(expectedTypes);
@@ -274,9 +299,9 @@ class UppHelpersBase {
         if (expectedTypes && !expectedTypes.includes(node.type)) reportFailure(node);
         if (validateFn && !validateFn(node)) reportFailure(node);
 
-        const isHoisted = this.invocation && this.isDescendant(node, this.invocation.invocationNode);
+        const isHoisted = this.invocation?.invocationNode && this.isDescendant(node, this.invocation.invocationNode);
 
-        const captureText = (n) => {
+        const captureText = (n: SourceNode) => {
             n._capturedText = n.text;
             n.children.forEach(captureText);
         };
@@ -295,9 +320,9 @@ class UppHelpersBase {
         return wrapped;
     }
 
-    isDescendant(parent, node) {
-        let current = node;
-        const rawParent = parent ? (parent.__internal_raw_node || parent) : null;
+    isDescendant(parent: SourceNode | null, node: SourceNode): boolean {
+        let current: any = node;
+        const rawParent: any = parent ? (parent as any).__internal_raw_node || parent : null;
         while (current) {
             const rawCurrent = current.__internal_raw_node || current;
             if (rawCurrent === rawParent) return true;
@@ -306,32 +331,32 @@ class UppHelpersBase {
         return false;
     }
 
-    walk(node, callback) {
+    walk(node: SourceNode, callback: (n: SourceNode) => void): void {
         if (!node) return;
         callback(node);
-        const rawNode = node.__internal_raw_node || node;
-        const lateBound = !!node.__isLateBound; // We might need to track this
-        const sourceOverride = node.__sourceOverride; // And this
+        const rawNode = (node as any).__internal_raw_node || node;
+        const lateBound = !!(node as any).__isLateBound; // We might need to track this
+        const sourceOverride = (node as any).__sourceOverride; // And this
 
         for (let i = 0; i < rawNode.childCount; i++) {
-            this.walk(this.wrapNode(rawNode.child(i), lateBound, sourceOverride), callback);
+            this.walk((this as any).wrapNode(rawNode.child(i), lateBound, sourceOverride), callback);
         }
     }
 
 
-    parent(node) {
+    parent(node: SourceNode): SourceNode | null {
         return node ? node.parent : null;
     }
 
-    childForFieldName(node, fieldName) {
+    childForFieldName(node: SourceNode | null, fieldName: string): SourceNode | null {
         if (!node) return null;
         return node.findChildByFieldName(fieldName);
     }
 
-    findNextNodeAfter(root, index) {
+    findNextNodeAfter(root: SourceNode | null, index: number): SourceNode | null {
         if (!root) return null;
 
-        const findNextSibling = (node) => {
+        const findNextSibling = (node: SourceNode): SourceNode | null => {
             if (!node || !node.parent || node === root) return null;
             const idx = node.parent.children.indexOf(node);
             if (idx === -1) return null;
@@ -342,10 +367,10 @@ class UppHelpersBase {
             return findNextSibling(node.parent);
         };
 
-        let current = root.descendantForIndex(index, index);
+        let current: SourceNode | null = root.descendantForIndex(index, index);
 
         while (current && current.startIndex < index && current.endIndex > index && current.children.length > 0) {
-            let nextChild = null;
+            let nextChild: SourceNode | null = null;
             for (const child of current.children) {
                 if (child.endIndex > index) {
                     nextChild = child;
@@ -395,16 +420,12 @@ class UppHelpersBase {
     }
 
 
-    registerTransformRule(rule) {
-        this.registry.registerTransformRule(rule);
-    }
-
-    findScope() {
+    findScope(): SourceNode | null {
         const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
-        return this.findEnclosing(startNode, ['compound_statement', 'translation_unit']);
+        return this.findEnclosing(startNode!, ['compound_statement', 'translation_unit']);
     }
 
-    findEnclosing(node, types) {
+    findEnclosing(node: SourceNode, types: string | string[]): SourceNode | null {
         if (!node) return null;
         const typeArray = Array.isArray(types) ? types : [types];
         let p = node.parent;
@@ -415,26 +436,21 @@ class UppHelpersBase {
         return null;
     }
 
-    createUniqueIdentifier(prefix = 'v') {
+    createUniqueIdentifier(prefix: string = 'v'): string {
         const id = uniqueIdCounter++;
         return `${prefix}_${id}`;
     }
 
-    childCount(node) {
+    childCount(node: SourceNode | null): number {
         return node ? node.childCount : 0;
     }
 
-    child(node, index) {
+    child(node: SourceNode | null, index: number): SourceNode | null {
         return node ? node.child(index) : null;
     }
 
-    childForFieldName(node, fieldName) {
-        if (!node) return null;
-        return node.findChildByFieldName(fieldName);
-    }
-
-    error(node, message) {
-        let finalNode = node;
+    error(node: SourceNode | string, message?: string): never {
+        let finalNode: any = node;
         let finalMessage = message;
 
         if (arguments.length === 1 && typeof node === 'string') {
@@ -442,7 +458,7 @@ class UppHelpersBase {
             finalNode = this.contextNode || (this.invocation && this.invocation.invocationNode);
         }
 
-        const err = new Error(finalMessage);
+        const err: any = new Error(finalMessage);
         err.isUppError = true;
         err.node = finalNode;
         throw err;

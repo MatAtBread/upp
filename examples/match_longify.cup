@@ -3,12 +3,12 @@
 @define typeOf(id) {
     const node = upp.findDefinition(id);
     const type = upp.getType(node);
-    return upp.codeTree`"${type}"`;
+    return upp.code`"${type}"`;
 }
 
 @define longify(name) {
     upp.matchReplace(upp.root, `int ${name} = $val__number_literal;`, ({ val }) => {
-        return upp.codeTree`long ${name} = (long)(${val});`;
+        return upp.code`long ${name} = (long)(${val});`;
     }, { deep: true });
 }
 

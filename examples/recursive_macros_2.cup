@@ -41,9 +41,9 @@
             const innerArgs = args.children.slice(1, -1);
             const hasArgs = innerArgs.length > 0;
             if (operator === '.') {
-                return helpers.codeTree`${newName}(&(${obj})${hasArgs ? ', ' : ''}${innerArgs})`;
+                return helpers.code`${newName}(&(${obj})${hasArgs ? ', ' : ''}${innerArgs})`;
             } else {
-                return helpers.codeTree`${newName}(${obj}${hasArgs ? ', ' : ''}${innerArgs})`;
+                return helpers.code`${newName}(${obj}${hasArgs ? ', ' : ''}${innerArgs})`;
             }
         }
     );
@@ -56,14 +56,14 @@
                 const ids = declNode.find('identifier');
                 for (const id of ids) {
                     if (id.parent.type.includes('declarator') || id.parent === declNode) {
-                        declNode.insertAfter(upp.codeTree`@defer ${id.text}.Defer();`);
+                        declNode.insertAfter(upp.code`@defer ${id.text}.Defer();`);
                     }
                 }
             }
         }
     }
 
-    return upp.codeTree`${returnType.text} ${newName}${params.text} ${body.text}`;
+    return upp.code`${returnType.text} ${newName}${params.text} ${body.text}`;
 }
 
 @define defer() {
@@ -81,7 +81,7 @@
         },
         (m, helpers) => {
             // Replace return with { defer_code; return; } to avoid infinite recursion
-            return helpers.codeTree`{ ${node.text} ${m.text} }`;
+            return helpers.code`{ ${node.text} ${m.text} }`;
 
         }
     );
@@ -89,7 +89,7 @@
     // Also handle the end of scope
     const lastBrace = scope.children.find(c => c.text === '}');
     if (lastBrace) {
-        lastBrace.insertBefore(upp.codeTree`${node.text} `);
+        lastBrace.insertBefore(upp.code`${node.text} `);
     }
 }
 

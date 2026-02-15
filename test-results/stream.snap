@@ -1,0 +1,85 @@
+==== examples/stream.c ===
+#include "expressionType.h"
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+void strncat_char_ptr(char *dest, char *src, unsigned int size) {
+    strncat(dest, src, size);
+}
+void strncat_char(char *dest, char src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        dest[len] = src;
+        dest[len + 1] = '\0';
+    }
+}
+void strncat_int(char *dest, int src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%u", src);
+    }
+}
+void strncat_long(char *dest, long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%ld", src);
+    }
+}
+void strncat_unsigned_long(char *dest, unsigned long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%lu", src);
+    }
+}
+void strncat_long_long(char *dest, long long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%lld", src);
+    }
+}
+void strncat_unsigned_long_long(char *dest, unsigned long long src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%llu", src);
+    }
+}
+void strncat_double(char *dest, double src, unsigned int size) {
+    int len = strlen(dest);
+    if (len < size) {
+        snprintf(dest + len, size - len, "%f", src);
+    }
+}
+int main() {
+    int y = 4;
+    void *p = "ABCDE";
+    char x[128] = {0};
+	strncat_int(x, 10, sizeof(x));
+	strncat_char_ptr(x, "abc", sizeof(x));
+	strncat_int(x, y + 3, sizeof(x));
+	strncat_double(x, 3.14, sizeof(x));
+	strncat_char_ptr(x, ((char *)p) + 1, sizeof(x));
+	strncat_unsigned_long_long(x, 100ULL, sizeof(x));
+	strncat_char(x, 'a', sizeof(x));
+	 
+    printf("%s\n", x);
+    return 0;
+}
+
+==== std/expressionType.h ===
+
+
+==== RUN OUTPUT ===
+10abc73.140000BCDE100a
+
