@@ -3,11 +3,11 @@
 @define xxx() {
     const fn = upp.consume('function_definition');
     return upp.match(fn, '$returnType $name($params__until) { $body__until }', 
-    ({ returnType, name, params, body }) => {
-        return upp.code`${returnType} ${name}(${params}) {
-    ${body}
-}`
-    });
+    ({ returnType, name, params, body }) => upp.code`
+    ${returnType} ${name}(${params}) {
+        puts("Running '${name.text}', returns ${returnType.text}");
+        ${body}
+    }`);
 }
 
 @xxx int my_fn(int x, int y) {
@@ -19,6 +19,7 @@
 }
 
 int main() {
-    printf("%s\n", my_fn(5, 6) == 30 ? "PASS" : "FAIL");
+    int res = my_fn(5, 6);
+    printf("Result %d: %s\n", res, res == 30 ? "PASS" : "FAIL");
     return 0; 
 }

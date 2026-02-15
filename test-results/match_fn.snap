@@ -15,17 +15,20 @@ extern void *stderr;
 extern void *_stderr;
 
 int my_fn(int x , int y) {
-    int g = 1;;
+        puts("Running 'my_fn', returns int");
+        int g = 1;;
 for (int i = 1; i < x; i++) {
         g = g * i;
     };
 return g + y;;
-} 
+    } 
 int main() {
-    printf("%s\n", my_fn(5, 6) == 30 ? "PASS" : "FAIL");
+    int res = my_fn(5, 6);
+    printf("Result %d: %s\n", res, res == 30 ? "PASS" : "FAIL");
     return 0;
 }
 
 ==== RUN OUTPUT ===
-PASS
+Running 'my_fn', returns int
+Result 30: PASS
 
