@@ -1,0 +1,18 @@
+#include "io-lite.h"
+
+@define duplicate() {
+    const z = upp.consume(); // Read the next item in the AST and remove it from the tree
+
+    return upp.code`
+/* FIRST */${z}
+/* AGAIN */${z}
+/* DONE */`;
+}
+
+
+int main() { 
+    int z = 0;
+@duplicate z++;
+    printf("%s\n", z == 2 ? "PASS" : "FAIL");
+    return 0; 
+}

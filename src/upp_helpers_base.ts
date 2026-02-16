@@ -60,15 +60,17 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
             if (val instanceof SourceNode) {
                 if (!val.isValid) {
                     const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
-                    console.warn(`[UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation.`);
+                    text += `\n/* [UPP WARNING] Macro substitution uses a stale node reference (${nodeInfo}). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation. */\n`;
                     text += val.text;
                     return;
                 }
                 if (usedNodes.has(val)) {
-                    const placeholder = usedNodes.get(val);
-                    text += placeholder;
+                    text += `\n/* [UPP WARNING] Macro substitution uses a node reference (type: ${val.type}) more than once. Falling back to text-only interpolation. */\n`;
+                    text += val.text;
+                    return;
+
                 } else {
-                    const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('p')}`;
+                    const placeholder = this.createUniqueIdentifier('__UPP_NODE_STABILITY_p');
                     usedNodes.set(val, placeholder);
                     nodeMap.set(placeholder, val);
                     text += placeholder;
@@ -77,7 +79,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
                 throw new Error(`upp.code: Invalid null or undefined value at index ${index}`);
             } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
                 // Unified Array Placeholder: use a single placeholder for the entire list
-                const placeholder = `__UPP_NODE_STABILITY_${this.createUniqueIdentifier('l')}`;
+                const placeholder = this.createUniqueIdentifier('__UPP_NODE_STABILITY_l');
                 listMap.set(placeholder, Array.from(val));
                 text += placeholder;
             } else {
