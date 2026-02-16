@@ -2,7 +2,8 @@
 
 @define stale_test() {
     const node = upp.consume(['declaration']);
-    const declarator = upp.childForFieldName(node, 'declarator');
+    //const declarator = upp.childForFieldName(node, 'declarator');
+    const declarator = node.named.declarator;
     const identifier = declarator.find('identifier')[0];
 
     // This replacement uses raw text for the node's parent, 

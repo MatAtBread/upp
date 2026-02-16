@@ -1,4 +1,4 @@
-==== examples/repro-stale-node.c ===
+==== examples/duplicate_node.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -15,11 +15,17 @@ extern void *stderr;
 extern void *_stderr;
 
 int main() {
-    // Using stale identifier: 
-/* [UPP WARNING] Macro substitution uses a stale node reference (type: identifier). It may have been destroyed by a previous non-identity-preserving transformation. Falling back to text-only interpolation. */
-int another_var = 456; 
+    int z = 0;
+/* FIRST */
+z++;
+/* AGAIN */
+/* [UPP WARNING] Macro substitution uses a node reference (type: expression_statement) more than once. Falling back to text-only interpolation. */
+z++;
+/* DONE */ 
+    printf("%s\n", z == 2 ? "PASS" : "FAIL");
     return 0;
 }
 
 ==== RUN OUTPUT ===
+PASS
 
