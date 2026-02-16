@@ -31,10 +31,14 @@ const fs = __importStar(require("fs"));
 const os = __importStar(require("os"));
 function activate(context) {
     const debounceTimers = new Map();
+    const outputChannel = vscode.window.createOutputChannel('UPP');
+    outputChannel.appendLine('[UPP] Extension activated');
     const virtualDocumentProvider = new class {
         constructor() {
             this.onDidChangeEmitter = new vscode.EventEmitter();
             this.onDidChange = this.onDidChangeEmitter.event;
+            this.cachedTypings = null;
+            this.cachedTypingsLines = 0;
         }
         async provideTextDocumentContent(uri, token) {
             const originalUriString = uri.query;
@@ -47,7 +51,7 @@ function activate(context) {
                     if (uri.path.endsWith('.c')) {
                         return this.generateMaskedC(content);
                     }
-                    else if (uri.path.endsWith('.js')) {
+                    else if (uri.path.endsWith('.js') || uri.path.endsWith('.ts')) {
                         return this.generateMaskedJS(content);
                     }
                 }
@@ -71,17 +75,34 @@ function activate(context) {
                 if (bodyEnd !== -1) {
                     const start = match.index;
                     const end = bodyEnd + 1;
-                    masked = masked.substring(0, start) + ' '.repeat(end - start) + masked.substring(end);
+                    const block = content.substring(start, end);
+                    const maskedBlock = block.replace(/[^\r\n]/g, ' ');
+                    masked = masked.substring(0, start) + maskedBlock + masked.substring(end);
                 }
             }
             return masked;
         }
+        ensureTypings() {
+            if (this.cachedTypings !== null)
+                return this.cachedTypings;
+            try {
+                const dtsPath = vscode.Uri.joinPath(context.extensionUri, 'upp.d.ts').fsPath;
+                const content = fs.readFileSync(dtsPath, 'utf8');
+                // Strip 'export ' to make it global-friendly for TS files
+                this.cachedTypings = content.replace(/^export\s+/gm, '');
+                this.cachedTypingsLines = this.cachedTypings.split('\n').length;
+                return this.cachedTypings;
+            }
+            catch (e) {
+                console.error('[UPP] Failed to load upp.d.ts:', e);
+                return '// Failed to load typings\n';
+            }
+        }
         generateMaskedJS(content) {
             const regex = /(@define(?:@[a-zA-Z0-9]+)?\s+[a-zA-Z0-9_]+\s*\([^)]*\)\s*\{)/g;
-            // Join with root upp.d.ts
-            const dtsPath = vscode.Uri.joinPath(context.extensionUri, 'upp.d.ts').fsPath;
-            const header = `/// <reference path="${dtsPath.replace(/\\/g, '/')}" />\n`;
-            let masked = header + ' '.repeat(content.length);
+            const typings = this.ensureTypings();
+            const header = typings + '\n';
+            let masked = header + content.replace(/[^\r\n]/g, ' ');
             let match;
             while ((match = regex.exec(content)) !== null) {
                 const bodyStart = match.index + match[0].length;
@@ -176,6 +197,10 @@ function activate(context) {
                 }
             });
         }
+        getTypingsLineCount() {
+            this.ensureTypings();
+            return this.cachedTypingsLines;
+        }
         findClosingBrace(content, start) {
             let depth = 1;
             for (let i = start; i < content.length; i++) {
@@ -207,7 +232,7 @@ function activate(context) {
                 break;
             }
         }
-        const ext = isInsideDefine ? '.js' : '.c';
+        const ext = isInsideDefine ? '.ts' : '.c';
         const filename = path.basename(document.uri.fsPath, path.extname(document.uri.fsPath));
         const virtualUri = vscode.Uri.from({
             scheme: 'upp-virtual',
@@ -215,17 +240,79 @@ function activate(context) {
             path: `/(UPP) ${filename}.virtual${ext}`,
             query: document.uri.toString()
         });
-        // CRITICAL: Ensure the virtual document is pre-loaded
-        await vscode.workspace.openTextDocument(virtualUri);
+        // CRITICAL: Ensure the virtual document is pre-loaded and language is correct
+        const virtualDoc = await vscode.workspace.openTextDocument(virtualUri);
+        const expectedLang = isInsideDefine ? 'typescript' : 'c';
+        if (virtualDoc.languageId !== expectedLang) {
+            await vscode.languages.setTextDocumentLanguage(virtualDoc, expectedLang);
+        }
         let virtualPosition = position;
         if (isInsideDefine) {
-            const headerLines = 1; // /// <reference ... />
+            const headerLines = virtualDocumentProvider.getTypingsLineCount();
             virtualPosition = new vscode.Position(position.line + headerLines, position.character);
         }
-        console.log(`[UPP] Forwarding ${command} to ${virtualUri.toString()} at ${virtualPosition.line}:${virtualPosition.character}`);
+        outputChannel.appendLine(`[UPP] Forwarding ${command} to ${virtualUri.toString()} at ${virtualPosition.line}:${virtualPosition.character} (mapped from ${position.line}:${position.character})`);
         const result = await vscode.commands.executeCommand(command, virtualUri, virtualPosition);
-        console.log(`[UPP] Result for ${command}:`, result ? 'Found completions' : 'No result');
-        return result;
+        outputChannel.appendLine(`[UPP] Result for ${command}: ${result ? (Array.isArray(result) ? result.length : (result.items ? result.items.length : '1')) + ' results' : 'No result'}`);
+        if (!result)
+            return result;
+        const lineOffset = isInsideDefine ? virtualDocumentProvider.getTypingsLineCount() : 0;
+        if (lineOffset === 0)
+            return result;
+        // Map results back if offset is non-zero
+        const mapRange = (r) => {
+            if (!r)
+                return r;
+            // Handle both plain object and Range instance
+            const startLine = ((r.start?.line !== undefined ? r.start.line : r._start?.line) ?? 0) - lineOffset;
+            const endLine = ((r.end?.line !== undefined ? r.end.line : r._end?.line) ?? 0) - lineOffset;
+            const startChar = (r.start?.character !== undefined ? r.start.character : r._start?.character) ?? 0;
+            const endChar = (r.end?.character !== undefined ? r.end.character : r._end?.character) ?? 0;
+            return new vscode.Range(Math.max(0, startLine), startChar, Math.max(0, endLine), endChar);
+        };
+        const mapItem = (item) => {
+            if (!item)
+                return item;
+            // Map range
+            if (item.range) {
+                if (item.range instanceof vscode.Range || (item.range.start !== undefined && item.range.end !== undefined) || (item.range._start !== undefined && item.range._end !== undefined)) {
+                    item.range = mapRange(item.range);
+                }
+                else if (item.range.inserting || item.range.replacing) {
+                    if (item.range.inserting)
+                        item.range.inserting = mapRange(item.range.inserting);
+                    if (item.range.replacing)
+                        item.range.replacing = mapRange(item.range.replacing);
+                }
+            }
+            // Map textEdit
+            if (item.textEdit && item.textEdit.range) {
+                item.textEdit.range = mapRange(item.textEdit.range);
+            }
+            // Map additionalTextEdits
+            if (item.additionalTextEdits && Array.isArray(item.additionalTextEdits)) {
+                item.additionalTextEdits = item.additionalTextEdits.map((edit) => {
+                    if (edit.range)
+                        edit.range = mapRange(edit.range);
+                    return edit;
+                });
+            }
+            return item;
+        };
+        let mappedResult = result;
+        if (Array.isArray(result)) {
+            mappedResult = result.map(mapItem);
+        }
+        else if (result.items && Array.isArray(result.items)) {
+            result.items = result.items.map(mapItem);
+            mappedResult = result;
+        }
+        else if (result.range) { // e.g. Hover
+            result.range = mapRange(result.range);
+            mappedResult = result;
+        }
+        outputChannel.appendLine(`[UPP] Mapped result for ${command} (first item if any: ${JSON.stringify(Array.isArray(mappedResult) ? mappedResult[0] : (mappedResult.items ? mappedResult.items[0] : mappedResult))})`);
+        return mappedResult;
     };
     context.subscriptions.push(vscode.languages.registerCompletionItemProvider(['cup', 'hup'], {
         provideCompletionItems(doc, pos) { return forwardRequest(doc, pos, 'vscode.executeCompletionItemProvider'); }
@@ -255,7 +342,7 @@ function activate(context) {
             const uri = vscode.Uri.from({
                 scheme: 'upp-virtual',
                 authority: 'authority',
-                path: `/(UPP) ${filename}.virtual.js`,
+                path: `/(UPP) ${filename}.virtual.ts`,
                 query: editor.document.uri.toString()
             });
             const doc = await vscode.workspace.openTextDocument(uri);
@@ -274,6 +361,23 @@ function activate(context) {
             });
             const doc = await vscode.workspace.openTextDocument(uri);
             await vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside, true);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('upp.dumpVirtualState', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && (editor.document.languageId === 'cup' || editor.document.languageId === 'hup')) {
+            const filename = path.basename(editor.document.uri.fsPath, path.extname(editor.document.uri.fsPath));
+            const uri = vscode.Uri.from({
+                scheme: 'upp-virtual',
+                authority: 'authority',
+                path: `/(UPP) ${filename}.virtual.ts`,
+                query: editor.document.uri.toString()
+            });
+            const doc = await vscode.workspace.openTextDocument(uri);
+            outputChannel.show();
+            outputChannel.appendLine(`--- DUMP VIRTUAL DOCUMENT: ${uri.toString()} ---`);
+            outputChannel.appendLine(doc.getText());
+            outputChannel.appendLine('--- END DUMP ---');
         }
     }));
     // Auto-refresh logic (Debounced)
@@ -302,7 +406,7 @@ function activate(context) {
                 const vJS = vscode.Uri.from({
                     scheme: 'upp-virtual',
                     authority: 'authority',
-                    path: `/(UPP) ${filename}.virtual.js`,
+                    path: `/(UPP) ${filename}.virtual.ts`,
                     query: docUriStr
                 });
                 virtualDocumentProvider.onDidChangeEmitter.fire(vJS);

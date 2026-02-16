@@ -7,34 +7,34 @@ let uniqueIdCounter = 1;
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
-class UppHelpersBase {
-    public root: SourceNode | null;
+class UppHelpersBase<LanguageNodeTypes extends string> {
+    public root: SourceNode<LanguageNodeTypes> | null;
     public registry: Registry;
-    public _parentHelpers: UppHelpersBase | null;
-    public contextNode: SourceNode | null;
+    public _parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
+    public contextNode: SourceNode<LanguageNodeTypes> | null;
     public invocation: Invocation | null;
-    public lastConsumedNode: SourceNode | null;
+    public lastConsumedNode: SourceNode<LanguageNodeTypes> | null;
     public isDeferred: boolean;
     public currentInvocations: Invocation[];
     public consumedIds: Set<number | string>;
     public context: RegistryContext | null;
-    public parentTree: SourceNode | null;
+    public parentTree: SourceNode<any> | null;
     public stdPath: string | null;
     public lastConsumedIndex?: number;
     public parentRegistry?: {
         invocations: Invocation[];
         sourceCode: string;
-        helpers: UppHelpersBase;
+        helpers: UppHelpersBase<LanguageNodeTypes>;
     };
     public topLevelInvocation?: Invocation | null;
 
-    get parentHelpers(): UppHelpersBase | null { return this._parentHelpers; }
-    set parentHelpers(v: UppHelpersBase | null) { this._parentHelpers = v; }
+    get parentHelpers(): UppHelpersBase<LanguageNodeTypes> | null { return this._parentHelpers; }
+    set parentHelpers(v: UppHelpersBase<LanguageNodeTypes> | null) { this._parentHelpers = v; }
 
     get isAuthoritative(): boolean { return this.registry.isAuthoritative; }
     set isAuthoritative(v: boolean) { this.registry.isAuthoritative = v; }
 
-    constructor(root: SourceNode | null, registry: Registry, parentHelpers: UppHelpersBase | null = null) {
+    constructor(root: SourceNode<LanguageNodeTypes> | null, registry: Registry, parentHelpers: UppHelpersBase<LanguageNodeTypes> | null = null) {
         this.root = root;
         this.registry = registry;
         this._parentHelpers = parentHelpers;
@@ -50,7 +50,7 @@ class UppHelpersBase {
     }
 
 
-    code(strings: TemplateStringsArray, ...values: any[]): SourceNode {
+    code(strings: TemplateStringsArray, ...values: any[]): SourceNode<LanguageNodeTypes> {
         let text = "";
         const nodeMap = new Map<string, SourceNode>();
         const listMap = new Map<string, any[]>();
@@ -172,26 +172,26 @@ class UppHelpersBase {
         return result;
     }
 
-    atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
+    atRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         const root = this.findRoot();
         if (!root) return "";
         return this.withNode(root, callback);
     }
 
-    withScope(callback: (scope: SourceNode, helpers: UppHelpersBase) => any): string {
+    withScope(callback: (scope: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         const scope = this.findScope();
         if (!scope) return "";
         return this.withNode(scope, callback);
     }
 
-    withRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
+    withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         return this.withNode(this.findRoot()!, callback);
     }
 
     /**
      * @deprecated Use code or withPattern instead.
      */
-    registerTransform(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string {
+    registerTransform(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         return this.atRoot(callback);
     }
 
@@ -199,7 +199,7 @@ class UppHelpersBase {
         this.registry.registerTransformRule(rule);
     }
 
-    replace(n: SourceNode, newContent: string | SourceNode | SourceNode[] | SourceTree | null): SourceNode | SourceNode[] | null {
+    replace(n: SourceNode<LanguageNodeTypes>, newContent: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null {
         let finalContent = newContent;
         if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && (this.registry as any).prepareSource) {
             const prepared = (this.registry as any).prepareSource(finalContent, (this.registry as any).originPath);
@@ -209,48 +209,48 @@ class UppHelpersBase {
         if (n.replaceWith) {
             const result = n.replaceWith(finalContent as any);
             if (this.contextNode === n) this.contextNode = result as any;
-            return result;
+            return result as any;
         }
 
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
-    insertBefore(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
+    insertBefore(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] {
         if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
-        return n.insertBefore(content as any);
+        return n.insertBefore(content as any) as any;
     }
 
-    insertAfter(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[] {
+    insertAfter(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] {
         if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
-        return n.insertAfter(content as any);
+        return n.insertAfter(content as any) as any;
     }
 
-    findRoot(): SourceNode | null {
+    findRoot(): SourceNode<LanguageNodeTypes> | null {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
 
 
 
-    withNode(node: SourceNode | null, callback: (target: SourceNode, helpers: UppHelpersBase) => any): string {
+    withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         if (!node) return "";
         node.markers.push({
-            callback: (target: SourceNode, helpers: UppHelpersBase) => callback(target, helpers),
+            callback: (target: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(target as any, helpers as any),
             data: {}
         });
         return "";
     }
 
-    wrapNode(node: SourceNode): SourceNode {
+    wrapNode(node: SourceNode<any>): SourceNode<any> {
         return node; // No longer needed, but kept for compatibility during transition
     }
 
     /**
      * Finds macro invocations in the tree.
      * @param {string} macroName
-     * @param {SourceNode} [node]
+     * @param {SourceNode<LanguageNodeTypes>} [node]
      * @returns {any[]}
      */
-    findInvocations(macroName: string, node: SourceNode | null = null): Invocation[] {
+    findInvocations(macroName: string, node: SourceNode<LanguageNodeTypes> | null = null): Invocation[] {
         let target = node || this.root;
         if (!target && this.registry) {
             target = this.registry.tree ? this.registry.tree.root : null as any;
@@ -290,7 +290,7 @@ class UppHelpersBase {
      * Finds the next logical node after the macro invocation.
      * @private
      */
-    public _getNextNode(expectedTypes: string[] | null = null): SourceNode | null {
+    public _getNextNode(expectedTypes: string[] | null = null): SourceNode<LanguageNodeTypes> | null {
         const root = this.root || this.findRoot();
         const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode?.endIndex);
         if (index === undefined || index === null) return null;
@@ -299,32 +299,32 @@ class UppHelpersBase {
 
     /**
      * Retrieves the next node without removing it from the tree.
-     * @param {string|string[] | null} [types] 
-     * @returns {SourceNode|null}
+     * @param {K|K[] | null} [types] 
+     * @returns {SourceNode<K>|null}
      */
-    nextNode(types: string | string[] | null = null): SourceNode | null {
-        const expectedTypes = typeof types === 'string' ? [types] : types;
+    nextNode<K extends LanguageNodeTypes>(types: K | K[] | null = null): SourceNode<K> | null {
+        const expectedTypes = (typeof types === 'string' ? [types] : types) as string[] | null;
         const node = this._getNextNode(expectedTypes);
         if (node && expectedTypes && !expectedTypes.includes(node.type)) {
             return null;
         }
-        return node;
+        return node as SourceNode<K> | null;
     }
 
-    consume(expectedTypeOrOptions?: string | string[] | { type?: string | string[], message?: string, validate?: (n: SourceNode) => boolean }, errorMessage?: string): SourceNode | null {
+    consume<K extends LanguageNodeTypes>(expectedTypeOrOptions?: K | K[] | { type?: K | K[], message?: string, validate?: (n: SourceNode<LanguageNodeTypes>) => boolean }, errorMessage?: string): SourceNode<K> | null {
         let expectedTypes: string[] | null = null;
         let internalErrorMessage = errorMessage;
-        let validateFn: ((n: SourceNode) => boolean) | null = null;
+        let validateFn: ((n: SourceNode<LanguageNodeTypes>) => boolean) | null = null;
 
         if (typeof expectedTypeOrOptions === 'string') expectedTypes = [expectedTypeOrOptions];
-        else if (Array.isArray(expectedTypeOrOptions)) expectedTypes = expectedTypeOrOptions;
+        else if (Array.isArray(expectedTypeOrOptions)) expectedTypes = expectedTypeOrOptions as string[];
         else if (expectedTypeOrOptions && typeof expectedTypeOrOptions === 'object') {
-            expectedTypes = Array.isArray(expectedTypeOrOptions.type) ? expectedTypeOrOptions.type : (expectedTypeOrOptions.type ? [expectedTypeOrOptions.type] : null);
+            expectedTypes = (Array.isArray(expectedTypeOrOptions.type) ? expectedTypeOrOptions.type : (expectedTypeOrOptions.type ? [expectedTypeOrOptions.type] : null)) as string[] | null;
             internalErrorMessage = (expectedTypeOrOptions as any).message || errorMessage;
             validateFn = (expectedTypeOrOptions as any).validate;
         }
 
-        const reportFailure = (foundNode: SourceNode | null) => {
+        const reportFailure = (foundNode: SourceNode<LanguageNodeTypes> | null) => {
             const macroName = this.invocation ? `@${this.invocation.name}` : "macro";
             let msg = internalErrorMessage;
             if (!msg) {
@@ -347,12 +347,12 @@ class UppHelpersBase {
 
         const isHoisted = this.invocation?.invocationNode && this.isDescendant(node, this.invocation.invocationNode);
 
-        const captureText = (n: SourceNode) => {
+        const captureText = (n: SourceNode<any>) => {
             n._capturedText = n.text;
             n.children.forEach(captureText);
         };
         captureText(node);
-        const wrapped = node;
+        const wrapped = node as SourceNode<K>;
 
         const nextSearchIndex = node.startIndex;
 
@@ -366,7 +366,7 @@ class UppHelpersBase {
         return wrapped;
     }
 
-    isDescendant(parent: SourceNode | null, node: SourceNode): boolean {
+    isDescendant(parent: SourceNode<any> | null, node: SourceNode<any>): boolean {
         let current: any = node;
         const rawParent: any = parent ? (parent as any).__internal_raw_node || parent : null;
         while (current) {
@@ -377,7 +377,7 @@ class UppHelpersBase {
         return false;
     }
 
-    walk(node: SourceNode, callback: (n: SourceNode) => void): void {
+    walk(node: SourceNode<any>, callback: (n: SourceNode<any>) => void): void {
         if (!node) return;
         callback(node);
         const rawNode = (node as any).__internal_raw_node || node;
@@ -390,19 +390,19 @@ class UppHelpersBase {
     }
 
 
-    parent(node: SourceNode): SourceNode | null {
+    parent(node: SourceNode<any>): SourceNode<any> | null {
         return node ? node.parent : null;
     }
 
-    childForFieldName(node: SourceNode | null, fieldName: string): SourceNode | null {
+    childForFieldName(node: SourceNode<any> | null, fieldName: string): SourceNode<any> | null {
         if (!node) return null;
         return node.findChildByFieldName(fieldName);
     }
 
-    findNextNodeAfter(root: SourceNode | null, index: number): SourceNode | null {
+    findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null {
         if (!root) return null;
 
-        const findNextSibling = (node: SourceNode): SourceNode | null => {
+        const findNextSibling = (node: SourceNode<any>): SourceNode<any> | null => {
             if (!node || !node.parent || node === root) return null;
             const idx = node.parent.children.indexOf(node);
             if (idx === -1) return null;
@@ -413,10 +413,10 @@ class UppHelpersBase {
             return findNextSibling(node.parent);
         };
 
-        let current: SourceNode | null = root.descendantForIndex(index, index);
+        let current: SourceNode<any> | null = root.descendantForIndex(index, index);
 
         while (current && current.startIndex < index && current.endIndex > index && current.children.length > 0) {
-            let nextChild: SourceNode | null = null;
+            let nextChild: SourceNode<any> | null = null;
             for (const child of current.children) {
                 if (child.endIndex > index) {
                     nextChild = child;
@@ -434,7 +434,7 @@ class UppHelpersBase {
         if (!current || current === root) return null;
 
         while (current.children.length > 0) {
-            if (current.startIndex >= index && current.isNamed) break;
+            if (current.startIndex >= index && (current as any).isNamed) break;
 
             let found = false;
             for (const child of current.children) {
@@ -462,21 +462,21 @@ class UppHelpersBase {
             if (!ok) return null;
         }
 
-        return isSafe ? current : null;
+        return isSafe ? current as SourceNode<LanguageNodeTypes> : null;
     }
 
 
-    findScope(): SourceNode | null {
+    findScope(): SourceNode<LanguageNodeTypes> | null {
         const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
-        return this.findEnclosing(startNode!, ['compound_statement', 'translation_unit']);
+        return this.findEnclosing(startNode!, (['compound_statement', 'translation_unit'] as any) as LanguageNodeTypes[]);
     }
 
-    findEnclosing(node: SourceNode, types: string | string[]): SourceNode | null {
+    findEnclosing<K extends LanguageNodeTypes>(node: SourceNode<any>, types: K | K[]): SourceNode<K> | null {
         if (!node) return null;
-        const typeArray = Array.isArray(types) ? types : [types];
+        const typeArray = (Array.isArray(types) ? types : [types]) as string[];
         let p = node.parent;
         while (p) {
-            if (typeArray.includes(p.type)) return p;
+            if (typeArray.includes(p.type)) return p as SourceNode<K>;
             p = p.parent;
         }
         return null;
@@ -487,15 +487,15 @@ class UppHelpersBase {
         return `${prefix}_${id}`;
     }
 
-    childCount(node: SourceNode | null): number {
+    childCount(node: SourceNode<any> | null): number {
         return node ? node.childCount : 0;
     }
 
-    child(node: SourceNode | null, index: number): SourceNode | null {
+    child(node: SourceNode<any> | null, index: number): SourceNode<any> | null {
         return node ? node.child(index) : null;
     }
 
-    error(node: SourceNode | string, message?: string): never {
+    error(node: SourceNode<any> | string, message?: string): never {
         let finalNode: any = node;
         let finalMessage = message;
 

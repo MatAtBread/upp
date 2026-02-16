@@ -98,10 +98,10 @@ export interface Macro {
 	origin: string;
 	startIndex: number;
 }
-export interface TransformRule {
+export interface TransformRule<T extends string = string> {
 	active: boolean;
-	matcher: (node: SourceNode, helpers: UppHelpersC) => boolean;
-	callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+	matcher: (node: SourceNode<T>, helpers: any) => boolean;
+	callback: (node: SourceNode<T>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined;
 }
 export interface Invocation {
 	name: string;
@@ -110,7 +110,7 @@ export interface Invocation {
 	endIndex: number;
 	line?: number;
 	col?: number;
-	invocationNode?: SourceNode;
+	invocationNode?: SourceNode<any>;
 }
 export interface RegistryConfig {
 	onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
@@ -121,16 +121,16 @@ export interface RegistryConfig {
 	suppress?: string[];
 	comments?: boolean;
 }
-export interface Marker {
-	callback: (node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+export interface Marker<T extends string = string> {
+	callback: (node: SourceNode<T>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined;
 	data?: unknown;
 }
 export interface RegistryContext {
 	source: string;
-	tree: SourceTree;
+	tree: SourceTree<any>;
 	originPath: string;
 	invocations: Invocation[];
-	helpers: UppHelpersC | null;
+	helpers: UppHelpersBase<any> | null;
 }
 export type TreeSitterLang = unknown;
 export class Registry {
@@ -140,9 +140,9 @@ export class Registry {
 	filePath: string;
 	diagnostics: DiagnosticsManager;
 	language: TreeSitterLang;
-	helpers: UppHelpersC | null;
-	parentHelpers: UppHelpersBase | null;
-	parentTree: SourceTree | null;
+	helpers: UppHelpersBase<any> | null;
+	parentHelpers: UppHelpersBase<any> | null;
+	parentTree: SourceTree<any> | null;
 	materializedFiles: Set<string>;
 	isAuthoritative: boolean;
 	macros: Map<string, Macro>;
@@ -151,7 +151,7 @@ export class Registry {
 	stdPath: string | null;
 	loadedDependencies: Map<string, string>;
 	shouldMaterializeDependency: boolean;
-	transformRules: TransformRule[];
+	transformRules: TransformRule<any>[];
 	ruleIdCounter: number;
 	isExecutingDeferred: boolean;
 	onMaterialize: ((outputPath: string, content: string, options: {
@@ -160,20 +160,20 @@ export class Registry {
 	mainContext: RegistryContext | null;
 	UppHelpersC: typeof UppHelpersC;
 	source?: string;
-	tree?: SourceTree;
-	deferredMarkers?: Marker[];
-	activeTransformNode?: SourceNode | null;
+	tree?: SourceTree<any>;
+	deferredMarkers?: Marker<any>[];
+	activeTransformNode?: SourceNode<any> | null;
 	originPath?: string;
 	constructor(config?: RegistryConfig, parentRegistry?: Registry | null);
 	registerMacro(name: string, params: string[], body: string, language?: string, origin?: string, startIndex?: number): void;
 	getMacro(name: string): Macro | undefined;
-	registerTransformRule(rule: TransformRule | ((node: SourceNode, helpers: UppHelpersC) => SourceNode | SourceNode[] | SourceTree | string | null | undefined)): void;
+	registerTransformRule(rule: TransformRule<any> | ((node: SourceNode<any>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined)): void;
 	loadDependency(file: string, originPath?: string, parentHelpers?: UppHelpersC | null): void;
 	generateRuleId(): string;
 	transform(source: string, originPath?: string, parentHelpers?: UppHelpersC | null): string;
-	transformNode(node: SourceNode, helpers: UppHelpersC, context: RegistryContext): void;
-	executeDeferredMarkers(helpers: UppHelpersC): void;
-	evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersC, filePath: string): SourceNode | SourceNode[] | SourceTree | string | null | undefined;
+	transformNode(node: SourceNode<any>, helpers: any, context: RegistryContext): void;
+	executeDeferredMarkers(helpers: any): void;
+	evaluateMacro(invocation: Invocation, source: string, helpers: any, filePath: string): SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined;
 	createMacroFunction(macro: Macro): Function;
 	prepareSource(source: string, originPath: string): {
 		cleanSource: string;
@@ -187,13 +187,13 @@ export class Registry {
 	} | null;
 	isInsideInvocation(_start: number, _end: number): boolean;
 }
-export class SourceTree {
+export class SourceTree<NodeTypes extends string = string> {
 	source: string;
 	language: any;
 	parser: any;
 	tree: any;
-	nodeCache: Map<number | string, SourceNode>;
-	root: SourceNode;
+	nodeCache: Map<number | string, SourceNode<NodeTypes>>;
+	root: SourceNode<NodeTypes>;
 	/**
 	 * @param {string} source Initial source code text.
 	 * @param {any} language Tree-sitter language object.
@@ -206,7 +206,7 @@ export class SourceTree {
 	 * @param {string | null} [fieldName] The field name for this node in the parent.
 	 * @returns {SourceNode|null}
 	 */
-	wrap(tsNode: any | null, parent?: SourceNode | null, fieldName?: string | null): SourceNode | null;
+	wrap<T extends NodeTypes>(tsNode: any | null, parent?: SourceNode<NodeTypes> | null, fieldName?: string | null): SourceNode<T> | null;
 	/**
 	 * Apply a specialized splice to the source string and update tracking for all active nodes.
 	 * @param {number} start The start index of the edit.
@@ -220,8 +220,8 @@ export class SourceTree {
 	get endIndex(): number;
 	/** @returns {string} */
 	get type(): string;
-	/** @returns {SourceNode[]} */
-	get children(): SourceNode[];
+	/** @returns {SourceNode<any>[]} */
+	get children(): SourceNode<NodeTypes>[];
 	/** @returns {string} */
 	get text(): string;
 	/** @param {string} val */
@@ -233,7 +233,7 @@ export class SourceTree {
 	 * @param {any} language Tree-sitter language object.
 	 * @returns {SourceNode}
 	 */
-	static fragment(code: string | SourceNode | SourceTree, language: any): SourceNode;
+	static fragment<NodeTypes extends string = string>(code: string | SourceNode<any> | SourceTree<any>, language: any): SourceNode<NodeTypes>;
 	/**
 	 * Serializes the tree to JSON, avoiding circular references.
 	 * @returns {Object}
@@ -244,43 +244,45 @@ export class SourceTree {
 	 * @param {SourceTree} targetTree The tree to merge into.
 	 * @param {number} offset The offset to apply to all migrated nodes.
 	 */
-	mergeInto(targetTree: SourceTree, offset: number): void;
+	mergeInto(targetTree: SourceTree<NodeTypes>, offset: number): void;
 }
-export class SourceNode {
-	tree: SourceTree;
+export class SourceNode<T extends string = string> {
+	tree: SourceTree<any>;
 	id: number | string;
-	type: string;
+	type: T;
 	startIndex: number;
 	endIndex: number;
-	children: SourceNode[];
-	parent: SourceNode | null;
+	children: SourceNode<any>[];
+	parent: SourceNode<any> | null;
 	fieldName: string | null;
 	markers: Marker[];
 	data: Record<string, unknown>;
 	_capturedText?: string;
 	_snapshotSearchable?: string;
 	/**
-	 * @param {SourceTree} tree The tree this node belongs to.
+	 * @param {SourceTree<any>} tree The tree this node belongs to.
 	 * @param {SyntaxNode} tsNode The Tree-sitter node to wrap.
+	 * @param {SourceNode<any> | null} [parent] The parent SourceNode, if any.
+	 * @param {string | null} [fieldName] The field name for this node in the parent.
 	 */
-	constructor(tree: SourceTree, tsNode: any);
+	constructor(tree: SourceTree<any>, tsNode: any, parent?: SourceNode<any> | null, fieldName?: string | null);
 	/** @returns {boolean} */
 	get isNamed(): boolean;
 	/** @returns {boolean} */
 	get isValid(): boolean;
-	/** @returns {SourceNode|null} */
-	get nextNamedSibling(): SourceNode | null;
-	/** @returns {SourceNode|null} */
-	get prevNamedSibling(): SourceNode | null;
+	/** @returns {SourceNode<any>|null} */
+	get nextNamedSibling(): SourceNode<any> | null;
+	/** @returns {SourceNode<any>|null} */
+	get prevNamedSibling(): SourceNode<any> | null;
 	/** @returns {number} */
 	get namedChildCount(): number;
 	/**
 	 * @param {number} idx
-	 * @returns {SourceNode|null}
+	 * @returns {SourceNode<any>|null}
 	 */
-	namedChild(idx: number): SourceNode | null;
-	/** @returns {SourceNode|null} */
-	get firstNamedChild(): SourceNode | null;
+	namedChild(idx: number): SourceNode<any> | null;
+	/** @returns {SourceNode<any>|null} */
+	get firstNamedChild(): SourceNode<any> | null;
 	toString(): string;
 	/** @returns {string} */
 	get text(): string;
@@ -294,16 +296,16 @@ export class SourceNode {
 	set text(value: string);
 	/** @returns {number} */
 	get childCount(): number;
-	get named(): Record<string, SourceNode>;
+	get named(): Record<string, SourceNode<any>>;
 	/**
 	 * @returns {Object}
 	 */
 	toJSON(): Object;
 	/**
 	 * @param {number} idx
-	 * @returns {SourceNode}
+	 * @returns {SourceNode<any>}
 	 */
-	child(idx: number): SourceNode;
+	child(idx: number): SourceNode<any>;
 	/**
 	 * Internal method called by SourceTree when a global edit happens.
 	 * @param {number} editStart The start index of the edit.
@@ -313,9 +315,9 @@ export class SourceNode {
 	handleEdit(editStart: number, editEnd: number, delta: number): void;
 	/**
 	 * Removes the node from the tree and returns the removed sub-tree.
-	 * @returns {SourceTree}
+	 * @returns {SourceTree<any>}
 	 */
-	remove(): SourceTree;
+	remove(): SourceTree<any>;
 	/**
 	 * Recursively invalidates this node and its children,
 	 * removing them from the tree cache.
@@ -324,77 +326,77 @@ export class SourceNode {
 	_invalidateRecursively(): void;
 	/**
 	 * Replaces this node with another node or text.
-	 * @param {SourceNode|SourceTree|string|Array<SourceNode|string>} newNodeContent The node or text to replace with.
-	 * @returns {SourceNode | SourceNode[] | null}
+	 * @param {SourceNode<any>|SourceTree<any>|string|Array<SourceNode<any>|string>} newNodeContent The node or text to replace with.
+	 * @returns {SourceNode<any> | SourceNode<any>[] | null}
 	 */
-	replaceWith(newNodeContent: SourceNode | SourceTree | string | Array<SourceNode | string>): SourceNode | SourceNode[] | null;
+	replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<any> | SourceNode<any>[] | null;
 	/**
 	 * Inserts a node or text after this node.
-	 * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-	 * @returns {SourceNode|SourceNode[]}
+	 * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
+	 * @returns {SourceNode<any>|SourceNode<any>[]}
 	 */
-	insertAfter(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[];
+	insertAfter(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[];
 	/**
 	 * Inserts a node or text before this node.
-	 * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-	 * @returns {SourceNode|SourceNode[]}
+	 * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
+	 * @returns {SourceNode<any>|SourceNode<any>[]}
 	 */
-	insertBefore(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[];
-	_attachNewNode(newNode: SourceNode | SourceTree | string | Array<SourceNode | string>, insertionOffset: number): SourceNode | SourceNode[] | null;
+	insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[];
+	_attachNewNode(newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>, insertionOffset: number): SourceNode<any> | SourceNode<any>[] | null;
 	/**
 	 * Finds nodes matching a predicate or type within this subtree.
-	 * @param {string|function(SourceNode):boolean} predicate Type name or filter function.
-	 * @returns {SourceNode[]}
+	 * @param {K | function(SourceNode<any>):boolean} predicate Type name or filter function.
+	 * @returns {SourceNode<K>[]}
 	 */
-	find(predicate: string | ((n: SourceNode) => boolean)): SourceNode[];
+	find<K extends string>(predicate: K | ((n: SourceNode<any>) => boolean)): SourceNode<K>[];
 	/**
 	 * Finds the smallest descendant that contains the given index range.
 	 * @param {number} start
 	 * @param {number} end
-	 * @returns {SourceNode}
+	 * @returns {SourceNode<any>}
 	 */
-	descendantForIndex(start: number, end: number): SourceNode;
-	childForFieldName(fieldName: string): SourceNode | null;
+	descendantForIndex(start: number, end: number): SourceNode<any>;
+	childForFieldName(fieldName: string): SourceNode<any> | null;
 	/**
 	 * Finds a direct child by its field name.
 	 * @param {string} fieldName
-	 * @returns {SourceNode|null}
+	 * @returns {SourceNode<any>|null}
 	 */
-	findChildByFieldName(fieldName: string): SourceNode | null;
+	findChildByFieldName(fieldName: string): SourceNode<any> | null;
 	/**
 	 * Appends a node or text as a child of this node.
 	 * Requires the node to already have children to use as anchors.
-	 * @param {SourceNode|SourceTree|string} newNode The node or text to append.
-	 * @returns {SourceNode | SourceNode[]}
+	 * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to append.
+	 * @returns {SourceNode<any> | SourceNode<any>[]}
 	 */
-	append(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[];
+	append(newNode: SourceNode<any> | SourceTree<any> | string): SourceNode<any> | SourceNode<any>[];
 }
-export class UppHelpersBase {
-	root: SourceNode | null;
+export class UppHelpersBase<LanguageNodeTypes extends string> {
+	root: SourceNode<LanguageNodeTypes> | null;
 	registry: Registry;
-	_parentHelpers: UppHelpersBase | null;
-	contextNode: SourceNode | null;
+	_parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
+	contextNode: SourceNode<LanguageNodeTypes> | null;
 	invocation: Invocation | null;
-	lastConsumedNode: SourceNode | null;
+	lastConsumedNode: SourceNode<LanguageNodeTypes> | null;
 	isDeferred: boolean;
 	currentInvocations: Invocation[];
 	consumedIds: Set<number | string>;
 	context: RegistryContext | null;
-	parentTree: SourceNode | null;
+	parentTree: SourceNode<any> | null;
 	stdPath: string | null;
 	lastConsumedIndex?: number;
 	parentRegistry?: {
 		invocations: Invocation[];
 		sourceCode: string;
-		helpers: UppHelpersBase;
+		helpers: UppHelpersBase<LanguageNodeTypes>;
 	};
 	topLevelInvocation?: Invocation | null;
-	get parentHelpers(): UppHelpersBase | null;
-	set parentHelpers(v: UppHelpersBase | null);
+	get parentHelpers(): UppHelpersBase<LanguageNodeTypes> | null;
+	set parentHelpers(v: UppHelpersBase<LanguageNodeTypes> | null);
 	get isAuthoritative(): boolean;
 	set isAuthoritative(v: boolean);
-	constructor(root: SourceNode | null, registry: Registry, parentHelpers?: UppHelpersBase | null);
-	code(strings: TemplateStringsArray, ...values: any[]): SourceNode;
+	constructor(root: SourceNode<LanguageNodeTypes> | null, registry: Registry, parentHelpers?: UppHelpersBase<LanguageNodeTypes> | null);
+	code(strings: TemplateStringsArray, ...values: any[]): SourceNode<LanguageNodeTypes>;
 	/**
 	 * Determines how an array should be expanded based on its parent context.
 	 * @param {any[]} values The values to expand.
@@ -402,55 +404,55 @@ export class UppHelpersBase {
 	 * @returns {any[]} The expanded list of nodes/text.
 	 */
 	protected getArrayExpansion(values: any[], parentType: string): any[];
-	atRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
-	withScope(callback: (scope: SourceNode, helpers: UppHelpersBase) => any): string;
-	withRoot(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
+	atRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string;
+	withScope(callback: (scope: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string;
+	withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string;
 	/**
 	 * @deprecated Use code or withPattern instead.
 	 */
-	registerTransform(callback: (root: SourceNode, helpers: UppHelpersBase) => any): string;
+	registerTransform(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string;
 	registerTransformRule(rule: any): void;
-	replace(n: SourceNode, newContent: string | SourceNode | SourceNode[] | SourceTree | null): SourceNode | SourceNode[] | null;
-	insertBefore(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[];
-	insertAfter(n: SourceNode, content: string | SourceNode | SourceNode[] | SourceTree): SourceNode | SourceNode[];
-	findRoot(): SourceNode | null;
-	withNode(node: SourceNode | null, callback: (target: SourceNode, helpers: UppHelpersBase) => any): string;
-	wrapNode(node: SourceNode): SourceNode;
+	replace(n: SourceNode<LanguageNodeTypes>, newContent: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null;
+	insertBefore(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[];
+	insertAfter(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[];
+	findRoot(): SourceNode<LanguageNodeTypes> | null;
+	withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string;
+	wrapNode(node: SourceNode<any>): SourceNode<any>;
 	/**
 	 * Finds macro invocations in the tree.
 	 * @param {string} macroName
-	 * @param {SourceNode} [node]
+	 * @param {SourceNode<LanguageNodeTypes>} [node]
 	 * @returns {any[]}
 	 */
-	findInvocations(macroName: string, node?: SourceNode | null): Invocation[];
+	findInvocations(macroName: string, node?: SourceNode<LanguageNodeTypes> | null): Invocation[];
 	loadDependency(file: string): void;
 	/**
 	 * Finds the next logical node after the macro invocation.
 	 * @private
 	 */
-	_getNextNode(expectedTypes?: string[] | null): SourceNode | null;
+	_getNextNode(expectedTypes?: string[] | null): SourceNode<LanguageNodeTypes> | null;
 	/**
 	 * Retrieves the next node without removing it from the tree.
-	 * @param {string|string[] | null} [types]
-	 * @returns {SourceNode|null}
+	 * @param {K|K[] | null} [types]
+	 * @returns {SourceNode<K>|null}
 	 */
-	nextNode(types?: string | string[] | null): SourceNode | null;
-	consume(expectedTypeOrOptions?: string | string[] | {
-		type?: string | string[];
+	nextNode<K extends LanguageNodeTypes>(types?: K | K[] | null): SourceNode<K> | null;
+	consume<K extends LanguageNodeTypes>(expectedTypeOrOptions?: K | K[] | {
+		type?: K | K[];
 		message?: string;
-		validate?: (n: SourceNode) => boolean;
-	}, errorMessage?: string): SourceNode | null;
-	isDescendant(parent: SourceNode | null, node: SourceNode): boolean;
-	walk(node: SourceNode, callback: (n: SourceNode) => void): void;
-	parent(node: SourceNode): SourceNode | null;
-	childForFieldName(node: SourceNode | null, fieldName: string): SourceNode | null;
-	findNextNodeAfter(root: SourceNode | null, index: number): SourceNode | null;
-	findScope(): SourceNode | null;
-	findEnclosing(node: SourceNode, types: string | string[]): SourceNode | null;
+		validate?: (n: SourceNode<LanguageNodeTypes>) => boolean;
+	}, errorMessage?: string): SourceNode<K> | null;
+	isDescendant(parent: SourceNode<any> | null, node: SourceNode<any>): boolean;
+	walk(node: SourceNode<any>, callback: (n: SourceNode<any>) => void): void;
+	parent(node: SourceNode<any>): SourceNode<any> | null;
+	childForFieldName(node: SourceNode<any> | null, fieldName: string): SourceNode<any> | null;
+	findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null;
+	findScope(): SourceNode<LanguageNodeTypes> | null;
+	findEnclosing<K extends LanguageNodeTypes>(node: SourceNode<any>, types: K | K[]): SourceNode<K> | null;
 	createUniqueIdentifier(prefix?: string): string;
-	childCount(node: SourceNode | null): number;
-	child(node: SourceNode | null, index: number): SourceNode | null;
-	error(node: SourceNode | string, message?: string): never;
+	childCount(node: SourceNode<any> | null): number;
+	child(node: SourceNode<any> | null, index: number): SourceNode<any> | null;
+	error(node: SourceNode<any> | string, message?: string): never;
 }
 export interface ConstraintSpec {
 	type: string;
@@ -521,50 +523,59 @@ export class PatternMatcher {
 	 */
 	private parseWildcard;
 }
+export type CNodeTypes = "translation_unit" | "function_definition" | "declaration" | "identifier" | "type_identifier" | "field_identifier" | "statement_identifier" | "preproc_def" | "preproc_include" | "preproc_ifdef" | "preproc_if" | "preproc_else" | "preproc_elif" | "preproc_endif" | "type_definition" | "compound_statement" | "pointer_declarator" | "array_declarator" | "parameter_declaration" | "field_declaration" | "struct_specifier" | "union_specifier" | "enum_specifier" | "primitive_type" | "parameter_list" | "argument_list" | "initializer_list" | "init_declarator" | "parenthesized_declarator" | "enumerator_list" | "field_declaration_list" | "expression_statement" | "if_statement" | "for_statement" | "while_statement" | "do_statement" | "return_statement" | "break_statement" | "continue_statement" | "labeled_statement" | "goto_statement" | "switch_statement" | "case_statement" | "default_statement" | "cast_expression" | "unary_expression" | "binary_expression" | "conditional_expression" | "assignment_expression" | "comma_expression" | "subscript_expression" | "call_expression" | "field_expression" | "parenthesized_expression" | "number_literal" | "string_literal" | "char_literal" | "abstract_pointer_declarator" | "type_descriptor" | "storage_class_specifier" | "type_qualifier" | "pointer_declarator" | "function_declarator" | "array_declarator" | "parenthesized_declarator" | "struct_specifier" | "union_specifier" | "enum_specifier" | "enumerator" | "field_declaration" | "parameter_declaration" | "translation_unit" | "attributed_statement" | (string & {});
 /**
  * C-specific helper class.
  * @class
  * @extends UppHelpersBase
  */
-export class UppHelpersC extends UppHelpersBase {
+export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	matcher: PatternMatcher;
 	transformKey?: string;
-	constructor(root: SourceNode, registry: Registry, parentHelpers?: UppHelpersBase | null);
+	constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers?: UppHelpersBase<any> | null);
 	/**
 	 * Matches a pattern against code.
-	 * @param {SourceNode} node - Target node.
+	 * @param {SourceNode<any>} node - Target node.
 	 * @param {string | string[]} src - Pattern source code.
 	 * @param {function(any): any} [callback] - Callback with captures.
 	 * @param {any} [options] - Match options.
 	 * @returns {any} Result of callback or captures object (or null).
 	 */
-	match(node: SourceNode, src: string | string[], callback?: (captures: Record<string, any>) => any, options?: {
+	match(node: SourceNode<any>, src: string | string[], callback?: (captures: Record<string, any>) => any, options?: {
 		deep?: boolean;
 	}): any;
 	/**
 	 * Matches all occurrences of a pattern.
-	 * @param {SourceNode} node - Target node.
+	 * @param {SourceNode<any>} node - Target node.
 	 * @param {string | string[]} src - Pattern source code.
 	 * @param {function(any): any} [callback] - Optional callback.
 	 * @param {any} [options] - Options.
 	 * @returns {any[]} Matches.
 	 */
-	matchAll(node: SourceNode, src: string | string[], callback?: (match: {
-		node: SourceNode;
+	matchAll(node: SourceNode<any>, src: string | string[], callback?: (match: {
+		node: SourceNode<CNodeTypes>;
 		captures: Record<string, any>;
 	}) => any, options?: {
 		deep?: boolean;
 	}): any[];
 	/**
+	 * Registers a transformation for nodes matching a pattern.
+	 * @param {SourceNode<any>} node - Root node to search within.
+	 * @param {string | string[]} src - Pattern.
+	 * @param {function(Record<string, any>, SourceNode<CNodeTypes>, UppHelpersC): any} callback - Transformation logic.
+	 * @param {any} [options] - Optional settings.
+	 */
+	withPatternAndCaptures(node: SourceNode<any>, src: string | string[], callback: (captures: Record<string, any>, target: SourceNode<CNodeTypes>, helpers: UppHelpersC) => any, options?: any): void;
+	/**
 	 * Replaces all matches of a pattern.
-	 * @param {SourceNode} node - Scope.
+	 * @param {SourceNode<CNodeTypes>} node - Scope.
 	 * @param {string} src - Pattern.
 	 * @param {function(any): string | null | undefined} callback - Replacement callback.
 	 * @param {any} [options] - Options.
 	 */
-	matchReplace(node: SourceNode, src: string, callback: (match: {
-		node: SourceNode;
-		captures: Record<string, SourceNode>;
+	matchReplace(node: SourceNode<CNodeTypes>, src: string, callback: (match: {
+		node: SourceNode<CNodeTypes>;
+		captures: Record<string, SourceNode<CNodeTypes>>;
 	}) => string | null | undefined, options?: {
 		deep?: boolean;
 	}): void;
@@ -576,108 +587,95 @@ export class UppHelpersC extends UppHelpersBase {
 	hoist(content: string, _hoistIndex?: number): void;
 	/**
 	 * extracts the C type string from a definition node.
-	 * @param {SourceNode} node - The definition identifier node.
+	 * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
 	 * @returns {string} The C type string (e.g. "char *").
 	 */
-	getType(node: SourceNode): string;
+	getType(node: SourceNode<CNodeTypes> | string | null): string;
 	/**
 	 * Returns the number of array dimensions wrapping an identifier.
-	 * @param {SourceNode} defNode - The definition node.
+	 * @param {SourceNode<CNodeTypes>} defNode - The definition node.
 	 * @returns {number} Array depth.
 	 */
-	getArrayDepth(defNode: SourceNode): number;
+	getArrayDepth(defNode: SourceNode<CNodeTypes>): number;
 	/**
 	 * Determines the lexical scope node for a given identifier.
-	 * @param {SourceNode} node - The identifier node.
-	 * @returns {SourceNode|null} The scope node.
+	 * @param {SourceNode<any>} node - The identifier node.
+	 * @returns {SourceNode<CNodeTypes>|null} The scope node.
 	 */
-	getEnclosingScope(node: SourceNode): SourceNode | null;
+	getEnclosingScope(node: SourceNode<any>): SourceNode<CNodeTypes> | null;
 	/**
 	 * Extracts function signature details.
-	 * @param {SourceNode} fnNode - The function_definition node.
+	 * @param {SourceNode<CNodeTypes>} fnNode - The function_definition node.
 	 * @returns {any} Signature details.
 	 */
-	getFunctionSignature(fnNode: SourceNode): any;
+	getFunctionSignature(fnNode: SourceNode<CNodeTypes>): any;
 	/**
 	 * Finds the definition for a node or name.
-	 * @param {SourceNode|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
+	 * @param {SourceNode<any>|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
 	 * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
 	 * @param {any} [options] - Resolution options { variable: true, tag: true }.
-	 * @returns {SourceNode|null} The declaration/definition node.
+	 * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node.
 	 */
-	findDefinitionOrNull(target: SourceNode | string, nameOrOptions?: string | {
+	findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions?: string | {
 		variable?: boolean;
 		tag?: boolean;
 	} | null, options?: {
 		variable?: boolean;
 		tag?: boolean;
-	}): SourceNode | null;
+	}): SourceNode<CNodeTypes> | null;
 	/**
 	 * Finds the definition for a node or name.
-	 * @param {SourceNode|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
+	 * @param {SourceNode<any>|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
 	 * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
 	 * @param {any} [options] - Resolution options { variable: true, tag: true }.
-	 * @returns {SourceNode} The declaration/definition node.
+	 * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
 	 */
-	findDefinition(target: SourceNode | string, nameOrOptions?: string | {
+	findDefinition(target: SourceNode<any> | string, nameOrOptions?: string | {
 		variable?: boolean;
 		tag?: boolean;
 	} | null, options?: {
 		variable?: boolean;
 		tag?: boolean;
-	}): SourceNode;
+	}): SourceNode<CNodeTypes>;
 	/**
 	 * Finds references to a definition.
-	 * @param {SourceNode} node - The definition node.
-	 * @returns {SourceNode[]} The references.
+	 * @param {SourceNode<CNodeTypes>} node - The definition node.
+	 * @returns {SourceNode<CNodeTypes>[]} The references.
 	 */
-	findReferences(node: SourceNode): SourceNode[];
+	findReferences(node: SourceNode<CNodeTypes>): SourceNode<CNodeTypes>[];
 	/**
-	 * Transforms references to a definition intelligently:
-	 * - For references below the current node: applies callback immediately
-	 * - For references above the current node: creates deferred markers for later transformation
-	 * - Registers a transformation rule to handle dynamically generated references
-	 *
-	 * @param {SourceNode} definitionNode - The definition node to find references for
-	 * @param {function(SourceNode): string|null|undefined} callback - Transformation callback.
-	 *        Return: string (replace), null/"" (delete), undefined (no change)
-	 * @returns {string} Marker for deferred transformations (empty if all references were below)
+	 * Transforms references to a definition intelligently.
+	 * @param {SourceNode<CNodeTypes>} definitionNode - The definition node.
+	 * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
 	 */
-	withReferences(definitionNode: SourceNode, callback: (n: SourceNode) => string | null | undefined): string;
+	withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void;
 	/**
 	 * Finds and transforms a definition node intelligently.
-	 * Similar to withReferences but operates on the definition itself.
-	 *
-	 * @param {SourceNode|string} target - The node or name to find definition for
-	 * @param {function(SourceNode): string|null|undefined} callback - Transformation callback.
-	 *        Return: string (replace), null/"" (delete), undefined (no change)
-	 * @returns {string} Marker for deferred transformations (empty if definition was below)
+	 * @param {SourceNode<any>|string} target - The node or name.
+	 * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
 	 */
-	withDefinition(target: SourceNode | string, callback: (n: SourceNode, helpers: UppHelpersC) => string | null | undefined): string;
+	withDefinition(target: SourceNode<any> | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void;
 	/**
 	 * Transforms nodes matching a pattern intelligently.
-	 * Registers a transformation rule for re-evaluation on generated code.
-	 *
-	 * @param {string} nodeType - The node type to match (e.g., 'call_expression')
-	 * @param {function(SourceNode, UppHelpersC): boolean} matcher - Custom matcher function
-	 * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback
-	 * @returns {string} Marker for deferred transformations
+	 * @param {CNodeTypes} nodeType - The node type to match.
+	 * @param {function(SourceNode, UppHelpersC): boolean} matcher - Custom matcher function.
+	 * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
 	 */
-	withPattern(nodeType: string, matcher: (node: SourceNode, helpers: UppHelpersC) => boolean, callback: (node: SourceNode, helpers: UppHelpersC) => string | null | undefined): string;
+	withPattern(nodeType: CNodeTypes, matcher: (node: SourceNode<CNodeTypes>, helpers: UppHelpersC) => boolean, callback: (node: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void;
 	/**
 	 * Transforms nodes matching a source fragment pattern.
-	 * @param {SourceNode} scope - The search scope.
+	 * @param {SourceNode<any>} scope - The search scope.
 	 * @param {string} pattern - The source fragment pattern.
-	 * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback (receives captures).
+	 * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback.
 	 */
-	withMatch(scope: SourceNode, pattern: string, callback: (captures: Record<string, SourceNode>, helpers: UppHelpersC) => string | null | undefined): void;
+	withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<CNodeTypes>>, helpers: UppHelpersC) => string | null | undefined): void;
 	/**
 	 * Determines how an array should be expanded based on its C/UPP parent context.
 	 * @param {any[]} values The values to expand.
-	 * @param {string} parentType The tree-sitter node type of the parent.
+	 * @param {CNodeTypes} parentType The tree-sitter node type of the parent.
 	 * @returns {any[]} The expanded list of nodes/text.
 	 */
-	protected getArrayExpansion(values: any[], parentType: string): any[];
+	protected getArrayExpansion(values: any[], parentType: CNodeTypes): any[];
 }
 
 
@@ -688,5 +686,6 @@ declare var upp: upp_types.UppHelpersC & {
     registry: upp_types.Registry;
     path: any;
     invocation: upp_types.Invocation;
+    code: any;
 };
 

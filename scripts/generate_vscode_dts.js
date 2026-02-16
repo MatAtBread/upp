@@ -44,6 +44,7 @@ declare var upp: upp_types.UppHelpersC & {
     registry: upp_types.Registry;
     path: any;
     invocation: upp_types.Invocation;
+    code: any;
 };
 `;
 
