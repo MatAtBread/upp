@@ -6,13 +6,13 @@ import type { Marker } from './registry.ts';
  * Represents a source file as a manageable tree of nodes, 
  * providing an API for live source code manipulation.
  */
-export class SourceTree {
+export class SourceTree<NodeTypes extends string = string> {
     public source: string;
     public language: any;
     public parser: Parser;
     public tree: Tree;
-    public nodeCache: Map<number | string, SourceNode>;
-    public root: SourceNode;
+    public nodeCache: Map<number | string, SourceNode<NodeTypes>>;
+    public root: SourceNode<NodeTypes>;
 
     /**
      * @param {string} source Initial source code text.
@@ -41,7 +41,7 @@ export class SourceTree {
         this.nodeCache = new Map();
 
         /** @type {SourceNode} The root node of the tree. */
-        this.root = this.wrap(this.tree.rootNode)!;
+        this.root = this.wrap(this.tree.rootNode) as SourceNode<NodeTypes>;
     }
 
     /**
@@ -51,18 +51,16 @@ export class SourceTree {
      * @param {string | null} [fieldName] The field name for this node in the parent.
      * @returns {SourceNode|null}
      */
-    wrap(tsNode: SyntaxNode | null, parent: SourceNode | null = null, fieldName: string | null = null): SourceNode | null {
+    wrap<T extends NodeTypes>(tsNode: SyntaxNode | null, parent: SourceNode<NodeTypes> | null = null, fieldName: string | null = null): SourceNode<T> | null {
         if (!tsNode) return null;
         if (this.nodeCache.has(tsNode.id)) {
-            const node = this.nodeCache.get(tsNode.id)!;
+            const node = this.nodeCache.get(tsNode.id)! as SourceNode<T>;
             if (parent) node.parent = parent;
             if (fieldName) node.fieldName = fieldName;
             return node;
         }
 
-        const node = new SourceNode(this, tsNode);
-        node.parent = parent;
-        node.fieldName = fieldName;
+        const node = new SourceNode(this, tsNode, parent, fieldName) as SourceNode<T>;
         this.nodeCache.set(tsNode.id, node);
         return node;
     }
@@ -96,8 +94,8 @@ export class SourceTree {
     get endIndex(): number { return this.source.length; }
     /** @returns {string} */
     get type(): string { return 'fragment'; }
-    /** @returns {SourceNode[]} */
-    get children(): SourceNode[] { return this.root.children; }
+    /** @returns {SourceNode<any>[]} */
+    get children(): SourceNode<NodeTypes>[] { return this.root.children; }
     /** @returns {string} */
     get text(): string { return this.source; }
     /** @param {string} val */
@@ -110,7 +108,7 @@ export class SourceTree {
      * @param {any} language Tree-sitter language object.
      * @returns {SourceNode}
      */
-    static fragment(code: string | SourceNode | SourceTree, language: any): SourceNode {
+    static fragment<NodeTypes extends string = string>(code: string | SourceNode<any> | SourceTree<any>, language: any): SourceNode<NodeTypes> {
         if (typeof code !== 'string') {
             if (code instanceof SourceNode) return code;
             if (code instanceof SourceTree) return code.root;
@@ -128,7 +126,7 @@ export class SourceTree {
             const idNode = fragTree.root.find(n => (n.type === 'identifier' || n.type === 'type_identifier') && n.text === trimmed)[0];
             if (idNode) {
                 // Return the identifier node directly. It will be migrated during attachment.
-                return idNode;
+                return idNode as SourceNode<NodeTypes>;
             }
         }
 
@@ -162,7 +160,7 @@ export class SourceTree {
             }
 
             if (isTopLevel && root.childCount > 0) {
-                return new SourceTree(code, language).root;
+                return new SourceTree(code, language).root as SourceNode<NodeTypes>;
             }
         }
 
@@ -179,7 +177,7 @@ export class SourceTree {
         const innerNodes = body.children.slice(1, -1);
 
         if (innerNodes.length === 0) {
-            return new SourceTree("", language).root;
+            return new SourceTree("", language).root as SourceNode<NodeTypes>;
         }
 
         if (innerNodes.length === 1) {
@@ -188,13 +186,13 @@ export class SourceTree {
             const text = node.text;
             const fragTree = new SourceTree(text, language);
             // Return the first child of the translation_unit (the actual node)
-            return fragTree.root.children[0] || fragTree.root;
+            return fragTree.root.children[0] || fragTree.root as SourceNode<NodeTypes>;
         }
 
         // Multiple nodes? Create a new SourceTree with just those nodes' text.
         const combinedText = innerNodes.map(n => n.text).join('\n');
         const finalTree = new SourceTree(combinedText, language);
-        return finalTree.root;
+        return finalTree.root as SourceNode<NodeTypes>;
     }
 
     /**
@@ -213,7 +211,7 @@ export class SourceTree {
      * @param {SourceTree} targetTree The tree to merge into.
      * @param {number} offset The offset to apply to all migrated nodes.
      */
-    mergeInto(targetTree: SourceTree, offset: number): void {
+    mergeInto(targetTree: SourceTree<NodeTypes>, offset: number): void {
         // 1. Transfer all cached nodes
         for (const [id, node] of this.nodeCache) {
             // Update node to point to new tree
@@ -233,14 +231,14 @@ export class SourceTree {
 /**
  * Represents a node within a SourceTree.
  */
-export class SourceNode {
-    public tree: SourceTree;
+export class SourceNode<T extends string = string> {
+    public tree: SourceTree<any>;
     public id: number | string;
-    public type: string;
+    public type: T;
     public startIndex: number;
     public endIndex: number;
-    public children: SourceNode[];
-    public parent: SourceNode | null;
+    public children: SourceNode<any>[];
+    public parent: SourceNode<any> | null;
     public fieldName: string | null;
     public markers: Marker[];
     public data: Record<string, unknown>;
@@ -248,25 +246,27 @@ export class SourceNode {
     public _snapshotSearchable?: string;
 
     /**
-     * @param {SourceTree} tree The tree this node belongs to.
+     * @param {SourceTree<any>} tree The tree this node belongs to.
      * @param {SyntaxNode} tsNode The Tree-sitter node to wrap.
+     * @param {SourceNode<any> | null} [parent] The parent SourceNode, if any.
+     * @param {string | null} [fieldName] The field name for this node in the parent.
      */
-    constructor(tree: SourceTree, tsNode: SyntaxNode) {
+    constructor(tree: SourceTree<any>, tsNode: SyntaxNode, parent: SourceNode<any> | null = null, fieldName: string | null = null) {
         if (!tsNode || !tree) {
             throw new Error("SourceNode must be created with a Tree-sitter node.");
         }
         this.tree = tree;
         this.id = tsNode.id;
-        this.type = tsNode.type;
+        this.type = tsNode.type as T;
         this.startIndex = tsNode.startIndex;
         this.endIndex = tsNode.endIndex;
         this.children = [];
-        this.parent = null;
-        this.fieldName = null;
+        this.parent = parent;
+        this.fieldName = fieldName;
         for (let i = 0; i < tsNode.childCount; i++) {
             const child = tsNode.child(i);
-            const fieldName = tsNode.fieldNameForChild(i);
-            const wrapped = tree.wrap(child, this, fieldName);
+            const childFieldName = tsNode.fieldNameForChild(i);
+            const wrapped = tree.wrap(child, this, childFieldName);
             if (wrapped) {
                 this.children.push(wrapped);
             }
@@ -289,8 +289,8 @@ export class SourceNode {
             this.tree.nodeCache.get(this.id) === this;
     }
 
-    /** @returns {SourceNode|null} */
-    get nextNamedSibling(): SourceNode | null {
+    /** @returns {SourceNode<any>|null} */
+    get nextNamedSibling(): SourceNode<any> | null {
         if (!this.parent) return null;
         const idx = this.parent.children.indexOf(this);
         for (let i = idx + 1; i < this.parent.children.length; i++) {
@@ -300,8 +300,8 @@ export class SourceNode {
         return null;
     }
 
-    /** @returns {SourceNode|null} */
-    get prevNamedSibling(): SourceNode | null {
+    /** @returns {SourceNode<any>|null} */
+    get prevNamedSibling(): SourceNode<any> | null {
         if (!this.parent) return null;
         const idx = this.parent.children.indexOf(this);
         for (let i = idx - 1; i >= 0; i--) {
@@ -318,15 +318,15 @@ export class SourceNode {
 
     /** 
      * @param {number} idx 
-     * @returns {SourceNode|null} 
+     * @returns {SourceNode<any>|null} 
      */
-    namedChild(idx: number): SourceNode | null {
+    namedChild(idx: number): SourceNode<any> | null {
         const named = this.children.filter(c => c.isNamed);
         return named[idx] || null;
     }
 
-    /** @returns {SourceNode|null} */
-    get firstNamedChild(): SourceNode | null {
+    /** @returns {SourceNode<any>|null} */
+    get firstNamedChild(): SourceNode<any> | null {
         return this.namedChild(0);
     }
 
@@ -360,7 +360,7 @@ export class SourceNode {
         return this.children.length;
     }
 
-    get named(): Record<string, SourceNode> {
+    get named(): Record<string, SourceNode<any>> {
         return Object.fromEntries(this.children.filter(c => c.isNamed).map((c, idx) => [c.fieldName ?? idx, c]));
     }
     /**
@@ -381,9 +381,9 @@ export class SourceNode {
 
     /** 
      * @param {number} idx 
-     * @returns {SourceNode} 
+     * @returns {SourceNode<any>} 
      */
-    child(idx: number): SourceNode {
+    child(idx: number): SourceNode<any> {
         return this.children[idx];
     }
 
@@ -422,14 +422,14 @@ export class SourceNode {
 
     /**
      * Removes the node from the tree and returns the removed sub-tree.
-     * @returns {SourceTree}
+     * @returns {SourceTree<any>}
      */
-    remove(): SourceTree {
+    remove(): SourceTree<any> {
         // 1. Snapshot current text range.
         const cachedText = this.text;
 
         // 2. Create new holding tree with text.
-        const newTree = new SourceTree(cachedText, this.tree.language);
+        const newTree = new SourceTree<any>(cachedText, this.tree.language);
 
         // 3. Migrate `this` node into newTree at offset 0.
         const oldStartIndex = this.startIndex;
@@ -437,7 +437,7 @@ export class SourceNode {
         const oldTree = this.tree;
 
         // Recursive migration function
-        const migrate = (n: SourceNode, offsetDelta: number) => {
+        const migrate = (n: SourceNode<any>, offsetDelta: number) => {
             // Remove from old tree
             if (n.tree) n.tree.nodeCache.delete(n.id);
 
@@ -482,17 +482,35 @@ export class SourceNode {
 
     /**
      * Replaces this node with another node or text.
-     * @param {SourceNode|SourceTree|string|Array<SourceNode|string>} newNodeContent The node or text to replace with.
-     * @returns {SourceNode | SourceNode[] | null}
+     * @param {SourceNode<any>|SourceTree<any>|string|Array<SourceNode<any>|string>} newNodeContent The node or text to replace with.
+     * @returns {SourceNode<any> | SourceNode<any>[] | null}
      */
-    replaceWith(newNodeContent: SourceNode | SourceTree | string | Array<SourceNode | string>): SourceNode | SourceNode[] | null {
-        const isNewObject = newNodeContent instanceof SourceNode || newNodeContent instanceof SourceTree;
-        let newNode = newNodeContent;
+    replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<any> | SourceNode<any>[] | null {
+        const node = this as SourceNode<any>;
+        const tree = node.tree;
+
+        if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
+            // Language check warning
+            const checkNode = (n: any) => {
+                if (n instanceof SourceNode && n.tree && n.tree.language !== tree.language) {
+                    console.warn(`[UPP WARNING] Mixing nodes from different languages. This may lead to parsing errors.`);
+                }
+            };
+            if (content instanceof SourceNode) checkNode(content);
+            else if (content instanceof SourceTree) checkNode(content.root);
+            else if (Array.isArray(content)) (content as SourceNode<any>[]).forEach(checkNode);
+        }
+        if (Array.isArray(content)) {
+            content = content.filter(x => x !== null && x !== undefined);
+        }
+
+        const isNewObject = content instanceof SourceNode || content instanceof SourceTree;
+        let newNode = content;
         const originalText = this.text;
         const oldCaptured = this._capturedText;
 
         const oldChildren = this.children;
-        const snapshotIdentity = (nodes: SourceNode[]) => {
+        const snapshotIdentity = (nodes: SourceNode<any>[]) => {
             for (const n of nodes) {
                 n._snapshotSearchable = n.searchableText;
                 snapshotIdentity(n.children);
@@ -521,16 +539,16 @@ export class SourceNode {
                 }
             }
             this.startIndex = -1; // Invalidate self
-            return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList);
+            return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList as any);
         }
 
         if (typeof newNode === 'string') {
-            newNode = SourceTree.fragment(newNode, this.tree.language);
+            newNode = SourceTree.fragment<any>(newNode, this.tree.language);
         }
 
         const start = this.startIndex;
         const end = this.endIndex;
-        const newText = newNode.text || "";
+        const newText = (newNode as SourceNode<any>).text || "";
 
         // Capture parent before we are detached
         const parent = this.parent;
@@ -546,7 +564,7 @@ export class SourceNode {
 
         // re-point current node if there is at least one new node
         if (attachedList.length > 0 && !isNewObject) {
-            const firstNew = attachedList[0];
+            const firstNew = attachedList[0] as SourceNode<any>;
             const oldId = this.id;
 
             // We want to KEEP the same object identity.
@@ -559,9 +577,9 @@ export class SourceNode {
 
             this.startIndex = newStartIndex;
             this.endIndex = newEndIndex;
-            this.type = newType;
+            (this as any).type = newType;
             // Recursive identity transfer (important for structural morphing like renames)
-            const transferIdentity = (oldNodes: SourceNode[], newNodes: SourceNode[]) => {
+            const transferIdentity = (oldNodes: SourceNode<any>[], newNodes: SourceNode<any>[]) => {
                 // Heuristic: If we have exactly one identifier in both, it's likely a rename
                 const oldIds = oldNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
                 const newIds = newNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
@@ -592,13 +610,13 @@ export class SourceNode {
                 this._capturedText = oldCaptured;
             } else if (firstNew._capturedText !== undefined) {
                 this._capturedText = firstNew._capturedText;
-            } else if (originalText !== newText && (this.type === 'identifier' || this.type === 'type_identifier')) {
+            } else if (originalText !== newText && (this.type === 'identifier' || (this.type as string) === 'type_identifier')) {
                 // If it's a rename of an identifier, capture the old name for symbol resolution continuity
                 this._capturedText = originalText;
             }
 
             // Markers: Should we take new ones? Usually yes as this is a new identity.
-            this.markers = firstNew.markers;
+            this.markers = firstNew.markers as any;
 
             // Update children parent pointers to this (morphed) node
             for (const child of this.children) {
@@ -625,19 +643,36 @@ export class SourceNode {
             parent.children.splice(idx, 1, ...attachedList);
         }
 
-        return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList);
+        return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList as any);
     }
 
     /**
      * Inserts a node or text after this node.
-     * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-     * @returns {SourceNode|SourceNode[]}
+     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
+     * @returns {SourceNode<any>|SourceNode<any>[]}
      */
-    insertAfter(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
-        if (typeof newNode === 'string') {
-            newNode = SourceTree.fragment(newNode, this.tree.language);
+    insertAfter(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        const tree = this.tree;
+        if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
+            const checkNode = (n: any) => {
+                if (n instanceof SourceNode && n.tree && n.tree.language !== tree.language) {
+                    console.warn(`[UPP WARNING] Mixing nodes from different languages. This may lead to parsing errors.`);
+                }
+            };
+            if (content instanceof SourceNode) checkNode(content);
+            else if (content instanceof SourceTree) checkNode(content.root);
+            else if (Array.isArray(content)) (content as any[]).forEach(checkNode);
         }
-        const text = newNode.text;
+        let newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string> = content;
+        if (Array.isArray(newNode)) {
+            newNode = newNode.filter(x => x !== null && x !== undefined);
+        }
+        if (typeof newNode === 'string') {
+            newNode = SourceTree.fragment<any>(newNode, this.tree.language);
+        }
+        const text = Array.isArray(newNode)
+            ? newNode.map(n => typeof n === 'string' ? n : n.text).join('')
+            : (newNode as any).text;
 
         // Insert at END of this node
         const insertPos = this.endIndex;
@@ -659,14 +694,31 @@ export class SourceNode {
 
     /**
      * Inserts a node or text before this node.
-     * @param {SourceNode|SourceTree|string} newNode The node or text to insert.
-     * @returns {SourceNode|SourceNode[]}
+     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
+     * @returns {SourceNode<any>|SourceNode<any>[]}
      */
-    insertBefore(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
-        if (typeof newNode === 'string') {
-            newNode = SourceTree.fragment(newNode, this.tree.language);
+    insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        const tree = this.tree;
+        if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
+            const checkNode = (n: any) => {
+                if (n instanceof SourceNode && n.tree && n.tree.language !== tree.language) {
+                    console.warn(`[UPP WARNING] Mixing nodes from different languages. This may lead to parsing errors.`);
+                }
+            };
+            if (content instanceof SourceNode) checkNode(content);
+            else if (content instanceof SourceTree) checkNode(content.root);
+            else if (Array.isArray(content)) (content as any[]).forEach(checkNode);
         }
-        const text = (newNode as any).text;
+        let newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string> = content;
+        if (Array.isArray(newNode)) {
+            newNode = newNode.filter(x => x !== null && x !== undefined);
+        }
+        if (typeof newNode === 'string') {
+            newNode = SourceTree.fragment<any>(newNode, this.tree.language);
+        }
+        const text = Array.isArray(newNode)
+            ? newNode.map(n => typeof n === 'string' ? n : n.text).join('')
+            : (newNode as any).text;
 
         // Insert at START of this node
         const insertPos = this.startIndex;
@@ -686,10 +738,10 @@ export class SourceNode {
         return attached as SourceNode | SourceNode[];
     }
 
-    public _attachNewNode(newNode: SourceNode | SourceTree | string | Array<SourceNode | string>, insertionOffset: number): SourceNode | SourceNode[] | null {
+    public _attachNewNode(newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>, insertionOffset: number): SourceNode<any> | SourceNode<any>[] | null {
         if (Array.isArray(newNode)) {
             let currentOffset = insertionOffset;
-            const results: SourceNode[] = [];
+            const results: SourceNode<any>[] = [];
             for (const item of newNode) {
                 const attached = this._attachNewNode(item, currentOffset);
                 if (Array.isArray(attached)) {
@@ -705,11 +757,11 @@ export class SourceNode {
             return results;
         }
 
-        let rootNode: SourceNode | null = null;
+        let rootNode: SourceNode<any> | null = null;
         if (newNode instanceof SourceNode) {
             const delta = insertionOffset - newNode.startIndex;
 
-            const migrate = (n: SourceNode) => {
+            const migrate = (n: SourceNode<any>) => {
                 const oldTree = n.tree;
                 const oldId = n.id;
 
@@ -740,16 +792,16 @@ export class SourceNode {
 
     /**
      * Finds nodes matching a predicate or type within this subtree.
-     * @param {string|function(SourceNode):boolean} predicate Type name or filter function.
-     * @returns {SourceNode[]}
+     * @param {K | function(SourceNode<any>):boolean} predicate Type name or filter function.
+     * @returns {SourceNode<K>[]}
      */
-    find(predicate: string | ((n: SourceNode) => boolean)): SourceNode[] {
-        const results: SourceNode[] = [];
+    find<K extends string>(predicate: K | ((n: SourceNode<any>) => boolean)): SourceNode<K>[] {
+        const results: SourceNode<any>[] = [];
         const isMatch = typeof predicate === 'string'
-            ? (n: SourceNode) => n.type === predicate
+            ? (n: SourceNode<any>) => n.type === predicate
             : predicate;
 
-        const walk = (n: SourceNode) => {
+        const walk = (n: SourceNode<any>) => {
             if (isMatch(n)) results.push(n);
             for (const child of n.children) {
                 walk(child);
@@ -757,17 +809,17 @@ export class SourceNode {
         };
 
         walk(this);
-        return results;
+        return results as SourceNode<K>[];
     }
 
     /**
      * Finds the smallest descendant that contains the given index range.
      * @param {number} start 
      * @param {number} end 
-     * @returns {SourceNode}
+     * @returns {SourceNode<any>}
      */
-    descendantForIndex(start: number, end: number): SourceNode {
-        let current: SourceNode = this;
+    descendantForIndex(start: number, end: number): SourceNode<any> {
+        let current: SourceNode<any> = this;
         let found = true;
         while (found) {
             found = false;
@@ -782,36 +834,36 @@ export class SourceNode {
         return current;
     }
 
-    childForFieldName(fieldName: string): SourceNode | null {
+    childForFieldName(fieldName: string): SourceNode<any> | null {
         return this.findChildByFieldName(fieldName);
     }
 
     /**
      * Finds a direct child by its field name.
      * @param {string} fieldName 
-     * @returns {SourceNode|null}
+     * @returns {SourceNode<any>|null}
      */
-    findChildByFieldName(fieldName: string): SourceNode | null {
+    findChildByFieldName(fieldName: string): SourceNode<any> | null {
         return this.children.find(c => c.fieldName === fieldName) || null;
     }
 
     /**
      * Appends a node or text as a child of this node.
      * Requires the node to already have children to use as anchors.
-     * @param {SourceNode|SourceTree|string} newNode The node or text to append.
-     * @returns {SourceNode | SourceNode[]}
+     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to append.
+     * @returns {SourceNode<any> | SourceNode<any>[]}
      */
-    append(newNode: SourceNode | SourceTree | string): SourceNode | SourceNode[] {
+    append(newNode: SourceNode<any> | SourceTree<any> | string): SourceNode<any> | SourceNode<any>[] {
         if (typeof newNode === 'string') {
-            newNode = SourceTree.fragment(newNode, this.tree.language);
+            newNode = SourceTree.fragment<any>(newNode, this.tree.language);
+        }
+        const text = (newNode as any).text;
+
+        if (this.children.length === 0) {
+            return this.replaceWith(newNode) as any;
         }
 
-        const children = this.children;
-        if (children.length > 0) {
-            const lastChild = children[children.length - 1];
-            return lastChild.insertAfter(newNode);
-        } else {
-            throw new Error("Generic append() not supported without an anchor child. Use insertAfter(child) instead.");
-        }
+        const lastChild = this.children[this.children.length - 1];
+        return lastChild.insertAfter(newNode);
     }
 }
