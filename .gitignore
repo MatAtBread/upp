@@ -1,4 +1,4 @@
 .agent
 node_modules
 .upp_*
-
+.DS_Store

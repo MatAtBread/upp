@@ -16,10 +16,12 @@
         'unsigned long long': '%llu',
         'void *': '%p'
     };
-    const paramFormat = params.filter(p => p.type === 'parameter_declaration').map(p => {
-        return p.find('identifier')[0].text + " = " + printFormats[upp.getType(p)];
-    }).join(", ");
-    const paramList = params.filter(p => p.type === 'parameter_declaration').map(p => p.find('identifier')[0].text).join(", ");
+    const paramFormat = params.filter(p => p.type === 'parameter_declaration')
+        .map(p => p.find('identifier')[0].text + " = " + printFormats[upp.getType(p)])
+        .join(", ");
+    const paramList = params.filter(p => p.type === 'parameter_declaration')
+        .map(p => p.find('identifier')[0].text)
+        .join(", ");
     
     name.text = "_trace_"+upp.createUniqueIdentifier(name.text);
     return upp.code`
