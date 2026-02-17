@@ -1,5 +1,5 @@
 @define Test(x) {
-    upp.atRoot((root) => {
+    upp.withRoot((root) => {
         upp.replace(root, `// Added at root\n` + root.text);
     });
     return `int ${x} = 10;`;

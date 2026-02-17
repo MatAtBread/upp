@@ -55,11 +55,11 @@
         return;
     }
 
-    let fieldList = upp.childForFieldName(structDef, 'body');
+    let fieldList = structDef.named['body'];
     if (!fieldList) {
         // Fallback: search for field_declaration_list among children
-        for (let i = 0; i < upp.childCount(structDef); i++) {
-            const c = upp.child(structDef, i);
+        for (let i = 0; i < structDef.childCount; i++) {
+            const c = structDef.child(i);
             if (c.type === 'field_declaration_list') {
                 fieldList = c;
                 break;
@@ -72,8 +72,8 @@
     }
 
     let fields = "";
-    for (let i = 0; i < upp.childCount(fieldList); i++) {
-        const child = upp.child(fieldList, i);
+    for (let i = 0; i < fieldList.childCount; i++) {
+        const child = fieldList.child(i);
         if (child.type === 'field_declaration') {
             fields += child.text + "\n    ";
         }

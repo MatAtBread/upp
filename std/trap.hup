@@ -45,17 +45,17 @@
     // and pattern-based matching (for struct fields until UPP has full member resolution)
     if (declNode.type === 'field_declaration') {
         upp.withPattern('assignment_expression', (node, helpers) => {
-            const left = node.childForFieldName('left');
+            const left = node.named['left'];
             if (left && left.type === 'field_expression') {
-                const field = left.childForFieldName('field');
+                const field = left.named['field'];
                 return field && field.text === varName;
             }
             return false;
         }, (node, helpers) => {
-            const expr = node.childForFieldName('right');
+            const expr = node.named['right'];
             if (expr && !processed.has(expr)) {
-                helpers.insertBefore(expr, `${handlerName}(`);
-                helpers.insertAfter(expr, `)`);
+                expr.insertBefore(`${handlerName}(`);
+                expr.insertAfter(`)`);
                 processed.add(expr);
             }
         });
@@ -68,11 +68,11 @@
             }
 
             const parent = current.parent;
-            if (parent && parent.type === 'assignment_expression' && parent.childForFieldName('left') === current) {
-                const expr = parent.childForFieldName('right');
+            if (parent && parent.type === 'assignment_expression' && parent.named['left'] === current) {
+                const expr = parent.named['right'];
                 if (expr && !processed.has(expr)) {
-                    helpers.insertBefore(expr, `${handlerName}(`);
-                    helpers.insertAfter(expr, `)`);
+                    expr.insertBefore(`${handlerName}(`);
+                    expr.insertAfter(`)`);
                     processed.add(expr);
                 }
             }
@@ -81,12 +81,12 @@
 
     // Handle initial value in declaration
     if (declNode.type === 'declaration') {
-        const initDecl = declNode.childForFieldName('declarator'); // init_declarator
+        const initDecl = declNode.named['declarator']; // init_declarator
         if (initDecl && initDecl.type === 'init_declarator') {
-            const val = initDecl.childForFieldName('value');
+            const val = initDecl.named['value'];
             if (val && !processed.has(val)) {
-                upp.insertBefore(val, `${handlerName}(`);
-                upp.insertAfter(val, `)`);
+                val.insertBefore(`${handlerName}(`);
+                val.insertAfter(`)`);
                 processed.add(val);
             }
         }

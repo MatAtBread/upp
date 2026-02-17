@@ -4,9 +4,9 @@
     const node = upp.consume();
 
     if (node.type === 'function_definition') {
-        arrayNode = upp.childForFieldName(node, 'type');
-        varNode = upp.childForFieldName(node, 'declarator');
-        bodyNode = upp.childForFieldName(node, 'body');
+        arrayNode = node.named['type'];
+        varNode = node.named['declarator'];
+        bodyNode = node.named['body'];
     } else {
         arrayNode = node;
         varNode = upp.consume();

@@ -86,143 +86,14 @@ export type CNodeTypes =
  * @extends UppHelpersBase
  */
 class UppHelpersC extends UppHelpersBase<CNodeTypes> {
-    public matcher: PatternMatcher;
-    public transformKey?: string;
 
     constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers: UppHelpersBase<any> | null = null) {
         super(root, registry, parentHelpers);
-        // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
-        const patternParser = new Parser();
-        patternParser.setLanguage(registry.language as any);
-        this.matcher = new PatternMatcher((src) => patternParser.parse(src), registry.language as any);
     }
 
-    /**
-     * Matches a pattern against code.
-     * @param {SourceNode<any>} node - Target node.
-     * @param {string | string[]} src - Pattern source code.
-     * @param {function(any): any} [callback] - Callback with captures.
-     * @param {any} [options] - Match options.
-     * @returns {any} Result of callback or captures object (or null).
-     */
-    match(node: SourceNode<any>, src: string | string[], callback?: (captures: Record<string, any>) => any, options: { deep?: boolean } = {}): any {
-        if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
-
-        const srcs = Array.isArray(src) ? src : [src];
-        const deep = options.deep === true;
-
-        for (const s of srcs) {
-            const result = this.matcher.match(node as any, s, deep);
-            if (result) {
-                const captures: Record<string, any> = {};
-                for (const key in result) {
-                    const val = result[key];
-                    if (Array.isArray(val)) {
-                        captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
-                    } else if (val && (val as any).id !== undefined) {
-                        captures[key] = node.tree.wrap(val as any);
-                    } else {
-                        captures[key] = val;
-                    }
-                }
-                if (callback) return callback({ ...captures, node: captures.node } as any);
-                return captures;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Matches all occurrences of a pattern.
-     * @param {SourceNode<any>} node - Target node.
-     * @param {string | string[]} src - Pattern source code.
-     * @param {function(any): any} [callback] - Optional callback.
-     * @param {any} [options] - Options.
-     * @returns {any[]} Matches.
-     */
-    matchAll(node: SourceNode<any>, src: string | string[], callback?: (match: { node: SourceNode<CNodeTypes>, captures: Record<string, any> }) => any, options: { deep?: boolean } = {}): any[] {
-        if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
-
-        const srcs = Array.isArray(src) ? src : [src];
-        const deep = options.deep === true || (options.deep !== false && (node.type as string) === 'translation_unit');
-
-        const allMatches: any[] = [];
-        const seenIds = new Set<number | string>();
-
-        for (const s of srcs) {
-            const matches = this.matcher.matchAll(node as any, s, deep);
-            for (const m of matches) {
-                const syntaxNode = m.node as any;
-                if (syntaxNode && !seenIds.has(syntaxNode.id)) {
-                    const matchNode = node.tree.wrap(syntaxNode) as SourceNode<CNodeTypes> | null;
-                    if (matchNode) {
-                        const captures: Record<string, any> = {};
-                        for (const key in m) {
-                            if (key !== 'node' && m[key]) {
-                                const val = m[key] as any;
-                                if (Array.isArray(val)) {
-                                    captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
-                                } else if (val && typeof val.id !== 'undefined') {
-                                    const wrapped = node.tree.wrap(val);
-                                    if (wrapped) captures[key] = wrapped;
-                                } else {
-                                    captures[key] = val;
-                                }
-                            }
-                        }
-                        allMatches.push({ node: matchNode, captures: captures });
-                        seenIds.add(syntaxNode.id);
-                    }
-                }
-            }
-        }
-
-        if (callback) {
-            return allMatches.map(m => callback({ ...m.captures, node: m.node } as any));
-        }
-        return allMatches;
-    }
-
-    /**
-     * Registers a transformation for nodes matching a pattern.
-     * @param {SourceNode<any>} node - Root node to search within.
-     * @param {string | string[]} src - Pattern.
-     * @param {function(Record<string, any>, SourceNode<CNodeTypes>, UppHelpersC): any} callback - Transformation logic.
-     * @param {any} [options] - Optional settings.
-     */
-    withPatternAndCaptures(node: SourceNode<any>, src: string | string[], callback: (captures: Record<string, any>, target: SourceNode<CNodeTypes>, helpers: UppHelpersC) => any, options: any = {}): void {
-        const matches = this.matchAll(node, src, undefined, options);
-        for (const match of matches) {
-            this.withNode(match.node, (target, helpers) => callback(match.captures, target as SourceNode<CNodeTypes>, helpers as UppHelpersC));
-        }
-    }
-
-    /**
-     * Replaces all matches of a pattern.
-     * @param {SourceNode<CNodeTypes>} node - Scope.
-     * @param {string} src - Pattern.
-     * @param {function(any): string | null | undefined} callback - Replacement callback.
-     * @param {any} [options] - Options.
-     */
-    matchReplace(node: SourceNode<CNodeTypes>, src: string, callback: (match: { node: SourceNode<CNodeTypes>, captures: Record<string, SourceNode<CNodeTypes>> }) => string | null | undefined, options: { deep?: boolean } = {}): void {
-        const matches = this.matchAll(node, src, undefined, { ...options, deep: true });
-        for (const m of matches) {
-            // Automatic recursion avoidance
-            const key = (this as any).transformKey + "::" + src;
-            if ((this as any).transformKey) {
-                if ((this.registry as any).visit(key, m.node)) {
-                    const result = callback({ ...m.captures, node: m.node } as any);
-                    if (result !== undefined) {
-                        this.replace(m.node, result === null ? "" : result);
-                    }
-                }
-            } else {
-                const result = callback({ ...m.captures, node: m.node } as any);
-                if (result !== undefined) {
-                    this.replace(m.node, result === null ? "" : result);
-                }
-            }
-        }
+    findScope(): SourceNode<CNodeTypes> | null {
+        const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
+        return this.findEnclosing(startNode!, (['compound_statement', 'translation_unit'] as CNodeTypes[]));
     }
 
     /**
@@ -570,7 +441,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         this.registry.registerTransformRule(rule as any);
 
         // Immediate sweep for already-parsed or out-of-order nodes
-        this.atRoot((root, helpers) => {
+        this.withRoot((root: SourceNode<CNodeTypes>, helpers: UppHelpersBase<CNodeTypes>) => {
             const refs = this.findReferences(definitionNode);
             const cHelpers = helpers as UppHelpersC;
             for (const ref of refs) {
@@ -612,8 +483,8 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         this.registry.registerTransformRule(rule as any);
 
-        this.atRoot((root, helpers) => {
-            helpers.walk(root, (node) => {
+        this.withRoot((root: SourceNode<CNodeTypes>, helpers: UppHelpersBase<CNodeTypes>) => {
+            helpers.walk(root, (node: SourceNode<any>) => {
                 const cNode = node as SourceNode<CNodeTypes>;
                 if (cNode.type === nodeType) {
                     const cHelpers = helpers as UppHelpersC;
@@ -635,11 +506,10 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback.
      */
     withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<CNodeTypes>>, helpers: UppHelpersC) => string | null | undefined): void {
-        this.matchAll(scope, pattern, (match) => {
-            if (match && match.node) {
-                this.withNode(match.node, ((_node: SourceNode<any>, helpers: any) => callback(match as any, helpers as UppHelpersC)) as any);
-            }
-        });
+        const matches = this.matchAll(scope, pattern);
+        for (const match of matches) {
+            this.withNode(match.node, ((_node: SourceNode<any>, helpers: any) => callback(match.captures as Record<string, SourceNode<CNodeTypes>>, helpers as UppHelpersC)) as any);
+        }
     }
 
     /**

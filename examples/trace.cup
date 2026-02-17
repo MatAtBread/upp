@@ -3,7 +3,7 @@
 @define trace() {
     const fnNode = upp.consume(); // Read the next item in the AST and remove it from the tree
     const { returnType, name, params } = upp.getFunctionSignature(fnNode);
-    const body = fnNode.childForFieldName('body');
+    const body = fnNode.named['body'];
 
     if (body) {
         return upp.code`${returnType} ${name}${params} {

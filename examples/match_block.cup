@@ -1,5 +1,5 @@
 @define transform_if() {
-    upp.registerTransform((root, helpers) => {
+    upp.withRoot((root, helpers) => {
         // Find: if ($cond) $then;
         // Replace with: if ($cond) { $then } (enforce braces)
 

@@ -1,5 +1,7 @@
 import { SourceNode, SourceTree } from './source_tree.ts';
 import type { Invocation, Registry, RegistryContext } from './registry.ts';
+import { PatternMatcher } from './pattern_matcher.ts';
+import Parser from 'tree-sitter';
 
 let uniqueIdCounter = 1;
 
@@ -10,6 +12,7 @@ let uniqueIdCounter = 1;
 class UppHelpersBase<LanguageNodeTypes extends string> {
     public root: SourceNode<LanguageNodeTypes> | null;
     public registry: Registry;
+    public matcher: PatternMatcher;
     public _parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
     public contextNode: SourceNode<LanguageNodeTypes> | null;
     public invocation: Invocation | null;
@@ -47,6 +50,13 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         this.context = null; // Back-reference to the local transform context
         this.parentTree = (registry && registry.parentRegistry && registry.parentRegistry.tree) ? registry.parentRegistry.tree.root : null;
         this.stdPath = registry ? registry.stdPath : null;
+
+        // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
+        const patternParser = new Parser();
+        if (registry && registry.language) {
+            patternParser.setLanguage(registry.language as any);
+        }
+        this.matcher = new PatternMatcher((src) => patternParser.parse(src), registry ? registry.language as any : null);
     }
 
 
@@ -174,9 +184,9 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return result;
     }
 
-    atRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
+    withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         const root = this.findRoot();
-        if (!root) return "";
+        if (!root) throw new Error("upp.withRoot: No root node found.");
         return this.withNode(root, callback);
     }
 
@@ -184,17 +194,6 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         const scope = this.findScope();
         if (!scope) return "";
         return this.withNode(scope, callback);
-    }
-
-    withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
-        return this.withNode(this.findRoot()!, callback);
-    }
-
-    /**
-     * @deprecated Use code or withPattern instead.
-     */
-    registerTransform(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
-        return this.atRoot(callback);
     }
 
     registerTransformRule(rule: any): void {
@@ -217,21 +216,9 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
-    insertBefore(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] {
-        if (!n || !n.insertBefore) throw new Error(`Illegal call to helpers.insertBefore(node, content).`);
-        return n.insertBefore(content as any) as any;
-    }
-
-    insertAfter(n: SourceNode<LanguageNodeTypes>, content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] {
-        if (!n || !n.insertAfter) throw new Error(`Illegal call to helpers.insertAfter(node, content).`);
-        return n.insertAfter(content as any) as any;
-    }
-
     findRoot(): SourceNode<LanguageNodeTypes> | null {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
-
-
 
     withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         if (!node) return "";
@@ -242,8 +229,120 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return "";
     }
 
-    wrapNode(node: SourceNode<any>): SourceNode<any> {
-        return node; // No longer needed, but kept for compatibility during transition
+    /**
+     * Matches a pattern against code.
+     * @param {SourceNode<any>} node - Target node.
+     * @param {string | string[]} src - Pattern source code.
+     * @param {function(any): any} [callback] - Callback with captures.
+     * @param {any} [options] - Match options.
+     * @returns {any} Result of callback or captures object (or null).
+     */
+    match(node: SourceNode<any>, src: string | string[], callback?: (captures: Record<string, any>) => any, options: { deep?: boolean } = {}): any {
+        if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
+
+        const srcs = Array.isArray(src) ? src : [src];
+        const deep = options.deep === true;
+
+        for (const s of srcs) {
+            const result = this.matcher.match(node as any, s, deep);
+            if (result) {
+                const captures: Record<string, any> = {};
+                for (const key in result) {
+                    const val = result[key];
+                    if (Array.isArray(val)) {
+                        captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                    } else if (val && (val as any).id !== undefined) {
+                        captures[key] = node.tree.wrap(val as any);
+                    } else {
+                        captures[key] = val;
+                    }
+                }
+                if (callback) return callback({ ...captures, node: captures.node } as any);
+                return captures;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Matches all occurrences of a pattern.
+     * @param {SourceNode<any>} node - Target node.
+     * @param {string | string[]} src - Pattern source code.
+     * @param {function(any): any} [callback] - Optional callback.
+     * @param {any} [options] - Options.
+     * @returns {any[]} Matches.
+     */
+    matchAll(node: SourceNode<any>, src: string | string[], callback?: (match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, any> }) => any, options: { deep?: boolean } = {}): any[] {
+        if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
+
+        const srcs = Array.isArray(src) ? src : [src];
+        const deep = options.deep === true || (options.deep !== false && (node.type as string) === 'translation_unit');
+
+        const allMatches: any[] = [];
+        const seenIds = new Set<number | string>();
+
+        for (const s of srcs) {
+            const matches = this.matcher.matchAll(node as any, s, deep);
+            for (const m of matches) {
+                const syntaxNode = m.node as any;
+                if (syntaxNode && !seenIds.has(syntaxNode.id)) {
+                    const matchNode = node.tree.wrap(syntaxNode) as SourceNode<LanguageNodeTypes> | null;
+                    if (matchNode) {
+                        const captures: Record<string, any> = {};
+                        for (const key in m) {
+                            if (key !== 'node' && m[key]) {
+                                const val = m[key] as any;
+                                if (Array.isArray(val)) {
+                                    captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                                } else if (val && typeof val.id !== 'undefined') {
+                                    const wrapped = node.tree.wrap(val);
+                                    if (wrapped) captures[key] = wrapped;
+                                } else {
+                                    captures[key] = val;
+                                }
+                            }
+                        }
+                        allMatches.push({ node: matchNode, captures: captures });
+                        seenIds.add(syntaxNode.id);
+                    }
+                }
+            }
+        }
+
+        if (callback) {
+            return allMatches.map(m => callback({ ...m.captures, node: m.node } as any));
+        }
+        return allMatches;
+    }
+
+    /**
+     * Replaces all matches of a pattern.
+     * @param {SourceNode<LanguageNodeTypes>} node - Scope.
+     * @param {string} src - Pattern.
+     * @param {function(any): string | null | undefined} callback - Replacement callback.
+     * @param {any} [options] - Options.
+     */
+    matchReplace(node: SourceNode<LanguageNodeTypes>, src: string, callback: (match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }) => string | null | undefined, options: { deep?: boolean } = {}): void {
+        const matches = this.matchAll(node, src, undefined, { ...options, deep: true });
+        for (const m of matches) {
+            const result = callback({ ...m.captures, node: m.node } as any);
+            if (result !== undefined) {
+                this.replace(m.node, result === null ? "" : result);
+            }
+        }
+    }
+
+    /**
+     * Transforms nodes matching a source fragment pattern.
+     * @param {SourceNode<any>} scope - The search scope.
+     * @param {string} pattern - The source fragment pattern.
+     * @param {function(any, UppHelpersBase): (string|null|undefined)} callback - Transformation callback.
+     */
+    withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<LanguageNodeTypes>>, helpers: UppHelpersBase<LanguageNodeTypes>) => string | null | undefined): void {
+        const matches = this.matchAll(scope, pattern);
+        for (const match of matches) {
+            this.withNode(match.node, ((_node: SourceNode<any>, helpers: any) => callback(match.captures as Record<string, SourceNode<LanguageNodeTypes>>, helpers as UppHelpersBase<LanguageNodeTypes>)) as any);
+        }
     }
 
     /**
@@ -383,22 +482,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         if (!node) return;
         callback(node);
         const rawNode = (node as any).__internal_raw_node || node;
-        const lateBound = !!(node as any).__isLateBound; // We might need to track this
-        const sourceOverride = (node as any).__sourceOverride; // And this
+        // const lateBound = !!(node as any).__isLateBound; // We might need to track this
+        // const sourceOverride = (node as any).__sourceOverride; // And this
 
         for (let i = 0; i < rawNode.childCount; i++) {
-            this.walk((this as any).wrapNode(rawNode.child(i), lateBound, sourceOverride), callback);
+            this.walk(rawNode.child(i), callback);
         }
-    }
-
-
-    parent(node: SourceNode<any>): SourceNode<any> | null {
-        return node ? node.parent : null;
-    }
-
-    childForFieldName(node: SourceNode<any> | null, fieldName: string): SourceNode<any> | null {
-        if (!node) return null;
-        return node.findChildByFieldName(fieldName);
     }
 
     findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null {
@@ -469,8 +558,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
 
 
     findScope(): SourceNode<LanguageNodeTypes> | null {
-        const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
-        return this.findEnclosing(startNode!, (['compound_statement', 'translation_unit'] as any) as LanguageNodeTypes[]);
+        throw new Error("helpers.findScope(): Method not implemented. This is a language-specific feature (e.g. C).");
     }
 
     findEnclosing<K extends LanguageNodeTypes>(node: SourceNode<any>, types: K | K[]): SourceNode<K> | null {
@@ -487,14 +575,6 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     createUniqueIdentifier(prefix: string = 'v'): string {
         const id = uniqueIdCounter++;
         return `${prefix}_${id}`;
-    }
-
-    childCount(node: SourceNode<any> | null): number {
-        return node ? node.childCount : 0;
-    }
-
-    child(node: SourceNode<any> | null, index: number): SourceNode<any> | null {
-        return node ? node.child(index) : null;
     }
 
     error(node: SourceNode<any> | string, message?: string): never {

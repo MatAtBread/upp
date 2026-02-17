@@ -18,7 +18,7 @@
         }
 
         if (callNode && callNode.type === 'call_expression') {
-            const funcNode = helpers.childForFieldName(callNode, 'function');
+            const funcNode = callNode.named['function'];
             // Ensure we are the function being called, not an argument
             if (funcNode && (funcNode === refNode || helpers.isDescendant(funcNode, refNode))) {
                 helpers.replace(callNode, helpers.code`os_start(${name})`);

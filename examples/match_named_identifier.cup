@@ -1,5 +1,5 @@
 @define retype() {
-    upp.registerTransformRule((root, helpers) => {
+    upp.withRoot((root, helpers) => {
         helpers.matchReplace(root, `$type $x__identifier = $val__number_literal;`, ({ type, x, val }) => {
             return upp.code`${type} ${x} = (${type.text})${val};`;
         }, { deep: true });

@@ -6,7 +6,7 @@
     if (call.type !== 'call_expression') {
         upp.error(node, "@task must be applied to a function call");
     }
-    const name = call.childForFieldName('function').text;
+    const name = call.named['function'].text;
     return upp.code`os_start(${name});`;
 }
 

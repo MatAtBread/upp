@@ -3,11 +3,11 @@
 @define method(targetType) {
     const node = upp.consume();
     const funcDef = node;
-    const funcDeclarator = funcDef.childForFieldName('declarator');
-    const funcIdentifier = funcDeclarator.childForFieldName('declarator');
-    const returnType = funcDef.childForFieldName('type');
-    const params = funcDeclarator.childForFieldName('parameters');
-    const body = funcDef.childForFieldName('body');
+    const funcDeclarator = funcDef.named['declarator'];
+    const funcIdentifier = funcDeclarator.named['declarator'];
+    const returnType = funcDef.named['type'];
+    const params = funcDeclarator.named['parameters'];
+    const body = funcDef.named['body'];
 
     const originalName = funcIdentifier.text;
 
@@ -21,11 +21,11 @@
     // Use withPattern to transform method calls persistently
     upp.withPattern('call_expression',
         (call, helpers) => {
-            const fn = call.childForFieldName('function');
+            const fn = call.named['function'];
             if (fn && fn.type === 'field_expression') {
-                const field = fn.childForFieldName('field');
+                const field = fn.named['field'];
                 if (field && field.text === originalName) {
-                    const obj = fn.childForFieldName('argument');
+                    const obj = fn.named['argument'];
                     // Simple heuristic: check if obj text matches a known var (limited in this example)
                     // In a full impl like std/method.hup, we'd check types.
                     return true;
@@ -34,9 +34,9 @@
             return false;
         },
         (call, helpers) => {
-            const fn = call.childForFieldName('function');
-            const obj = fn.childForFieldName('argument');
-            const args = call.childForFieldName('arguments');
+            const fn = call.named['function'];
+            const obj = fn.named['argument'];
+            const args = call.named['arguments'];
             const operator = fn.text.includes('->') ? '->' : '.';
             const innerArgs = args.children.slice(1, -1);
             const hasArgs = innerArgs.length > 0;
@@ -51,7 +51,7 @@
     if (originalName === 'Defer') {
         const declarations = upp.root.find('declaration');
         for (const declNode of declarations) {
-            const typeNode = declNode.childForFieldName('type');
+            const typeNode = declNode.named['type'];
             if (typeNode && typeNode.text === cleanTarget) {
                 const ids = declNode.find('identifier');
                 for (const id of ids) {

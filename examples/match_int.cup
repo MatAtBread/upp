@@ -1,5 +1,5 @@
 @define transform_int() {
-    upp.registerTransform((root, helpers) => {
+    upp.withRoot((root, helpers) => {
         // Find: int $x = $val;
         // Replace with: long $x_long = $val;
 

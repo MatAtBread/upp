@@ -41,7 +41,7 @@
         paramsText = ", " + paramsText.trim().slice(1, -1);
     }
 
-    const bodyNode = sig.bodyNode || (sig.node ? upp.childForFieldName(sig.node, 'body') : upp.childForFieldName(fnNode, 'body'));
+    const bodyNode = sig.bodyNode || (sig.node ? sig.node.named['body'] : fnNode.named['body']);
 
 
     // Identify captures
@@ -168,7 +168,7 @@
     const currentStart = upp.invocation.startIndex;
     const knownInvocations = upp.context.invocations || [];
 
-    upp.atRoot((root, helpers) => {
+    upp.withRoot((root, helpers) => {
         // Find the enclosing function definition in the CURRENT tree
         let targetNode = null;
 
@@ -177,8 +177,8 @@
             const targetName = targetSig ? targetSig.name : null;
 
             // Scan top-level children of the root
-            for (let i = 0; i < helpers.childCount(root); i++) {
-                const child = helpers.child(root, i);
+            for (let i = 0; i < root.childCount; i++) {
+                const child = root.child(i);
                 if (child.id === enclosingFn.id ||
                     (child.type === 'function_definition' && upp.getFunctionSignature(child)?.name === targetName)) {
                     targetNode = child;
@@ -206,18 +206,18 @@
                 if (ref.type !== 'identifier') return;
                 if (ref.text !== targetDefName) return;
 
-                const refParent = helpers.parent(ref);
+                const refParent = ref.parent;
                 if (!refParent) return;
 
                 // Usage Type 1: Function Call -> target(...)
-                if (refParent.type === 'call_expression' && helpers.childForFieldName(refParent, 'function') === ref) {
+                if (refParent.type === 'call_expression' && refParent.named['function'] === ref) {
                     const call = refParent;
-                    const args = helpers.childForFieldName(call, 'arguments');
+                    const args = call.named['arguments'];
                     let newArgs = "";
 
                     if (contextArg) {
                         newArgs = contextArg;
-                        if (helpers.childCount(args) > 2) {
+                        if (args.childCount > 2) {
                             const inner = args.text.slice(1, -1);
                             newArgs = `(${contextArg.slice(1, -1)}, ${inner})`;
                         }
@@ -231,10 +231,10 @@
                 }
 
                 // Usage Type 2: Alias Initialization / Declaration
-                if (refParent.type === 'init_declarator' && helpers.childForFieldName(refParent, 'value') === ref) {
+                if (refParent.type === 'init_declarator' && refParent.named['value'] === ref) {
                     const initDecl = refParent;
-                    const declStmt = helpers.parent(initDecl);
-                    const decl = helpers.childForFieldName(initDecl, 'declarator');
+                    const declStmt = initDecl.parent;
+                    const decl = initDecl.named['declarator'];
                     let foundAlias = null;
                     helpers.walk(decl, n => { if (n.type === 'identifier' && !foundAlias) foundAlias = n; });
                     let aliasId = foundAlias;
@@ -243,8 +243,8 @@
                         // Cache text before replacement!
                         const aliasName = aliasId.text;
                         let prefix = "";
-                        for (let i = 0; i < helpers.childCount(declStmt); i++) {
-                            const c = helpers.child(declStmt, i);
+                        for (let i = 0; i < declStmt.childCount; i++) {
+                            const c = declStmt.child(i);
                             if (c.type === 'storage_class_specifier' || c.type === 'type_qualifier') {
                                 prefix += c.text + " ";
                             }
@@ -259,8 +259,8 @@
                     }
                 }
                 // Usage Type 3: Assignment
-                else if (refParent.type === 'assignment_expression' && helpers.childForFieldName(refParent, 'right') === ref) {
-                    const left = helpers.childForFieldName(refParent, 'left');
+                else if (refParent.type === 'assignment_expression' && refParent.named['right'] === ref) {
+                    const left = refParent.named['left'];
                     let aliasId = null;
                     if (left.type === 'identifier') aliasId = left;
                     if (isOriginal) helpers.replace(ref, implName);
