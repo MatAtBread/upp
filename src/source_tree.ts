@@ -791,7 +791,10 @@ export class SourceNode<T extends string = string> {
     }
 
     /**
-     * Finds nodes matching a predicate or type within this subtree.
+     * Finds nodes by type or predicate using simple recursive iteration.
+     * Unlike match(), find() is based on node types, not structural code patterns.
+     * Use this for simple type-based searches (e.g. finding all 'return_statement's).
+     * 
      * @param {K | function(SourceNode<any>):boolean} predicate Type name or filter function.
      * @returns {SourceNode<K>[]}
      */

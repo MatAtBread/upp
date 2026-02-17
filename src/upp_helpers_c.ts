@@ -1,8 +1,6 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
 import type { Registry, TransformRule } from './registry.ts';
-import { PatternMatcher } from './pattern_matcher.ts';
-import { SourceNode, SourceTree } from './source_tree.ts';
-import Parser from 'tree-sitter';
+import { SourceNode } from './source_tree.ts';
 
 export type CNodeTypes =
     | 'translation_unit'
@@ -321,19 +319,19 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
 
-        const findInScope = (scope: SourceNode<any>) => {
+        const findInScope = (scope: SourceNode<CNodeTypes>) => {
             return scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier').filter((idNode: SourceNode<CNodeTypes>) => {
-                return this.getEnclosingScope(idNode) === (scope as SourceNode<CNodeTypes>);
+                return this.getEnclosingScope(idNode) === scope;
             });
         };
 
-        let current: SourceNode<any> | null = startScope;
+        let current: SourceNode<CNodeTypes> | null = startScope;
         while (current) {
             const identifiers = findInScope(current);
 
             for (const idNode of identifiers) {
                 if ((idNode as any).searchableText === name) {
-                    let p: SourceNode<any> | null = idNode;
+                    let p: SourceNode<CNodeTypes> | null = idNode;
                     let isDeclarator = false;
 
                     while (p && p !== current) {
@@ -464,53 +462,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         this.withNode(defNode, (node, helpers) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC));
     }
 
-    /**
-     * Transforms nodes matching a pattern intelligently.
-     * @param {CNodeTypes} nodeType - The node type to match.
-     * @param {function(SourceNode, UppHelpersC): boolean} matcher - Custom matcher function.
-     * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
-     */
-    withPattern(nodeType: CNodeTypes, matcher: (node: SourceNode<CNodeTypes>, helpers: UppHelpersC) => boolean, callback: (node: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
-        const rule: TransformRule<CNodeTypes> = {
-            active: true,
-            matcher: (node: SourceNode<CNodeTypes>, helpers: any) => {
-                const cHelpers = helpers as UppHelpersC;
-                if (node.type !== nodeType) return false;
-                return matcher(node, cHelpers);
-            },
-            callback: (node: SourceNode<CNodeTypes>, helpers: any) => callback(node, helpers as UppHelpersC)
-        };
 
-        this.registry.registerTransformRule(rule as any);
-
-        this.withRoot((root: SourceNode<CNodeTypes>, helpers: UppHelpersBase<CNodeTypes>) => {
-            helpers.walk(root, (node: SourceNode<any>) => {
-                const cNode = node as SourceNode<CNodeTypes>;
-                if (cNode.type === nodeType) {
-                    const cHelpers = helpers as UppHelpersC;
-                    if (matcher(cNode, cHelpers)) {
-                        const replacement = callback(cNode, cHelpers);
-                        if (replacement !== undefined) {
-                            cHelpers.replace(cNode, replacement === null ? '' : replacement);
-                        }
-                    }
-                }
-            });
-        });
-    }
-
-    /**
-     * Transforms nodes matching a source fragment pattern.
-     * @param {SourceNode<any>} scope - The search scope.
-     * @param {string} pattern - The source fragment pattern.
-     * @param {function(any, UppHelpersC): (string|null|undefined)} callback - Transformation callback.
-     */
-    withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<CNodeTypes>>, helpers: UppHelpersC) => string | null | undefined): void {
-        const matches = this.matchAll(scope, pattern);
-        for (const match of matches) {
-            this.withNode(match.node, ((_node: SourceNode<any>, helpers: any) => callback(match.captures as Record<string, SourceNode<CNodeTypes>>, helpers as UppHelpersC)) as any);
-        }
-    }
 
     /**
      * Determines how an array should be expanded based on its C/UPP parent context.
