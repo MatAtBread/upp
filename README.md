@@ -107,7 +107,7 @@ The output will include the materialized C code, compilation status, and the sta
 
 The only built in macros are `@define` and `@include`. This allows you to create powerful, reusable abstractions across your project.
 
-UPP comes with a small standard set of macros in the `std/` directory, such as `@expressionType`, `@defer`, `@fieldsOf`, `@lambda`, `@methods` and others. You can find out more about them (here)[docs/std.md]
+UPP comes with a small standard set of macros in the `std/` directory, such as `@expressionType`, `@defer`, `@fieldsOf`, `@lambda`, `@methods` and others. You can find out more about them [here](docs/std.md)
 
 
 
@@ -136,7 +136,7 @@ UPP manipulates trees, rather than text. This means that many of the operations 
 
 The key features are:
 * A macro can have arguments (in parentheses). These are just JavaScript values that get passed to your macro, so you can have `@castTo(int)` and `@castTo(char *)`. There's no typing or validation, they are just passed to your macro as JS strings.
-* Macros are typically a *prefix* to your C code. This is because within a macro you can consume one or more AST "nodes", which in C can be an expression, a compound statement, a defintion or declaration, etc. You do this with the `upp.consume` helper. There is also a `upp.nextNode` that returns the next node but doesn't remove it from the source tree.
+* Macros are typically a *prefix* to your C code. This is because within a macro you can consume one or more AST nodes, which in C are syntactic elements like expressions, compound statements, defintions or declarations, etc. You do this with the `upp.consume` helper. There is also a `upp.nextNode` that returns the next node but doesn't remove it from the source tree.
 * The general flow is:
     - define a macro that consumes a node
     - manipulate the node
@@ -194,13 +194,13 @@ At this point, we could pass the "foo" label as a parameter to the macro, so we 
 
 ![Install VSIX](./docs/install-vsix.png)
 
-Once installed, you can configure the file associated for .cup and .hup files to use the UPP Source and UPP Header respectively. You can do this by running the "Configure File Association" command from the command palette (Ctrl+Shift+P or Cmd+Shift+P).
+Once installed, configure the file associations for .cup and .hup files to use the UPP Source and UPP Header respectively. You can do this by running the "Configure File Association" command from the command palette (Ctrl+Shift+P or Cmd+Shift+P). This provides syntax colouring for .cup and .hup files (which are a mixture of C and Javascript).
 
-But one of the most useful features is the _Live preview_
+One of the most useful features is the _Live preview_
 
 ![Command palette](./docs/command-palette.png)
 
-The provides syntax colouring for .cup and .hup files (which are a mixture of C and Javascript), but best of all provides a live preview, so you can quickly check your macros are working as expected:
+The provides a live preview, so you can quickly check your macros are working as expected:
 
 ![Live preview](./docs/live-preview.png)
 
@@ -228,6 +228,19 @@ int main() {
 }
 ```
 Note: you have to be a bit careful. The above will create a bit of a mess if the declaration is already initialised. To avoid that you'd have to test the declaration for an initial value, and _not_ add another one in thst case (or raise an error). But the point remains - the general pattern is *match* nodes and map them to a replacement.
+
+The capture names can also have "constraints" on them, separated by a double-underscore, such as `$name__identifier__type_identifier` to mean "match an identifier or a type_identifier, and call it name". The pseudo constraint `__until` allows you to capture multiple nodes until a certain node is found. For example:
+
+```c
+    @onlyFunctions {
+        const node = upp.consume('function_defintion');
+        // Only match functions that return an `int`, and capture all the arguments
+        // in an array of nodes.
+        const capture = upp.match(node, "int $name ( $args__until ) { $body }");
+        if (capture) {
+            // do something with array of nodes `args`
+            // ...
+```
 
 ### `withMatches, withScope, withRoot, withNode,...`
 

@@ -4,11 +4,11 @@ UPP transforms C code with macro extensions into standard C through a multi-phas
 
 ## Phase 0: The C pre-processor is run on the .cup file
 
-The C pre-processor is run on the .cup file to resolve all non-C syntax that might be present in the file. This includes `@include` and `@define` directives, and conditional compilation directives if the command line contains `-D` or `-U` options. The macro substituion is then guaranteed clean C code.
+The C pre-processor is run on the .cup file to resolve all non-C syntax that might be present in the file. This includes `#include` and `#define` directives, and conditional compilation directives if the command line contains `-D` or `-U` options. The macro substituion is then guaranteed clean C code.
 
 ## Phase 1: Macro Discovery & Preparation
 
-Before parsing the AST, UPP performs a top-down scan to register macros and prepare the source code.
+Before parsing the AST, UPP performs a quick top-level scan to register macros and prepare the source code. `@define` and `@include` must be "top-level" macro invocations, and are not C syntax, so they are stripped out at this stage.
 
 ### 1.1 Discovery
 - **`@include`**: Scanned first to load external dependencies (which may contain `@define`).
@@ -26,7 +26,7 @@ To make the source valid C for Tree-sitter:
 UPP walks the AST depth-first. When it encounters a `comment` node that matches a macro invocation, it evaluates it.
 
 1. **Evaluation**: The macro function is executed with a `upp` helper object.
-2. **Recursive Transpilation**: If a macro returns a string, that string is recursively transpiled. This allows macros to generate code that contains other macro calls, *except* for `@include` and `@define`.
+2. **Recursive Transpilation**: If a macro returns a string containing a `@`, that string is recursively transpiled. This allows macros to generate code that contains other macro calls, *except* for `@include` and `@define` which must be at the top level and available in phase 1.
 3. **Splicing**: Results are spliced back into the source. 
 
 ## Phase 3: Advanced Transformation Engine
@@ -39,12 +39,7 @@ Using the upp API, a macro can also request modification of other nodes in the t
 
 The callback can immediately modify nodes that are children/elder siblings of the current node (since we are a depth-first traversal, everything under the current node and left-hand siblings will have already been processed). For any references that are right-hand or ancestors, the node is marked with the callback & context, and will be processed when the recusrsive tree-walk finally reaches it. The stability of node references means any markers placed on a node will be preserved through the tree-walk.
 
-### 3.1 Hoisting
-Macros can "hoist" their results or replacement content to an ancestor node.
-- **Mechanism**: If a macro replaces a node that is an ancestor of the current invocation, UPP detects this and redirects the transformation to the ancestor's range.
-- **Example**: A macro inside a function body can replace the entire `function_definition`.
-
-### 3.2 Deferred Transformations
+### 3.1 Deferred Transformations
 Macros can register callbacks to be executed on other parts of the tree (e.g., at the root or within a specific scope).
 - **`withNode(node, callback)`**: Queues a transformation for a specific node to be applied when the DFS reaches it.
 - **`withRoot(callback)`**: Queues a transformation to be applied at the end of the root node's processing.
@@ -53,51 +48,11 @@ Macros can register callbacks to be executed on other parts of the tree (e.g., a
 
 ## The Macro Helper API (`upp`)
 
-Macro authors interact with the system through the `upp` object passed to the macro function.
-
-### Base Helpers (`upp.*`)
-
-| Method | Description |
-| :--- | :--- |
-| `query(pattern, [node])` | Executes a Tree-sitter S-expression query. Returns an array of matches with captures. |
-| `consume(type, [error])` | Consumes the next sibling node of a specific type. Useful for transformation macros. |
-| `replace(node, content)` | Replaces a specific node with new text. |
-| `withRoot(callback)` | Registers a callback to run on the root node after current DFS. |
-| `code\`text\`` | A tagged template literal that safely embeds nodes by using their `text` property. |
-| `loadDependency(file)` | Dynamically loads and transpiles a `.hup` dependency. |
-| `registerParentTransform(cb)` | (Included files only) Registers a callback to run on the parent implementation file's AST. |
-| `findEnclosing(node, types)` | Finds the nearest parent node matching the specified types. |
-| `createUniqueIdentifier(prefix)` | Generates a unique C-safe identifier. |
-| `childForFieldName(node, field)` | Accesses a Tree-sitter field by name reliably. |
-
-### C-Specific Helpers (via `UppHelpersC`)
-
-| Method | Description |
-| :--- | :--- |
-| `match(node, pattern, callback)` | Matches a pattern string against a node. Supports named captures. |
-| `matchReplace(node, pat, cb)` | Recursively finds and replaces all matches of a pattern within a node. |
-| `getDefinition(target)` | Finds the definition node for an identifier or call expression. |
-| `findReferences(node)` | Finds all references to a specific definition node. |
-| `getType(node)` | Extracts the C type string (e.g., `int`, `char *`) for a variable or expression. |
-| `getFunctionSignature(fnNode)` | Extracts name, return type, params, and body from a `function_definition`. |
-| `hoist(content)` | Utility to hoist code to the top of the file (e.g., for imports or global variables). |
-
----
+Macro authors interact with the system through the `upp` object passed to the macro function. You can read the full API in the [helper API](./helpers.md) section.
 
 ## Standard Library (`std/`) Status
 
-| File | Status | Description |
-| :--- | :--- | :--- |
-| `package.hup` | **STABLE** | Implements `@package` and `@implements`. Handles namespacing and header generation. |
-| `method.hup` | **STABLE** | Implements OOP-style method calls for C structs. |
-| `defer.hup` | **STABLE** | Implements Go-style `defer`. Modernized with robust scope walking. |
-| `async.hup` | **STABLE** | Implements async/await patterns. Modernized for stable node identity. |
-| `fieldsof.hup` | **STABLE** | Implements structural inheritance. Updated for typedef support. |
-| `lambda.hup` | **EXPERIMENTAL** | Experimental support for C closures/lambdas. |
-| `include.hup` | **DEPRECATED** | Replaced by internal `@include` logic. |
-| `forward.hup` | **VALIDATING** | Automatically generates forward declarations. |
-
----
+UPP comes with a set of standard library macros that can be found in the `std/` directory. You can read more about them in the [standard library](./std.md) section.
 
 ## Best Practices for Macro Authors
 

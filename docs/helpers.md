@@ -1,99 +1,154 @@
 # UPP Helpers API Documentation
 
-The `upp` object available in macros and transformation rules provides a rich set of utilities for inspecting and modifying source code.
+The `upp` object provides a rich set of utilities for inspecting and modifying source code within UPP macros and transformation rules.
 
-## 1. Core Utilities (`UppHelpersBase`)
+## 1. Source Generation & Modification
 
-These utilities are always available in any UPP environment.
+### `upp.code`
+Tagged template literal for generating source fragments. Crucially, it **moves** interpolated nodes rather than converting them to strings, maintaining their referential identity for other macros.
 
-### Source Modification
-- `node.text = "..."`: **[SAFE & RECOMMENDED]** Direct assignment to a node's source. This automatically re-parses the new text and morphs the node structure to match the new code.
-- `upp.replace(node, content)`: Alias for `node.text = content`. Useful inside `code` template literals as it returns an empty string to avoid adding unwanted text to the output.
-- `upp.consume(types, [message])`: "Consumes" the next logical node if it matches the specified `types`. The node is removed from the normal source flow and returned.
-- `upp.nextNode(types)`: Returns the next logical node without removing it. Useful for peeking.
-- `upp.code\`source\``: Tagged template literal for generating source fragments. Nodes passed as interpolations will automatically use their source text.
+- **Signature**: `upp.code`strings: TemplateStringsArray, ...values: InterpolationValue[]` -> `SourceNode`
+- **Example**:
+  ```javascript
+  const newNode = upp.code`int ${name}_v2 = ${value};`;
+  ```
 
-### Tree Traversal & Query
-- `upp.query(selector)`: Finds nodes matching a simple type string (e.g., `"function_definition"`).
-- `upp.findRoot()`: Returns the root node of the current file.
-- `upp.findParent(node)`: Returns the parent of the specified node.
-- `upp.findScope(node)`: Returns the closest enclosing scope (`compound_statement` or `function_definition`).
-- `upp.findEnclosing(node, types)`: Finds the nearest parent node of a specific type (e.g., `["struct_specifier", "type_definition"]`).
-- `upp.findInvocations(macroName)`: Returns a list of all occurrences of a specific macro call.
+### `upp.replace`
+Replaces a node with new content. Returns an empty string, making it convenient for use inside `upp.code` templates to perform side-effect replacements without adding text.
 
-### Transformation Control
-- `upp.withNode(node, callback)`: Attaches a deferred transformation to a specific node. The callback will be executed once the current transformation pass reaches that node.
-- `upp.registerTransformRule(rule)`: Registers a dynamic transformation rule that applies to the entire file (both existing and generated code). See below for details.
+- **Signature**: `upp.replace(node: SourceNode, content: MacroResult)` -> `SourceNode | SourceNode[] | null`
+- **Example**:
+  ```javascript
+  upp.code`${upp.replace(oldNode, newNode)}`;
+  ```
 
-### Infrastructure
-- `upp.loadDependency(file)`: Loads and processes another file as a dependency.
-- `upp.isConsumed(node)`: Returns `true` if the node has been removed via `upp.consume`.
-- `upp.createUniqueIdentifier(prefix)`: Generates a unique identifier (e.g., `v_6f3a1z`).
-- `upp.childCount(node)` / `upp.child(node, i)`: AST traversal helpers.
-- `upp.childForFieldName(node, name)`: Safe access to field children.
+### `upp.consume`
+Removes the next logical node from the source tree if it matches the specified types.
 
----
+- **Signature**: `upp.consume(types: string | string[], [message: string])` -> `SourceNode | null`
+- **Example**:
+  ```javascript
+  const fn = upp.consume('function_definition');
+  ```
 
-## 2. C-Specific Utilities (`UppHelpersC`)
+### `upp.nextNode`
+Peeks at the next logical node without removing it from the tree.
 
-Available when transpiling C code.
-
-### Pattern Matching
-
-Patterns use a structural matching engine. You can use `$name` to capture nodes, or `$opt$name` for optional nodes that might not be present in the source.
-
-- `upp.match(node, pattern, [callback])`: Matches a pattern (or array of alternative patterns) against a node.
-- `upp.matchAll(node, pattern)`: Returns all occurrences of a pattern (or array of patterns) within a sub-tree.
-- `upp.matchReplace(node, pattern, callback)`: Finds a pattern match and replaces the matching node with the result of the callback.
-
-### C Analysis
-- `upp.getType(node)`: Extracts the C type string (e.g., `int *`) for a variable or parameter.
-- `upp.getFunctionSignature(node)`: Returns an object containing `name`, `returnType`, `params`, and `bodyNode` for a function definition.
-- `upp.findDefinition(node|name)`: Resolves an identifier to its declaration node.
-- `upp.findReferences(node)`: Finds all usages of a specific declaration.
-
-### Advanced Transformations
-- `upp.withReferences(definitionNode, callback)`: Registers a dynamic rule to transform all current and future references to a specific definition.
-- `upp.withDefinition(target, callback)`: Finds the definition for a name/node and applies a transformation.
-- `upp.hoist(content)`: Prepends source code to the top of the file.
+- **Signature**: `upp.nextNode(types?: string | string[])` -> `SourceNode | null`
 
 ---
 
-## 3. The `upp` Macro Context
+## 2. Structural Pattern Matching
 
-When inside a macro implementation, the `upp` object also provides access to:
+Patterns use structural matching (not just regex). 
+- Use `$name` to capture a node.
+- Use `__until` (e.g., `$args__until`) to capture multiple nodes.
+- Use constraints (e.g., `$id__identifier__type_identifier`) to restrict node types.
 
-- `upp.registry`: The current `Registry` instance managing the file.
-- `upp.parentHelpers`: Helpers for the file that *included* the current one. Essential for cross-file introspection (like `@package` checking the implementation file).
-- `upp.path`: The standard Node.js `path` module.
-- `upp.invocation`: Metadata about the current macro call (name, arguments, line, etc.).
-- `upp.stdPath`: The absolute path to the UPP standard library directory.
+### `upp.match`
+Performs a one-off match against a specific node.
+
+- **Signature**: `upp.match(node: SourceNode, pattern: string, [callback])` -> `CaptureResult | null`
+- **Example**:
+  ```javascript
+  upp.match(node, "int $name = $val;", ({ name, val }) => {
+      console.log(`Variable ${name.text} set to ${val.text}`);
+  });
+  ```
+
+### `upp.matchAll`
+Finds all structural matches of a pattern within a scope.
+
+- **Signature**: `upp.matchAll(node: SourceNode, pattern: string, options?: { deep: boolean })` -> `Array<{ node, captures }>`
+
+### `upp.matchReplace`
+Synchronously replaces all matches of a pattern within a scope during macro execution.
+
+- **Signature**: `upp.matchReplace(scope: SourceNode, pattern: string, callback)` -> `void`
 
 ---
 
-## 4. Understanding `upp.registerTransformRule`
+## 3. Deferred Transformations (The `withX` Pattern)
 
-`upp.registerTransformRule` is the primary mechanism for implementing **dynamic rewriters**. 
+These methods register "markers" or "rules". Transformations are deferred and managed by the UPP engine to ensure they happen in the correct order, especially when moving nodes.
 
-Unlike a standard macro that runs exactly once when encountered, a transformation rule persists for the entire transformation pass. It is checked against every node in the AST as the tree is walked.
+### `upp.withMatch`
+Registers a deferred transformation for nodes matching a pattern within a scope.
 
-### Rule Structure
-```javascript
-upp.registerTransformRule({
-    id: "unique_id",
-    type: "pattern",
-    active: true,
-    matcher: (node, helpers) => {
-        // Return true if this rule should apply to 'node'
-        return node.type === 'call_expression' && node.text === 'old_func';
-    },
-    callback: (node, helpers) => {
-        // Return a string to replace the node, or undefined to skip
-        return "new_func" + node.text.slice(8);
-    }
-});
-```
+- **Signature**: `upp.withMatch(scope: SourceNode, pattern: string, callback)` -> `void`
+- **Example**:
+  ```javascript
+  upp.withMatch(upp.root, "$x + 0", ({ x }, upp2) => x);
+  ```
 
-### Why use rules?
-Rules are essential for transformations that must apply to **generated code**. 
-For example, if the `@package(mypkg)` macro renames all functions in a file, it registers a rule to ensure that any *other* macro call that later generates code referencing those functions will also have those references renamed correctly.
+### `upp.withPattern`
+Registers a transformation for a specific node type, filtered by an optional matcher function.
+
+- **Signature**: `upp.withPattern(type: string, matcher, callback)` -> `void`
+
+### `upp.withNode`
+Attaches a one-off deferred transformation to a specific node.
+
+- **Signature**: `upp.withNode(node: SourceNode, callback)` -> `void`
+
+---
+
+## 4. Tree Queries & Navigation
+
+- **`upp.root`**: The root node of the current tree.
+- **`upp.findRoot()`**: Returns the root node (convenience).
+- **`upp.findScope(node?)`**: Finds the nearest enclosing scope (e.g., `{}` block or function).
+- **`upp.findEnclosing(node, types)`**: Finds the nearest ancestor of the given type(s).
+- **`upp.findInvocations(macroName)`**: Finds all calls to a specific macro.
+
+---
+
+## 5. C-Specific Helpers (`UppHelpersC`)
+
+These helpers are available when the language is set to C.
+
+### `upp.getType`
+Extracts the C type string for a definition node (handles pointers, arrays, etc.).
+
+- **Signature**: `upp.getType(node: SourceNode | string)` -> `string`
+
+### `upp.getFunctionSignature`
+Extracts details from a `function_definition` node.
+
+- **Signature**: `upp.getFunctionSignature(fnNode: SourceNode)` -> `{ name, returnType, params, bodyNode, nameNode }`
+
+### `upp.getArrayDepth`
+Returns the number of array dimensions wrapping an identifier (e.g., `int x[10][20]` returns 2).
+
+- **Signature**: `upp.getArrayDepth(defNode: SourceNode)` -> `number`
+
+### `upp.findDefinition`
+Resolves an identifier or name to its declaration node.
+
+- **Signature**: `upp.findDefinition(target: SourceNode | string, [nameOrOptions], [options])` -> `SourceNode`
+
+### `upp.findReferences`
+Finds all semantic references to a declaration node.
+
+- **Signature**: `upp.findReferences(defNode: SourceNode)` -> `SourceNode[]`
+
+### `upp.withReferences`
+Intelligently transforms all references to a specific definition, even if they are generated later.
+
+- **Signature**: `upp.withReferences(defNode: SourceNode, callback)` -> `void`
+
+### `upp.hoist`
+Prepends code to the top of the file (typically after includes).
+
+- **Signature**: `upp.hoist(content: string)` -> `void`
+
+---
+
+## 6. Infrastructure
+
+- **`upp.createUniqueIdentifier(prefix?)`**: Generates a guaranteed-unique C identifier.
+- **`upp.loadDependency(file)`**: Loads another file to make its macros and symbols available.
+- **`upp.walk(node, callback)`**: Manually walk the AST.
+- **`upp.isDescendant(parent, node)`**: Returns true if `node` is a descendant of `parent`.
+- **`upp.invocation`**: Metadata about the current macro call (args, file, line, etc.).
+- **`upp.registry`**: Direct access to the internal macro registry.
