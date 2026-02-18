@@ -132,7 +132,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 declNode.type !== 'struct_specifier' &&
                 declNode.type !== 'union_specifier' &&
                 declNode.type !== 'enum_specifier') {
-                declNode = declNode.parent | undefined;
+                declNode = declNode.parent || undefined;
             }
             if (!declNode) return "";
             const ids = declNode.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
@@ -148,7 +148,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 declNode.type !== 'struct_specifier' &&
                 declNode.type !== 'union_specifier' &&
                 declNode.type !== 'enum_specifier') {
-                declNode = declNode.parent as SourceNode<CNodeTypes> | null;
+                declNode = declNode.parent || undefined;
             }
         }
 
