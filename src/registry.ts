@@ -155,6 +155,15 @@ class Registry {
         this.UppHelpersC = UppHelpersC; // Ensure this is available
     }
 
+    /**
+     * Registers a new macro in the registry.
+     * @param {string} name - Name of the macro.
+     * @param {string[]} params - Parameter names.
+     * @param {string} body - Macro body (JS or C).
+     * @param {string} [language='js'] - Macro implementation language.
+     * @param {string} [origin='unknown'] - Origin file or package.
+     * @param {number} [startIndex=0] - Start index in the origin file.
+     */
     registerMacro(name: string, params: string[], body: string, language: string = 'js', origin: string = 'unknown', startIndex: number = 0): void {
         const macro = { name, params, body, language, origin, startIndex };
 
@@ -183,12 +192,21 @@ class Registry {
         }
     }
 
+    /**
+     * Retrieves a macro by name, searching parent registries if necessary.
+     * @param {string} name - The name of the macro.
+     * @returns {Macro | undefined} The macro definition or undefined.
+     */
     getMacro(name: string): Macro | undefined {
         if (this.macros.has(name)) return this.macros.get(name);
         if (this.parentRegistry) return this.parentRegistry.getMacro(name);
         return undefined;
     }
 
+    /**
+     * Registers a global transformation rule.
+     * @param {TransformRule<any> | function(SourceNode<any>, any): any} rule - The rule object or callback.
+     */
     registerTransformRule(rule: TransformRule<any> | ((node: SourceNode<any>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined)): void {
         if (typeof rule === 'function') {
             rule = {
@@ -296,6 +314,13 @@ class Registry {
     }
 
 
+    /**
+     * Transforms a source string by evaluating macros and applying rules.
+     * @param {string} source - The UPP source code.
+     * @param {string} [originPath='unknown'] - Path for diagnostic reporting.
+     * @param {UppHelpersC | null} [parentHelpers=null] - Parent helper context.
+     * @returns {string} The transformed C code.
+     */
     transform(source: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): string {
         this.source = source;
         if (!source) return "";
@@ -358,6 +383,12 @@ class Registry {
         return sourceTree.source;
     }
 
+    /**
+     * Recursively transforms an AST node by evaluating macros and markers.
+     * @param {SourceNode<any>} node - The node to transform.
+     * @param {any} helpers - Helper class instance.
+     * @param {RegistryContext} context - Current transformation context.
+     */
     transformNode(node: SourceNode<any>, helpers: any, context: RegistryContext): void {
         if (!node) return;
 
@@ -502,6 +533,14 @@ class Registry {
         }
     }
 
+    /**
+     * Evaluates a macro invocation and returns the resulting content.
+     * @param {Invocation} invocation - The macro invocation details.
+     * @param {string} source - The context source.
+     * @param {any} helpers - Helper class instance.
+     * @param {string} filePath - Current file path.
+     * @returns {SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined}
+     */
     evaluateMacro(invocation: Invocation, source: string, helpers: any, filePath: string): SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined {
         const macro = this.getMacro(invocation.name);
 
@@ -580,6 +619,12 @@ class Registry {
         }
     }
 
+    /**
+     * Prepares source code by identifying macro invocations and masking them.
+     * @param {string} source - The raw source code.
+     * @param {string} originPath - Path for diagnostics.
+     * @returns {{ cleanSource: string, invocations: Invocation[] }} Masked source and invocations.
+     */
     prepareSource(source: string, originPath: string): { cleanSource: string; invocations: Invocation[] } {
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
