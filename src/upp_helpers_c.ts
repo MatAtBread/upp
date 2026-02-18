@@ -1,6 +1,16 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
 import type { Registry, TransformRule } from './registry.ts';
 import { SourceNode } from './source_tree.ts';
+import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts';
+
+export interface FunctionSignature {
+    returnType: string;
+    name: string;
+    params: string;
+    bodyNode?: SourceNode<CNodeTypes> | null;
+    node: SourceNode<CNodeTypes>;
+    nameNode?: SourceNode<CNodeTypes> | null;
+}
 
 export type CNodeTypes =
     | 'translation_unit'
@@ -242,10 +252,13 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     /**
      * Extracts function signature details including return type, name, parameters, and body.
      * @param {SourceNode<CNodeTypes>} fnNode - The function_definition node.
-     * @returns {{ returnType: string, name: string, params: string, bodyNode?: SourceNode<CNodeTypes>, node: SourceNode<CNodeTypes>, nameNode?: SourceNode<CNodeTypes> }} Signature details.
+     * @returns {FunctionSignature} Signature details.
      */
-    getFunctionSignature(fnNode: SourceNode<CNodeTypes>): any {
-        if (!fnNode) return { returnType: "void", name: "unknown", params: "()" };
+    getFunctionSignature(fnNode: SourceNode<CNodeTypes>): FunctionSignature {
+        if (!fnNode) {
+            // This is a safety fallback, though fnNode should usually be valid if called correctly
+            throw new Error("getFunctionSignature: Argument must be a valid function node");
+        }
 
         let typeNode = fnNode.named.type;
         if (!typeNode) {
@@ -271,7 +284,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         let bodyNode = fnNode.named.body || fnNode.children.find(c => c.type === 'compound_statement');
 
-        return { returnType, name, params, bodyNode, node: fnNode, nameNode };
+        return { returnType, name, params, bodyNode: bodyNode as SourceNode<CNodeTypes>, node: fnNode, nameNode: nameNode as SourceNode<CNodeTypes> };
     }
 
     /**
@@ -429,7 +442,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         const rule: TransformRule<CNodeTypes> = {
             active: true,
-            matcher: (node: SourceNode<CNodeTypes>, helpers: any) => {
+            matcher: (node: SourceNode<CNodeTypes>, helpers: UppHelpersBase<any>) => {
                 const cHelpers = helpers as UppHelpersC;
                 if (node.type !== 'identifier' && node.type !== 'field_identifier') return false;
                 if (node.text !== originalName) return false;
@@ -437,10 +450,10 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 // Compare by index/type since node objects might not be stable across major parses
                 return !!(def && def.startIndex === definitionNode.startIndex && def.type === definitionNode.type);
             },
-            callback: (node: SourceNode<CNodeTypes>, helpers: any) => callback(node, helpers as UppHelpersC)
+            callback: (node: SourceNode<CNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersC)
         };
 
-        this.registry.registerTransformRule(rule as any);
+        this.registry.registerTransformRule(rule);
 
         // Immediate sweep for already-parsed or out-of-order nodes
         this.withRoot((root: SourceNode<CNodeTypes>, helpers: UppHelpersBase<CNodeTypes>) => {
@@ -457,10 +470,10 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
     /**
      * Finds and transforms a definition node intelligently.
-     * @param {SourceNode<any>|string} target - The node or name.
-     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
+     * @param {AnySourceNode|string} target - The node or name.
+     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): MacroResult} callback - Transformation callback.
      */
-    withDefinition(target: SourceNode<any> | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
+    withDefinition(target: AnySourceNode | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => MacroResult): void {
         const defNode = this.findDefinitionOrNull(target);
         if (!defNode) return;
         this.withNode(defNode, (node, helpers) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC));
@@ -470,12 +483,12 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
     /**
      * Determines how an array should be expanded based on its C/UPP parent context.
-     * @param {any[]} values The values to expand.
+     * @param {InterpolationValue[]} values The values to expand.
      * @param {CNodeTypes} parentType The tree-sitter node type of the parent.
-     * @returns {any[]} The expanded list of nodes/text.
+     * @returns {InterpolationValue[]} The expanded list of nodes/text.
      */
-    protected override getArrayExpansion(values: any[], parentType: CNodeTypes): any[] {
-        const result: any[] = [];
+    protected override getArrayExpansion(values: InterpolationValue[], parentType: CNodeTypes): InterpolationValue[] {
+        const result: InterpolationValue[] = [];
         const isStatementBlock = (parentType as string) === 'compound_statement' || (parentType as string) === 'translation_unit';
         const isList = (parentType as string) === 'parameter_list' || (parentType as string) === 'argument_list' || (parentType as string) === 'initializer_list';
 

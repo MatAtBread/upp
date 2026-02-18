@@ -2,6 +2,7 @@ import { SourceNode, SourceTree } from './source_tree.ts';
 import type { Invocation, Registry, RegistryContext, TransformRule } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import Parser from 'tree-sitter';
+import type { MacroResult, AnySourceNode, AnySourceTree, InterpolationValue } from './types.ts';
 
 let uniqueIdCounter = 1;
 
@@ -60,13 +61,13 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
-    code(strings: TemplateStringsArray, ...values: any[]): SourceNode<LanguageNodeTypes> {
+    code(strings: TemplateStringsArray, ...values: InterpolationValue[]): SourceNode<LanguageNodeTypes> {
         let text = "";
         const nodeMap = new Map<string, SourceNode>();
         const listMap = new Map<string, any[]>();
         const usedNodes = new Map<SourceNode, string>();
 
-        const processValue = (val: any, index: number) => {
+        const processValue = (val: InterpolationValue, index: number) => {
             if (val instanceof SourceNode) {
                 if (!val.isValid) {
                     const nodeInfo = val.type ? `type: ${val.type}` : "unknown type";
@@ -87,10 +88,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
                 }
             } else if (val === null || val === undefined) {
                 throw new Error(`upp.code: Invalid null or undefined value at index ${index}`);
-            } else if (typeof val !== 'string' && typeof val[Symbol.iterator] === 'function') {
+            } else if (Array.isArray(val)) {
                 // Unified Array Placeholder: use a single placeholder for the entire list
                 const placeholder = this.createUniqueIdentifier('__UPP_NODE_STABILITY_l');
-                listMap.set(placeholder, Array.from(val));
+                listMap.set(placeholder, val);
                 text += placeholder;
             } else {
                 text += String(val);
@@ -104,11 +105,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
             }
         }
 
-        const prepared = (this.registry as any).prepareSource(text, (this.registry as any).originPath);
+        const prepared = this.registry.prepareSource(text, this.registry.originPath || "");
         let cleanText = prepared.cleanSource;
 
-        const SourceTree: any = this.registry.tree!.constructor;
-        const fragment = SourceTree.fragment(cleanText, this.registry.language);
+        // @ts-ignore - reaching into internals for tree cloning
+        const SourceTreeCtor: any = this.registry.tree!.constructor;
+        const fragment = SourceTreeCtor.fragment(cleanText, this.registry.language);
         if (!fragment) {
             throw new Error("upp.code: Failed to parse code fragment");
         }
@@ -173,8 +175,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {string} parentType The tree-sitter node type of the parent.
      * @returns {any[]} The expanded list of nodes/text.
      */
-    protected getArrayExpansion(values: any[], parentType: string): any[] {
-        const result: any[] = [];
+    protected getArrayExpansion(values: InterpolationValue[], parentType: string): InterpolationValue[] {
+        const result: InterpolationValue[] = [];
         let first = true;
         for (const val of values) {
             if (!first) result.push('\n');
@@ -256,13 +258,13 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * Unlike find(), match() uses code patterns and can extract sub-nodes into captures.
     * Use this for immediate inspection or to "peek" into a node's structure.
     * 
-    * @param {SourceNode<any>} node - Target node to match against.
+    * @param {AnySourceNode} node - Target node to match against.
     * @param {string | string[]} src - Pattern(s) to match. Can include $wildcards.
-    * @param {function(captures: Record<string, any>): any} [callback] - Function called with captures if match succeeds.
+    * @param {function(captures: Record<string, AnySourceNode>): any} [callback] - Function called with captures if match succeeds.
     * @param {{ deep?: boolean }} [options] - Match options (e.g., deep search).
     * @returns {any} Result of callback, captures object, or null.
     */
-    match(node: SourceNode<any>, src: string | string[], callback?: (captures: Record<string, any>) => any, options: { deep?: boolean } = {}): any {
+    match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options: { deep?: boolean } = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -293,12 +295,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * Finds all structural matches of a pattern within a scope.
      * Unlike find(), this matches against complex code templates rather than just node types.
      * 
-     * @param {SourceNode<any>} node - Search scope.
+     * @param {AnySourceNode} node - Search scope.
      * @param {string | string[]} src - Pattern(s) to match.
      * @param {{ deep?: boolean }} [options] - Options (deep search is often enabled by default).
-     * @returns {{ node: SourceNode<LanguageNodeTypes>, captures: Record<string, any> }[]} List of matches (node + captures).
+     * @returns {{ node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[]} List of matches (node + captures).
      */
-    matchAll(node: SourceNode<any>, src: string | string[], options: { deep?: boolean } = {}): any[] {
+    matchAll(node: AnySourceNode, src: string | string[], options: { deep?: boolean } = {}): { node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -364,14 +366,14 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * final state after other macros have executed. This is the safest way to
     * perform cross-cutting or global transformations.
     * 
-    * @param {SourceNode<any>} scope - The search scope.
+    * @param {AnySourceNode} scope - The search scope.
     * @param {string} pattern - The source fragment pattern.
-    * @param {function(Record<string, SourceNode<LanguageNodeTypes>>, UppHelpersBase<LanguageNodeTypes>): (string|null|undefined)} callback - Deferred transformation callback.
+    * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>): MacroResult} callback - Deferred transformation callback.
     */
-    withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<LanguageNodeTypes>>, helpers: UppHelpersBase<LanguageNodeTypes>) => string | null | undefined): void {
+    withMatch(scope: AnySourceNode, pattern: string, callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
         const matches = this.matchAll(scope, pattern);
         for (const match of matches) {
-            this.withNode(match.node, ((_node: SourceNode<any>, helpers: any) => callback(match.captures as Record<string, SourceNode<LanguageNodeTypes>>, helpers as UppHelpersBase<LanguageNodeTypes>)) as any);
+            this.withNode(match.node, ((_node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(match.captures, helpers as UppHelpersBase<LanguageNodeTypes>)));
         }
     }
 
@@ -382,19 +384,19 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * 
     * @param {LanguageNodeTypes} nodeType - The node type to match (e.g., 'call_expression').
     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): boolean} matcher - Custom filter function.
-    * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): string|null|undefined} callback - Deferred transformation callback.
+    * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): MacroResult} callback - Deferred transformation callback.
     */
-    withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => string | null | undefined): void {
+    withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
         const rule: TransformRule<LanguageNodeTypes> = {
             active: true,
-            matcher: (node: SourceNode<LanguageNodeTypes>, helpers: any) => {
+            matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers as UppHelpersBase<LanguageNodeTypes>);
             },
-            callback: (node: SourceNode<LanguageNodeTypes>, helpers: any) => callback(node, helpers as UppHelpersBase<LanguageNodeTypes>)
+            callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersBase<LanguageNodeTypes>)
         };
 
-        this.registry.registerTransformRule(rule as any);
+        this.registry.registerTransformRule(rule);
 
         this.withRoot((root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => {
             helpers.walk(root, (node: SourceNode<any>) => {

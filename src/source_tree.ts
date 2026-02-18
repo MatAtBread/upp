@@ -1,6 +1,7 @@
 import Parser from 'tree-sitter';
 import type { Tree, SyntaxNode } from 'tree-sitter';
 import type { Marker } from './registry.ts';
+import type { Language } from './types.ts';
 
 /**
  * Represents a source file as a manageable tree of nodes, 
@@ -8,7 +9,7 @@ import type { Marker } from './registry.ts';
  */
 export class SourceTree<NodeTypes extends string = string> {
     public source: string;
-    public language: any;
+    public language: Language;
     public parser: Parser;
     public tree: Tree;
     public nodeCache: Map<number | string, SourceNode<NodeTypes>>;
@@ -16,9 +17,9 @@ export class SourceTree<NodeTypes extends string = string> {
 
     /**
      * @param {string} source Initial source code text.
-     * @param {any} language Tree-sitter Language object.
+     * @param {Language} language Tree-sitter Language object.
      */
-    constructor(source: string, language: any) { // language is tree-sitter Language
+    constructor(source: string, language: Language) { // language is tree-sitter Language
         if (typeof source !== 'string') {
             throw new Error(`SourceTree expects string source, got ${typeof source}`);
         }
@@ -105,10 +106,10 @@ export class SourceTree<NodeTypes extends string = string> {
      * Creates a SourceNode from a code fragment.
      * Tries to parse as valid code; if it fails, wraps in a dummy function to parse statements/expressions.
      * @param {string | SourceNode<any> | SourceTree<any>} code The text fragment to parse.
-     * @param {any} language Tree-sitter language object.
+     * @param {Language} language Tree-sitter language object.
      * @returns {SourceNode<NodeTypes>}
      */
-    static fragment<NodeTypes extends string = string>(code: string | SourceNode<any> | SourceTree<any>, language: any): SourceNode<NodeTypes> {
+    static fragment<NodeTypes extends string = string>(code: string | SourceNode<any> | SourceTree<any>, language: Language): SourceNode<NodeTypes> {
         if (typeof code !== 'string') {
             if (code instanceof SourceNode) return code;
             if (code instanceof SourceTree) return code.root;
@@ -199,7 +200,7 @@ export class SourceTree<NodeTypes extends string = string> {
      * Serializes the tree to JSON, avoiding circular references.
      * @returns {Object}
      */
-    toJSON(): any {
+    toJSON(): { source: string, root: any } {
         return {
             source: this.source,
             root: this.root
@@ -497,13 +498,15 @@ export class SourceNode<T extends string = string> {
         if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
             // Language check warning
             const checkNode = (n: any) => {
-                if (n instanceof SourceNode && n.tree && n.tree.language !== tree.language) {
+                if (typeof n === 'string' || n === null || n === undefined) return;
+                const targetLang = n instanceof SourceNode ? n.tree.language : (n instanceof SourceTree ? n.language : undefined);
+                if (targetLang && targetLang !== tree.language) {
                     console.warn(`[UPP WARNING] Mixing nodes from different languages. This may lead to parsing errors.`);
                 }
             };
             if (content instanceof SourceNode) checkNode(content);
-            else if (content instanceof SourceTree) checkNode(content.root);
-            else if (Array.isArray(content)) (content as SourceNode<any>[]).forEach(checkNode);
+            else if (content instanceof SourceTree) checkNode(content);
+            else if (Array.isArray(content)) (content as any[]).forEach(checkNode);
         }
         if (Array.isArray(content)) {
             content = content.filter(x => x !== null && x !== undefined);

@@ -22,8 +22,8 @@ export interface Macro {
 
 export interface TransformRule<T extends string = string> {
     active: boolean;
-    matcher: (node: SourceNode<T>, helpers: any) => boolean;
-    callback: (node: SourceNode<T>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined;
+    matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
+    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
 }
 
 export interface Invocation {
@@ -36,7 +36,7 @@ export interface Invocation {
     invocationNode?: SourceNode<any>;
 }
 
-import type { MaterializeOptions } from './types.ts';
+import type { MaterializeOptions, MacroResult, Language } from './types.ts';
 export type { MaterializeOptions };
 
 export interface RegistryConfig {
@@ -50,7 +50,7 @@ export interface RegistryConfig {
 }
 
 export interface Marker<T extends string = string> {
-    callback: (node: SourceNode<T>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined;
+    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
     data?: unknown;
 }
 
@@ -62,7 +62,7 @@ export interface RegistryContext {
     helpers: UppHelpersBase<any> | null;
 }
 
-type TreeSitterLang = unknown;
+type TreeSitterLang = Language;
 /**
  * Main registry class for managing macros, parsing, and transformations.
  * @class
@@ -386,10 +386,10 @@ class Registry {
     /**
      * Recursively transforms an AST node by evaluating macros and markers.
      * @param {SourceNode<any>} node - The node to transform.
-     * @param {any} helpers - Helper class instance.
+     * @param {UppHelpersBase<any>} helpers - Helper class instance.
      * @param {RegistryContext} context - Current transformation context.
      */
-    transformNode(node: SourceNode<any>, helpers: any, context: RegistryContext): void {
+    transformNode(node: SourceNode<any>, helpers: UppHelpersBase<any>, context: RegistryContext): void {
         if (!node) return;
 
         // Skip invalidated nodes
@@ -485,7 +485,7 @@ class Registry {
     }
 
 
-    executeDeferredMarkers(helpers: any): void {
+    executeDeferredMarkers(helpers: UppHelpersBase<any>): void {
         if (this.isExecutingDeferred) return;
         this.isExecutingDeferred = true;
 
@@ -541,7 +541,7 @@ class Registry {
      * @param {string} filePath - Current file path.
      * @returns {SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined}
      */
-    evaluateMacro(invocation: Invocation, source: string, helpers: any, filePath: string): SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined {
+    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersBase<any>, filePath: string): MacroResult {
         const macro = this.getMacro(invocation.name);
 
         const oldInvocation = helpers.invocation;
