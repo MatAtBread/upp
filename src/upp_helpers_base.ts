@@ -184,18 +184,34 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return result;
     }
 
+    /**
+     * Executes a callback within the context of the root node.
+     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The callback to execute.
+     * @returns {string} Always empty string (transformations happen via markers).
+     */
     withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         const root = this.findRoot();
         if (!root) throw new Error("upp.withRoot: No root node found.");
         return this.withNode(root, callback);
     }
 
+    /**
+     * Executes a callback within the context of the current scope.
+     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The callback to execute.
+     * @returns {string} Always empty string.
+     */
     withScope(callback: (scope: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         const scope = this.findScope();
         if (!scope) return "";
         return this.withNode(scope, callback);
     }
 
+    /**
+     * Replaces a node with new content.
+     * @param {SourceNode<LanguageNodeTypes>} n - The node to replace.
+     * @param {string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null} newContent - The replacement content.
+     * @returns {SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null} The new node(s) or null.
+     */
     replace(n: SourceNode<LanguageNodeTypes>, newContent: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null {
         let finalContent = newContent;
         if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && (this.registry as any).prepareSource) {
@@ -212,10 +228,20 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         throw new Error(`Illegal call to helpers.replace(node, content).`);
     }
 
+    /**
+     * Finds the root node of the current context or the main tree.
+     * @returns {SourceNode<LanguageNodeTypes> | null} The root node.
+     */
     findRoot(): SourceNode<LanguageNodeTypes> | null {
         return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
 
+    /**
+     * Attaches a marker to a node for late-bound transformation.
+     * @param {SourceNode<LanguageNodeTypes> | null} node - The target node.
+     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The transformation callback.
+     * @returns {string} Always empty string.
+     */
     withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
         if (!node) return "";
         node.markers.push({
@@ -232,8 +258,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * 
     * @param {SourceNode<any>} node - Target node to match against.
     * @param {string | string[]} src - Pattern(s) to match. Can include $wildcards.
-    * @param {function(any): any} [callback] - Function called with captures if match succeeds.
-    * @param {any} [options] - Match options (e.g., deep search).
+    * @param {function(captures: Record<string, any>): any} [callback] - Function called with captures if match succeeds.
+    * @param {{ deep?: boolean }} [options] - Match options (e.g., deep search).
     * @returns {any} Result of callback, captures object, or null.
     */
     match(node: SourceNode<any>, src: string | string[], callback?: (captures: Record<string, any>) => any, options: { deep?: boolean } = {}): any {
@@ -269,8 +295,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * 
      * @param {SourceNode<any>} node - Search scope.
      * @param {string | string[]} src - Pattern(s) to match.
-     * @param {any} [options] - Options (deep search is often enabled by default).
-     * @returns {any[]} List of matches (node + captures).
+     * @param {{ deep?: boolean }} [options] - Options (deep search is often enabled by default).
+     * @returns {{ node: SourceNode<LanguageNodeTypes>, captures: Record<string, any> }[]} List of matches (node + captures).
      */
     matchAll(node: SourceNode<any>, src: string | string[], options: { deep?: boolean } = {}): any[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
@@ -319,8 +345,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * 
     * @param {SourceNode<LanguageNodeTypes>} node - Search scope.
     * @param {string} src - Pattern to match.
-    * @param {function(any): string | null | undefined} callback - Returns replacement text or node.
-    * @param {any} [options] - Options.
+    * @param {function(match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }): string | null | undefined} callback - Returns replacement text or node.
+    * @param {{ deep?: boolean }} [options] - Options.
     */
     matchReplace(node: SourceNode<LanguageNodeTypes>, src: string, callback: (match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }) => string | null | undefined, options: { deep?: boolean } = {}): void {
         const matches = this.matchAll(node, src, { ...options, deep: true });
@@ -340,7 +366,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * 
     * @param {SourceNode<any>} scope - The search scope.
     * @param {string} pattern - The source fragment pattern.
-    * @param {function(any, UppHelpersBase): (string|null|undefined)} callback - Deferred transformation callback.
+    * @param {function(Record<string, SourceNode<LanguageNodeTypes>>, UppHelpersBase<LanguageNodeTypes>): (string|null|undefined)} callback - Deferred transformation callback.
     */
     withMatch(scope: SourceNode<any>, pattern: string, callback: (captures: Record<string, SourceNode<LanguageNodeTypes>>, helpers: UppHelpersBase<LanguageNodeTypes>) => string | null | undefined): void {
         const matches = this.matchAll(scope, pattern);
@@ -355,8 +381,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * specific AST node types and uses a custom matcher function for filtering.
     * 
     * @param {LanguageNodeTypes} nodeType - The node type to match (e.g., 'call_expression').
-    * @param {function(SourceNode, UppHelpersBase): boolean} matcher - Custom filter function.
-    * @param {function(SourceNode, UppHelpersBase): string|null|undefined} callback - Deferred transformation callback.
+    * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): boolean} matcher - Custom filter function.
+    * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): string|null|undefined} callback - Deferred transformation callback.
     */
     withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => string | null | undefined): void {
         const rule: TransformRule<LanguageNodeTypes> = {
@@ -386,9 +412,9 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
 
     /**
      * Finds macro invocations in the tree.
-     * @param {string} macroName
-     * @param {SourceNode<LanguageNodeTypes>} [node]
-     * @returns {any[]}
+     * @param {string} macroName - Name of the macro (without @).
+     * @param {SourceNode<LanguageNodeTypes>} [node] - Search scope.
+     * @returns {Invocation[]} List of invocations found.
      */
     findInvocations(macroName: string, node: SourceNode<LanguageNodeTypes> | null = null): Invocation[] {
         let target = node || this.root;
@@ -421,6 +447,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
+    /**
+     * Loads a dependency file into the registry.
+     * @param {string} file - The file path to load.
+     */
     loadDependency(file: string): void {
         this.registry.loadDependency(file, this.context?.originPath || 'unknown', this as any);
     }
@@ -451,6 +481,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return node as SourceNode<K> | null;
     }
 
+    /**
+     * Consumes the next logical node after the macro invocation.
+     * @param {K | K[] | { type?: K | K[], message?: string, validate?: (n: SourceNode<LanguageNodeTypes>) => boolean }} [expectedTypeOrOptions] - Expected node type(s) or options.
+     * @param {string} [errorMessage] - Custom error message if consumption fails.
+     * @returns {SourceNode<K> | null} The consumed node or null.
+     */
     consume<K extends LanguageNodeTypes>(expectedTypeOrOptions?: K | K[] | { type?: K | K[], message?: string, validate?: (n: SourceNode<LanguageNodeTypes>) => boolean }, errorMessage?: string): SourceNode<K> | null {
         let expectedTypes: string[] | null = null;
         let internalErrorMessage = errorMessage;
@@ -506,6 +542,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return wrapped;
     }
 
+    /**
+     * Checks if a node is a descendant of another node.
+     * @param {SourceNode<any> | null} parent - Potential parent node.
+     * @param {SourceNode<any>} node - Target node to check.
+     * @returns {boolean} True if descendant, false otherwise.
+     */
     isDescendant(parent: SourceNode<any> | null, node: SourceNode<any>): boolean {
         let current: any = node;
         const rawParent: any = parent ? (parent as any).__internal_raw_node || parent : null;
@@ -517,6 +559,11 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return false;
     }
 
+    /**
+     * Recursively walks the AST starting from a node and executes a callback.
+     * @param {SourceNode<any>} node - Start node.
+     * @param {function(SourceNode<any>): void} callback - The callback to execute for each node.
+     */
     walk(node: SourceNode<any>, callback: (n: SourceNode<any>) => void): void {
         if (!node) return;
         callback(node);
@@ -529,6 +576,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         }
     }
 
+    /**
+     * Finds the next logical node after a specific index.
+     * @param {SourceNode<LanguageNodeTypes> | null} root - The search root.
+     * @param {number} index - The start index.
+     * @returns {SourceNode<LanguageNodeTypes> | null} The next node or null.
+     */
     findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null {
         if (!root) return null;
 
@@ -596,10 +649,21 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
+    /**
+     * Finds the nearest enclosing scope for the current macro.
+     * @returns {SourceNode<LanguageNodeTypes> | null} The scope node or null.
+     * @throws {Error} If not implemented in the base class.
+     */
     findScope(): SourceNode<LanguageNodeTypes> | null {
         throw new Error("helpers.findScope(): Method not implemented. This is a language-specific feature (e.g. C).");
     }
 
+    /**
+     * Finds the nearest enclosing node of a given type.
+     * @param {SourceNode<any>} node - Start node.
+     * @param {K | K[]} types - Target node type(s).
+     * @returns {SourceNode<K> | null} The enclosing node or null.
+     */
     findEnclosing<K extends LanguageNodeTypes>(node: SourceNode<any>, types: K | K[]): SourceNode<K> | null {
         if (!node) return null;
         const typeArray = (Array.isArray(types) ? types : [types]) as string[];
@@ -611,11 +675,22 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         return null;
     }
 
+    /**
+     * Creates a unique identifier with the given prefix.
+     * @param {string} [prefix='v'] - The prefix to use.
+     * @returns {string} The unique identifier.
+     */
     createUniqueIdentifier(prefix: string = 'v'): string {
         const id = uniqueIdCounter++;
         return `${prefix}_${id}`;
     }
 
+    /**
+     * Throws an UPP error and associates it with a node.
+     * @param {SourceNode<any> | string} node - The node associated with the error or the message.
+     * @param {string} [message] - The error message.
+     * @returns {never}
+     */
     error(node: SourceNode<any> | string, message?: string): never {
         let finalNode: any = node;
         let finalMessage = message;

@@ -89,6 +89,10 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         super(root, registry, parentHelpers);
     }
 
+    /**
+     * Finds the nearest enclosing C scope (compound_statement or translation_unit).
+     * @returns {SourceNode<CNodeTypes> | null} The scope node or null.
+     */
     findScope(): SourceNode<CNodeTypes> | null {
         const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
         return this.findEnclosing(startNode!, (['compound_statement', 'translation_unit'] as CNodeTypes[]));
@@ -236,9 +240,9 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
-     * Extracts function signature details.
+     * Extracts function signature details including return type, name, parameters, and body.
      * @param {SourceNode<CNodeTypes>} fnNode - The function_definition node.
-     * @returns {any} Signature details.
+     * @returns {{ returnType: string, name: string, params: string, bodyNode?: SourceNode<CNodeTypes>, node: SourceNode<CNodeTypes>, nameNode?: SourceNode<CNodeTypes> }} Signature details.
      */
     getFunctionSignature(fnNode: SourceNode<CNodeTypes>): any {
         if (!fnNode) return { returnType: "void", name: "unknown", params: "()" };
@@ -271,11 +275,11 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
-     * Finds the definition for a node or name.
-     * @param {SourceNode<any>|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
-     * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
-     * @param {any} [options] - Resolution options { variable: true, tag: true }.
-     * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node.
+     * Finds the definition for a node or name, returning null if not found.
+     * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
+     * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
+     * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
+     * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
      */
     findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> | null {
         try {
@@ -286,10 +290,10 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
-     * Finds the definition for a node or name.
-     * @param {SourceNode<any>|string} target - The identifier node, a container node with a single identifier, or a scoping node (if name is provided).
-     * @param {string|any} [nameOrOptions] - The name to find (if target is a scope) or options object.
-     * @param {any} [options] - Resolution options { variable: true, tag: true }.
+     * Finds the definition for a node or name, throwing an error if not found.
+     * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
+     * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
+     * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
      * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
      */
     findDefinition(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> {
@@ -410,7 +414,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     /**
      * Transforms references to a definition intelligently.
      * @param {SourceNode<CNodeTypes>} definitionNode - The definition node.
-     * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
+     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
     withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
         if (!definitionNode || definitionNode.type === 'identifier' || definitionNode.type === 'type_identifier') {
@@ -454,7 +458,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     /**
      * Finds and transforms a definition node intelligently.
      * @param {SourceNode<any>|string} target - The node or name.
-     * @param {function(SourceNode, UppHelpersC): string|null|undefined} callback - Transformation callback.
+     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
     withDefinition(target: SourceNode<any> | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
         const defNode = this.findDefinitionOrNull(target);

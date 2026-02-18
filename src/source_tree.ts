@@ -16,7 +16,7 @@ export class SourceTree<NodeTypes extends string = string> {
 
     /**
      * @param {string} source Initial source code text.
-     * @param {any} language Tree-sitter language object.
+     * @param {any} language Tree-sitter Language object.
      */
     constructor(source: string, language: any) { // language is tree-sitter Language
         if (typeof source !== 'string') {
@@ -104,9 +104,9 @@ export class SourceTree<NodeTypes extends string = string> {
     /**
      * Creates a SourceNode from a code fragment.
      * Tries to parse as valid code; if it fails, wraps in a dummy function to parse statements/expressions.
-     * @param {string | SourceNode | SourceTree} code The text fragment to parse.
+     * @param {string | SourceNode<any> | SourceTree<any>} code The text fragment to parse.
      * @param {any} language Tree-sitter language object.
-     * @returns {SourceNode}
+     * @returns {SourceNode<NodeTypes>}
      */
     static fragment<NodeTypes extends string = string>(code: string | SourceNode<any> | SourceTree<any>, language: any): SourceNode<NodeTypes> {
         if (typeof code !== 'string') {
@@ -360,6 +360,11 @@ export class SourceNode<T extends string = string> {
         return this.children.length;
     }
 
+    /**
+     * Returns an object mapping named children to their nodes.
+     * Proxied for concise access (e.g., node.named.fieldName).
+     * @returns {Record<string, SourceNode<any> | undefined>}
+     */
     get named(): Record<string, SourceNode<any> | undefined> {
         return Object.fromEntries(this.children.filter(c => c.isNamed).map((c, idx) => [c.fieldName ?? idx, c]));
     }
@@ -482,7 +487,7 @@ export class SourceNode<T extends string = string> {
 
     /**
      * Replaces this node with another node or text.
-     * @param {SourceNode<any>|SourceTree<any>|string|Array<SourceNode<any>|string>} newNodeContent The node or text to replace with.
+     * @param {string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>} content The node or text to replace with.
      * @returns {SourceNode<any> | SourceNode<any>[] | null}
      */
     replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<any> | SourceNode<any>[] | null {
@@ -648,8 +653,8 @@ export class SourceNode<T extends string = string> {
 
     /**
      * Inserts a node or text after this node.
-     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
-     * @returns {SourceNode<any>|SourceNode<any>[]}
+     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
+     * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertAfter(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
         const tree = this.tree;
@@ -694,8 +699,8 @@ export class SourceNode<T extends string = string> {
 
     /**
      * Inserts a node or text before this node.
-     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to insert.
-     * @returns {SourceNode<any>|SourceNode<any>[]}
+     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
+     * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
         const tree = this.tree;
@@ -738,6 +743,12 @@ export class SourceNode<T extends string = string> {
         return attached as SourceNode | SourceNode[];
     }
 
+    /**
+     * Internal method to attach a new node (or text/tree/array) to this node's tree at a specific offset.
+     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} newNode - The content to attach.
+     * @param {number} insertionOffset - The absolute start index in the tree.
+     * @returns {SourceNode<any> | SourceNode<any>[] | null}
+     */
     public _attachNewNode(newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>, insertionOffset: number): SourceNode<any> | SourceNode<any>[] | null {
         if (Array.isArray(newNode)) {
             let currentOffset = insertionOffset;
@@ -795,7 +806,7 @@ export class SourceNode<T extends string = string> {
      * Unlike match(), find() is based on node types, not structural code patterns.
      * Use this for simple type-based searches (e.g. finding all 'return_statement's).
      * 
-     * @param {K | function(SourceNode<any>):boolean} predicate Type name or filter function.
+     * @param {K | function(SourceNode<any>): boolean} predicate - Type name or filter function.
      * @returns {SourceNode<K>[]}
      */
     find<K extends string>(predicate: K | ((n: SourceNode<any>) => boolean)): SourceNode<K>[] {
@@ -817,8 +828,8 @@ export class SourceNode<T extends string = string> {
 
     /**
      * Finds the smallest descendant that contains the given index range.
-     * @param {number} start 
-     * @param {number} end 
+     * @param {number} start - Start index.
+     * @param {number} end - End index.
      * @returns {SourceNode<any>}
      */
     descendantForIndex(start: number, end: number): SourceNode<any> {
@@ -841,7 +852,7 @@ export class SourceNode<T extends string = string> {
     /**
      * Appends a node or text as a child of this node.
      * Requires the node to already have children to use as anchors.
-     * @param {SourceNode<any>|SourceTree<any>|string} newNode The node or text to append.
+     * @param {SourceNode<any> | SourceTree<any> | string} newNode - The node or text to append.
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     append(newNode: SourceNode<any> | SourceTree<any> | string): SourceNode<any> | SourceNode<any>[] {
