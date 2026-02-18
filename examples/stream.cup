@@ -14,7 +14,7 @@
         // 1. Cast expression check (highest priority)
         const cast = target.type === 'cast_expression' ? target : target.find(x => x.type === 'cast_expression')[0];
         if (cast) {
-            const typeNode = cast.findChildByFieldName('type');
+            const typeNode = cast.named.type;
             return typeNode ? typeNode.text : "void *";
         }
 

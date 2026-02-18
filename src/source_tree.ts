@@ -360,7 +360,7 @@ export class SourceNode<T extends string = string> {
         return this.children.length;
     }
 
-    get named(): Record<string, SourceNode<any>> {
+    get named(): Record<string, SourceNode<any> | undefined> {
         return Object.fromEntries(this.children.filter(c => c.isNamed).map((c, idx) => [c.fieldName ?? idx, c]));
     }
     /**
@@ -837,18 +837,6 @@ export class SourceNode<T extends string = string> {
         return current;
     }
 
-    childForFieldName(fieldName: string): SourceNode<any> | null {
-        return this.findChildByFieldName(fieldName);
-    }
-
-    /**
-     * Finds a direct child by its field name.
-     * @param {string} fieldName 
-     * @returns {SourceNode<any>|null}
-     */
-    findChildByFieldName(fieldName: string): SourceNode<any> | null {
-        return this.children.find(c => c.fieldName === fieldName) || null;
-    }
 
     /**
      * Appends a node or text as a child of this node.

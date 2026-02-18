@@ -119,8 +119,8 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         const target = typeof node === 'string' ? this.findDefinition(node) : node;
         if (!target) return "";
 
-        let declNode: SourceNode<CNodeTypes> | null = target;
-        let idNode: SourceNode<CNodeTypes> | null = (target.type === 'identifier' || target.type === 'type_identifier') ? target : null;
+        let declNode: SourceNode<CNodeTypes> | undefined = target;
+        let idNode: SourceNode<CNodeTypes> | undefined = (target.type === 'identifier' || target.type === 'type_identifier') ? target : undefined;
 
         if (!idNode) {
             while (declNode &&
@@ -132,12 +132,12 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 declNode.type !== 'struct_specifier' &&
                 declNode.type !== 'union_specifier' &&
                 declNode.type !== 'enum_specifier') {
-                declNode = declNode.parent as SourceNode<CNodeTypes> | null;
+                declNode = declNode.parent | undefined;
             }
             if (!declNode) return "";
             const ids = declNode.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
             // Prioritize the actual identifier over type_identifier to get pointer/array info correctly
-            idNode = ids.find(n => n.type === 'identifier' || n.type === 'field_identifier') || ids[0] || null;
+            idNode = ids.find(n => n.type === 'identifier' || n.type === 'field_identifier') || ids[0];
         } else {
             while (declNode &&
                 declNode.type !== 'declaration' &&
@@ -169,11 +169,11 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             }
         }
 
-        let typeNode = declNode.childForFieldName('type');
+        let typeNode = declNode.named.type;
         if (!typeNode) {
             typeNode = declNode.children.find(c =>
                 ['primitive_type', 'type_identifier', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(c.type as string)
-            ) || null;
+            );
             if (!typeNode && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type as string)) {
                 typeNode = declNode;
             }
@@ -243,29 +243,29 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     getFunctionSignature(fnNode: SourceNode<CNodeTypes>): any {
         if (!fnNode) return { returnType: "void", name: "unknown", params: "()" };
 
-        let typeNode = fnNode.childForFieldName('type');
+        let typeNode = fnNode.named.type;
         if (!typeNode) {
-            typeNode = fnNode.children.find(c => (c.type as string).includes('type_specifier') || c.type === 'primitive_type') || null;
+            typeNode = fnNode.children.find(c => (c.type as string).includes('type_specifier') || c.type === 'primitive_type');
         }
         const returnType = typeNode ? typeNode.text : "void";
 
-        let declarator = fnNode.childForFieldName('declarator');
+        let declarator = fnNode.named.declarator;
         if (!declarator) {
-            declarator = fnNode.children.find(c => c.type !== 'compound_statement' && c !== typeNode) || null;
+            declarator = fnNode.children.find(c => c.type !== 'compound_statement' && c !== typeNode);
         }
 
-        let funcDecl = declarator as SourceNode<CNodeTypes> | null;
+        let funcDecl = declarator as SourceNode<CNodeTypes>;
         while (funcDecl && (funcDecl.type === 'pointer_declarator' || funcDecl.type === 'parenthesized_declarator')) {
-            funcDecl = funcDecl.childForFieldName('declarator') as SourceNode<CNodeTypes> | null || funcDecl.children.find(c => (c.type as string).includes('declarator')) as SourceNode<CNodeTypes> | null || null;
+            funcDecl = funcDecl.named.declarator as SourceNode<CNodeTypes> || funcDecl.children.find(c => (c.type as string).includes('declarator')) as SourceNode<CNodeTypes>;
         }
 
-        const nameNode = funcDecl ? (funcDecl.childForFieldName('declarator') || funcDecl.children[0]) : null;
+        const nameNode = funcDecl ? (funcDecl.named.declarator || funcDecl.children[0]) : null;
         const name = nameNode ? nameNode.text : "unknown";
 
-        const paramList = funcDecl ? (funcDecl.childForFieldName('parameters') || funcDecl.children.find(c => c.type === 'parameter_list')) : null;
+        const paramList = funcDecl ? (funcDecl.named.parameters || funcDecl.children.find(c => c.type === 'parameter_list')) : null;
         const params = paramList ? paramList.text : "()";
 
-        let bodyNode = fnNode.childForFieldName('body') || fnNode.children.find(c => c.type === 'compound_statement');
+        let bodyNode = fnNode.named.body || fnNode.children.find(c => c.type === 'compound_statement');
 
         return { returnType, name, params, bodyNode, node: fnNode, nameNode };
     }
