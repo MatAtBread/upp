@@ -10,19 +10,15 @@
     const name = sig.name;
 
     // Use withReferences to transform call sites
-    upp.withReferences(node, (refNode, helpers) => {
-        // Find the call_expression ancestor
-        let callNode = refNode;
-        while (callNode && callNode.type !== 'call_expression' && callNode.startIndex === refNode.startIndex) {
-            callNode = callNode.parent;
-        }
-
-        if (callNode && callNode.type === 'call_expression') {
-            const funcNode = callNode.named['function'];
+    upp.withReferences(node, (refNode, upp) => {
+        const parent = refNode.parent;
+        if (parent && parent.type === 'call_expression') {
+            const funcNode = parent.named['function'];
             // Ensure we are the function being called, not an argument
-            if (funcNode && (funcNode === refNode || helpers.isDescendant(funcNode, refNode))) {
-                helpers.replace(callNode, helpers.code`os_start(${name})`);
-                return undefined; // Skip default replacement of the identifier itself
+            if (funcNode && (funcNode === refNode || upp.isDescendant(funcNode, refNode))) {
+                return upp.withNode(parent, (callNode, upp) => {
+                    return upp.code`os_start(${name})`;
+                });
             }
         }
     });

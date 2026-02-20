@@ -368,12 +368,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * 
     * @param {AnySourceNode} scope - The search scope.
     * @param {string} pattern - The source fragment pattern.
-    * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>): MacroResult} callback - Deferred transformation callback.
+    * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
     */
-    withMatch(scope: AnySourceNode, pattern: string, callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
+    withMatch(scope: AnySourceNode, pattern: string, callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
         const matches = this.matchAll(scope, pattern);
         for (const match of matches) {
-            this.withNode(match.node, ((_node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(match.captures, helpers as UppHelpersBase<LanguageNodeTypes>)));
+            this.withNode(match.node, ((_node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(match.captures, helpers as UppHelpersBase<LanguageNodeTypes>, _node)));
         }
     }
 

@@ -403,7 +403,17 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             throw new Error(`findReferences: Expected declaration/definition node, found ${node ? node.type : 'null'}`);
         }
 
-        const idInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier')[0];
+        const idInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => {
+            if (n.type !== 'identifier' && n.type !== 'field_identifier') return false;
+            let p = n.parent;
+            while (p && p !== node) {
+                if (p.type === 'compound_statement' || p.type === 'field_declaration_list' || p.type === 'parameter_list') return false;
+                if (p.type === 'init_declarator' && n.fieldName === 'value') return false;
+                p = p.parent;
+            }
+            return true;
+        })[0];
+
         const name = idInDef ? idInDef.text : node.text;
         if (!name) throw new Error("helpers.findReferences: Invalid node");
 
@@ -452,20 +462,20 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             },
             callback: (node: SourceNode<CNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersC)
         };
-
         this.registry.registerTransformRule(rule);
 
-        // Immediate sweep for already-parsed or out-of-order nodes
-        this.withRoot((root: SourceNode<CNodeTypes>, helpers: UppHelpersBase<CNodeTypes>) => {
-            const refs = this.findReferences(definitionNode);
-            const cHelpers = helpers as UppHelpersC;
-            for (const ref of refs) {
-                const result = callback(ref, cHelpers);
-                if (result !== undefined) {
-                    cHelpers.replace(ref, result === null ? '' : result);
-                }
+        // 2. Immediate Eager Sweep (Evaluate on already-visited/constructed nodes)
+        // We do this immediately so that any existing references in the current AST are transformed.
+        const refs = this.findReferences(definitionNode);
+        if (idInDef) {
+            refs.push(idInDef);
+        }
+        for (const ref of refs) {
+            const result = callback(ref, this);
+            if (result !== undefined) {
+                this.replace(ref, result === null ? '' : result);
             }
-        });
+        }
     }
 
     /**

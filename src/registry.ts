@@ -26,6 +26,12 @@ export interface TransformRule<T extends string = string> {
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
 }
 
+export interface PendingRule<T extends string = string> {
+    contextNode: SourceNode<any>;
+    matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
+    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
+}
+
 export interface Invocation {
     name: string;
     args: string[];
@@ -86,6 +92,7 @@ class Registry {
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
     public transformRules: TransformRule<any>[];
+    public pendingRules: PendingRule<any>[];
     public ruleIdCounter: number;
     public isExecutingDeferred: boolean;
     public onMaterialize: ((outputPath: string, content: string, options: { isAuthoritative: boolean }) => void) | null;
@@ -148,11 +155,20 @@ class Registry {
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
         this.transformRules = [];
+        this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
         this.ruleIdCounter = 0;
         this.isExecutingDeferred = false;
         this.onMaterialize = config.onMaterialize || null;
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.UppHelpersC = UppHelpersC; // Ensure this is available
+    }
+
+    /**
+     * Registers a context-bound rule that will be evaluated whenever new nodes are inserted into the AST.
+     * @param {PendingRule<any>} rule - The rule to register.
+     */
+    registerPendingRule(rule: PendingRule<any>): void {
+        this.pendingRules.push(rule);
     }
 
     /**
@@ -384,6 +400,65 @@ class Registry {
     }
 
     /**
+     * Internal fixed-point evaluator. Given a set of newly inserted nodes,
+     * it sweeps them (and their descendants) against all registered `pendingRules`.
+     * If a rule triggers and alters the AST further, the process recurses on the newest nodes
+     * until the tree ceases to mutate relative to these rules.
+     */
+    private evaluatePendingRules(nodes: SourceNode<any>[], helpers: UppHelpersBase<any>, context: RegistryContext): void {
+        if (!nodes || nodes.length === 0 || this.pendingRules.length === 0) return;
+
+        let iterations = 0;
+        const MAX_ITERATIONS = 50; // Guard against infinite replacement loops
+        let currentNodes = [...nodes];
+
+        while (currentNodes.length > 0 && iterations < MAX_ITERATIONS) {
+            iterations++;
+            const nextNodes: SourceNode<any>[] = [];
+            let mutated = false;
+
+            for (const node of currentNodes) {
+                if (node.startIndex === -1) continue; // Skip invalidated
+
+                // We must check if `node` falls underneath ANY registered rule's context
+                for (const rule of this.pendingRules) {
+                    try {
+                        // Quick check: is the inserted node within the rule's broader context scope?
+                        // (Alternatively, we can just walk the new node and apply the matcher)
+                        helpers.walk(node, (descendant: SourceNode<any>) => {
+                            if (descendant.startIndex === -1) return;
+
+                            if (rule.matcher(descendant, helpers)) {
+                                const result = rule.callback(descendant, helpers);
+                                if (result !== undefined) {
+                                    const replacementNodes = helpers.replace(descendant, result);
+                                    mutated = true;
+                                    if (replacementNodes) {
+                                        const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
+                                        for (const newNode of list) {
+                                            nextNodes.push(newNode);
+                                            this.transformNode(newNode, helpers, context);
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                    } catch (e) {
+                        console.error(`PendingRule callback failed on ${node.type}:`, e);
+                    }
+                }
+            }
+
+            if (!mutated) break;
+            currentNodes = nextNodes;
+        }
+
+        if (iterations >= MAX_ITERATIONS) {
+            console.warn("MAX_ITERATIONS reached in evaluatePendingRules (possible infinite rule loop)");
+        }
+    }
+
+    /**
      * Recursively transforms an AST node by evaluating macros and markers.
      * @param {SourceNode<any>} node - The node to transform.
      * @param {UppHelpersBase<any>} helpers - Helper class instance.
@@ -402,7 +477,14 @@ class Registry {
             try {
                 const result = marker.callback(node, helpers);
                 if (result !== undefined) {
-                    helpers.replace(node, result);
+                    const newNodes = helpers.replace(node, result);
+                    if (newNodes) {
+                        const list = Array.isArray(newNodes) ? newNodes : [newNodes];
+                        this.evaluatePendingRules(list, helpers, context);
+                        for (const newNode of list) {
+                            this.transformNode(newNode, helpers, context);
+                        }
+                    }
                 }
             } catch (e) {
                 console.error(`Marker callback failed on ${node.type}:`, e);
@@ -443,6 +525,12 @@ class Registry {
                         }
 
                         const newNodes = helpers.replace(node, finalResult);
+
+                        // Evaluate fixed-point rules against the newly injected AST geometry
+                        if (newNodes) {
+                            const list = Array.isArray(newNodes) ? newNodes : [newNodes];
+                            this.evaluatePendingRules(list, helpers, context);
+                        }
 
                         // Recursively transform any new nodes in the current context
                         if (Array.isArray(newNodes)) {
@@ -516,7 +604,15 @@ class Registry {
                         try {
                             const result = marker.callback(node, helpers);
                             if (result !== undefined) {
-                                helpers.replace(node, result);
+                                const newNodes = helpers.replace(node, result);
+                                if (newNodes) {
+                                    const list = Array.isArray(newNodes) ? newNodes : [newNodes];
+                                    const context = (helpers as any).context || this.mainContext;
+                                    this.evaluatePendingRules(list, helpers, context);
+                                    for (const newNode of list) {
+                                        this.transformNode(newNode, helpers, context);
+                                    }
+                                }
                             }
                             if (node.startIndex === -1) break; // Node replaced, stop running markers on it
                         } catch (e) {

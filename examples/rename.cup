@@ -6,11 +6,7 @@
     return null; // Delete the macro invocation from the source
 }
 
-@define rename_consume(newName) {
-    const node = upp.consume('declaration');
-    upp.withReferences(node, (ref) => newName);
-    return node;
-}
+
 
 @define rename_modify(newName) {
     const node = upp.nextNode('declaration');
@@ -25,12 +21,7 @@ void test_ctx() {
     x_ctx = 20;
 }
 
-// 2. Using consume (Requires manual reconstruction)
-@rename_consume(y_cons) int x_cons = 100;
 
-void test_cons() {
-    x_cons = 200;
-}
 
 // 3. Using node modification
 @rename_modify(y_mod) int x_mod = 1000;
