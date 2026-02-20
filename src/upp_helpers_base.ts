@@ -556,7 +556,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         while (current) {
             const rawCurrent = current.__internal_raw_node || current;
             if (rawCurrent === rawParent) return true;
-            current = rawCurrent.parent;
+            // Support traversal through detached parent if real parent is null
+            current = rawCurrent.parent || rawCurrent._detachedParent;
         }
         return false;
     }

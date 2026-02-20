@@ -25,9 +25,6 @@
             if (fn && fn.type === 'field_expression') {
                 const field = fn.named['field'];
                 if (field && field.text === originalName) {
-                    const obj = fn.named['argument'];
-                    // Simple heuristic: check if obj text matches a known var (limited in this example)
-                    // In a full impl like std/method.hup, we'd check types.
                     return true;
                 }
             }

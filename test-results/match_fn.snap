@@ -14,13 +14,11 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-int my_fn(int x , int y) {
+int my_fn(int x,int y) {
         puts("Running 'my_fn', returns int");
-        int g = 1;;
-for (int i = 1; i < x; i++) {
+        int g = 1;for (int i = 1; i < x; i++) {
         g = g * i;
-    };
-return g + y;;
+    }return g + y;
     } 
 int main() {
     int res = my_fn(5, 6);

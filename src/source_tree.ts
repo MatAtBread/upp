@@ -245,6 +245,7 @@ export class SourceNode<T extends string = string> {
     public data: Record<string, unknown>;
     public _capturedText?: string;
     public _snapshotSearchable?: string;
+    public _detachedParent?: SourceNode<any> | null;
 
     /**
      * @param {SourceTree<any>} tree The tree this node belongs to.
@@ -431,6 +432,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceTree<any>}
      */
     remove(): SourceTree<any> {
+        this._detachedParent = this.parent;
         // 1. Snapshot current text range.
         const cachedText = this.text;
 
@@ -705,22 +707,28 @@ export class SourceNode<T extends string = string> {
      * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
+    /** @returns {SourceNode<any>[]} All children (including unnamed like '{', ';', etc.) */
+    get allChildren(): SourceNode<any>[] {
+        const tsNode = (this as any)._tsNode;
+        if (!tsNode) return [];
+        return tsNode.children.map((c: any) => this.tree.wrap(c, this));
+    }
+
     insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        if (!this.parent) return this.insertAt(-1, content);
+        const siblings = this.parent.allChildren;
+        return this.insertAt(siblings.indexOf(this), content);
+    }
+
+    /**
+     * Inserts a node or text at a specific child index (including unnamed children).
+     * @param {number} idx The child index to insert at.
+     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
+     * @returns {SourceNode<any> | SourceNode<any>[]}
+     */
+    insertAt(idx: number, content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
         const tree = this.tree;
-        if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
-            const checkNode = (n: any) => {
-                if (n instanceof SourceNode && n.tree && n.tree.language !== tree.language) {
-                    console.warn(`[UPP WARNING] Mixing nodes from different languages. This may lead to parsing errors.`);
-                }
-            };
-            if (content instanceof SourceNode) checkNode(content);
-            else if (content instanceof SourceTree) checkNode(content.root);
-            else if (Array.isArray(content)) (content as any[]).forEach(checkNode);
-        }
         let newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string> = content;
-        if (Array.isArray(newNode)) {
-            newNode = newNode.filter(x => x !== null && x !== undefined);
-        }
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment<any>(newNode, this.tree.language);
         }
@@ -728,19 +736,42 @@ export class SourceNode<T extends string = string> {
             ? newNode.map(n => typeof n === 'string' ? n : n.text).join('')
             : (newNode as any).text;
 
-        // Insert at START of this node
-        const insertPos = this.startIndex;
+        // Use children array if it's the root, otherwise use allChildren getter context
+        // Actually, we want to insert relative to ALL children (named and unnamed)
+        const currentChildren = this.allChildren;
+
+        // Determine absolute insertion position in the tree
+        let insertPos: number = this.startIndex;
+        if (idx >= 0 && idx < currentChildren.length) {
+            insertPos = currentChildren[idx].startIndex;
+        } else if (idx >= currentChildren.length) {
+            insertPos = this.endIndex;
+        }
+
         this.tree.edit(insertPos, insertPos, text);
 
         const attached = this._attachNewNode(newNode, insertPos);
         const attachedList = Array.isArray(attached) ? attached : (attached ? [attached] : []);
 
-        if (this.parent) {
-            const idx = this.parent.children.indexOf(this);
-            if (idx > -1) {
-                attachedList.forEach(n => n.parent = this.parent);
-                this.parent.children.splice(idx, 0, ...attachedList);
-            }
+        // Manually update the children array of the parent to include new nodes.
+        // This is critical because tree-sitter re-parsing isn't automated for every edit.
+        for (const newNode of attachedList) {
+            newNode.parent = this;
+        }
+
+        if (idx === -1) {
+            this.children.unshift(...attachedList.filter(n => n.isNamed));
+        } else {
+            // Find correct insertion point in the named children array
+            // This is a bit complex because idx is relative to allChildren.
+            // But we can just rebuild children from attached nodes? No.
+            // Easiest: clear children list and it will be re-populated? No, it's not a getter yet.
+
+            // For now, let's just make sure they are in the children array.
+            const namedAttached = attachedList.filter(n => n.isNamed);
+            this.children.push(...namedAttached);
+            // Sort by startIndex to keep it consistent
+            this.children.sort((a, b) => a.startIndex - b.startIndex);
         }
 
         return attached as SourceNode | SourceNode[];

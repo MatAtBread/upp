@@ -22,11 +22,11 @@ int my_fn(int x, int y) {
     return a + b * c / d;
 }
 
-int my_fn_v2(int x , int y) {
-        int a = 5; int b = 4;
+int my_fn_v2(int x,int y) {
+        int a = 5;int b = 4;
         puts("Setting c");
         int c = 3;
-        int d = 2; return a + b * c / d;;
+        int d = 2;return a + b * c / d;;
     } 
 int main() {
     int res = my_fn(5, 6);

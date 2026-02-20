@@ -34,28 +34,24 @@
             if (methodNode.text !== originalName) return false;
 
             const objDef = helpers.findDefinitionOrNull(objectNode);
-            if (!objDef) return false;
+            if (!objDef) {
+                return false;
+            }
 
-            let objType = helpers.getType(objDef);
-            let cleanObjType = objType.replace(/\*/g, '').replace(/struct /g, '').trim();
+            let currentType = helpers.getType(objDef);
+            let targetClean = targetType.replace(/struct /g, '').trim();
 
-            if (cleanObjType === cleanTarget) return true;
+            while (currentType) {
+                let clean = currentType.replace(/\*/g, '').replace(/struct /g, '').trim();
+                if (clean === targetClean) return true;
 
-            // Try to resolve typedef
-            const typeDef = helpers.findDefinition(cleanObjType);
-            if (typeDef && typeDef.type === 'type_definition') {
-                 const typeNode = typeDef.children.find(c => 
-                    c.type !== 'type_identifier' && 
-                    c.type !== 'storage_class_specifier' && 
-                    c.text !== 'typedef' && 
-                    c.type !== ';'
-                 );
-                 
-                 if (typeNode) {
-                     let resolvedType = typeNode.text;
-                     let cleanResolved = resolvedType.replace(/\*/g, '').replace(/struct /g, '').trim();
-                     return cleanResolved === cleanTarget;
-                 }
+                // Follow one level of typedef
+                const def = helpers.findDefinitionOrNull(clean, { variable: true, tag: true });
+                if (def && def.type === 'type_definition') {
+                    currentType = helpers.getType(def);
+                    continue;
+                }
+                break;
             }
             return false;
         },
@@ -70,8 +66,12 @@
             const innerArgs = (argsText === "()") ? "" : argsText.slice(1, -1);
             
             const objDef = helpers.findDefinitionOrNull(targetNode);
-            const objType = objDef ? helpers.getType(objDef) : "";
-            const isPointer = objType.includes('*');
+            const objType = objDef ? helpers.getType(objDef, { resolve: true }) : "";
+            
+            // Use RegExp constructor to avoid UPP parser brace-counting bugs with /\{...\}/
+            const bodyRegex = new RegExp('\\{[^}]*\\}', 'g');
+            const cleanType = objType.replace(bodyRegex, '');
+            const isPointer = cleanType.includes('*');
             const prefix = isPointer ? "" : "&";
 
             return `${newName}(${prefix}${targetNode.text}${separator}${innerArgs})`;

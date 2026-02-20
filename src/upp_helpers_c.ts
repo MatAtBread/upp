@@ -1,100 +1,112 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
-import type { Registry, TransformRule } from './registry.ts';
+import type { Registry, TransformRule, Marker } from './registry.ts';
 import { SourceNode } from './source_tree.ts';
 import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts';
 
-export interface FunctionSignature {
-    returnType: string;
-    name: string;
-    params: string;
-    bodyNode?: SourceNode<CNodeTypes> | null;
-    node: SourceNode<CNodeTypes>;
-    nameNode?: SourceNode<CNodeTypes> | null;
+export class FunctionSignature {
+    public returnType: string;
+    public name: string;
+    public params: string;
+    public node: SourceNode<CNodeTypes>;
+    public nameNode?: SourceNode<CNodeTypes> | null;
+    public bodyNode?: SourceNode<CNodeTypes> | null;
+
+    constructor(
+        returnType: string,
+        name: string,
+        params: string,
+        node: SourceNode<CNodeTypes>,
+        nameNode?: SourceNode<CNodeTypes> | null,
+        bodyNode?: SourceNode<CNodeTypes> | null
+    ) {
+        this.returnType = returnType;
+        this.name = name;
+        this.params = params;
+        this.node = node;
+        this.nameNode = nameNode;
+        this.bodyNode = bodyNode;
+    }
 }
 
 export type CNodeTypes =
     | 'translation_unit'
+    | 'preproc_include'
+    | 'preproc_def'
+    | 'preproc_function_def'
+    | 'preproc_params'
+    | 'preproc_call'
+    | 'preproc_if'
+    | 'preproc_ifdef'
+    | 'preproc_else'
+    | 'preproc_arg'
     | 'function_definition'
     | 'declaration'
-    | 'identifier'
-    | 'type_identifier'
-    | 'field_identifier'
-    | 'statement_identifier'
-    | 'preproc_def'
-    | 'preproc_include'
-    | 'preproc_ifdef'
-    | 'preproc_if'
-    | 'preproc_else'
-    | 'preproc_elif'
-    | 'preproc_endif'
     | 'type_definition'
-    | 'compound_statement'
-    | 'pointer_declarator'
-    | 'array_declarator'
-    | 'parameter_declaration'
-    | 'field_declaration'
     | 'struct_specifier'
     | 'union_specifier'
     | 'enum_specifier'
-    | 'primitive_type'
+    | 'enum_specifier_contents'
+    | 'enumerator'
     | 'parameter_list'
-    | 'argument_list'
-    | 'initializer_list'
+    | 'parameter_declaration'
+    | 'attributable_declarator'
     | 'init_declarator'
+    | 'pointer_declarator'
+    | 'array_declarator'
+    | 'function_declarator'
     | 'parenthesized_declarator'
-    | 'enumerator_list'
-    | 'field_declaration_list'
+    | 'identifier'
+    | 'field_identifier'
+    | 'type_identifier'
+    | 'statement_identifier'
+    | 'primitive_type'
+    | 'sized_type_specifier'
+    | 'type_qualifier'
+    | 'storage_class_specifier'
+    | 'compound_statement'
     | 'expression_statement'
     | 'if_statement'
-    | 'for_statement'
     | 'while_statement'
     | 'do_statement'
+    | 'for_statement'
     | 'return_statement'
     | 'break_statement'
     | 'continue_statement'
-    | 'labeled_statement'
     | 'goto_statement'
     | 'switch_statement'
     | 'case_statement'
-    | 'default_statement'
-    | 'cast_expression'
-    | 'unary_expression'
-    | 'binary_expression'
-    | 'conditional_expression'
+    | 'labeled_statement'
+    | 'field_declaration_list'
+    | 'field_declaration'
     | 'assignment_expression'
-    | 'comma_expression'
+    | 'binary_expression'
+    | 'unary_expression'
+    | 'update_expression'
+    | 'cast_expression'
+    | 'pointer_expression'
+    | 'sizeof_expression'
     | 'subscript_expression'
     | 'call_expression'
+    | 'argument_list'
     | 'field_expression'
+    | 'compound_literal_expression'
     | 'parenthesized_expression'
-    | 'number_literal'
+    | 'comma_expression'
+    | 'conditional_expression'
     | 'string_literal'
+    | 'number_literal'
     | 'char_literal'
-    | 'abstract_pointer_declarator'
-    | 'type_descriptor'
-    | 'storage_class_specifier'
-    | 'type_qualifier'
-    | 'pointer_declarator'
-    | 'function_declarator'
-    | 'array_declarator'
-    | 'parenthesized_declarator'
-    | 'struct_specifier'
-    | 'union_specifier'
-    | 'enum_specifier'
-    | 'enumerator'
-    | 'field_declaration'
-    | 'parameter_declaration'
-    | 'translation_unit'
-    | 'attributed_statement'
-    | (string & {});
+    | 'null'
+    | 'true'
+    | 'false'
+    | 'comment';
 
 /**
  * C-specific helper class.
  * @class
  * @extends UppHelpersBase
  */
-class UppHelpersC extends UppHelpersBase<CNodeTypes> {
-
+export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers: UppHelpersBase<any> | null = null) {
         super(root, registry, parentHelpers);
     }
@@ -124,11 +136,12 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
-     * extracts the C type string from a definition node.
-     * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
-     * @returns {string} The C type string (e.g. "char *").
-     */
-    getType(node: SourceNode<CNodeTypes> | string | null): string {
+ * extracts the C type string from a definition node.
+ * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
+ * @param {{ resolve?: boolean }} [options] - Options for type resolution.
+ * @returns {string} The C type string (e.g. "char *").
+ */
+    getType(node: SourceNode<CNodeTypes> | string | null, options: { resolve?: boolean } = {}, _visited: Set<string> = new Set()): string {
         if (!node) return "";
         const target = typeof node === 'string' ? this.findDefinition(node) : node;
         if (!target) return "";
@@ -138,30 +151,27 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         if (!idNode) {
             while (declNode &&
-                declNode.type !== 'declaration' &&
-                declNode.type !== 'parameter_declaration' &&
-                declNode.type !== 'field_declaration' &&
-                declNode.type !== 'type_definition' &&
-                declNode.type !== 'function_definition' &&
-                declNode.type !== 'struct_specifier' &&
-                declNode.type !== 'union_specifier' &&
-                declNode.type !== 'enum_specifier') {
+                !['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
                 declNode = declNode.parent || undefined;
             }
             if (!declNode) return "";
-            const ids = declNode.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
-            // Prioritize the actual identifier over type_identifier to get pointer/array info correctly
-            idNode = ids.find(n => n.type === 'identifier' || n.type === 'field_identifier') || ids[0];
+
+            if (['struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
+                idNode = declNode.child(1) || undefined; // The tag
+                if (idNode && idNode.type !== 'type_identifier' && idNode.type !== 'identifier') idNode = undefined;
+            } else {
+                // For other declarations, find the identifier in the declarator, avoiding the body
+                const declarator = declNode.named.declarator;
+                if (declarator) {
+                    idNode = declarator.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier')[0];
+                } else {
+                    const ids = declNode.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
+                    idNode = declNode.type === 'type_definition' ? ids[ids.length - 1] : ids[0];
+                }
+            }
         } else {
             while (declNode &&
-                declNode.type !== 'declaration' &&
-                declNode.type !== 'parameter_declaration' &&
-                declNode.type !== 'field_declaration' &&
-                declNode.type !== 'type_definition' &&
-                declNode.type !== 'function_definition' &&
-                declNode.type !== 'struct_specifier' &&
-                declNode.type !== 'union_specifier' &&
-                declNode.type !== 'enum_specifier') {
+                !['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
                 declNode = declNode.parent || undefined;
             }
         }
@@ -193,6 +203,25 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             }
         }
 
+        if (options.resolve && typeNode && typeNode.type === 'type_identifier') {
+            const def = this.findDefinitionOrNull(typeNode.text, { variable: true, tag: true });
+            if (def && (def.type === 'type_definition' || def.type === 'struct_specifier' || def.type === 'union_specifier' || def.type === 'enum_specifier')) {
+                // Ensure we don't resolve to the same node or a node we already visited
+                if (def.id !== target.id && !_visited.has(String(def.id))) {
+                    _visited.add(String(target.id));
+                    const underlyingType = this.getType(def, options, _visited);
+                    // Strip structural bodies before collecting stars
+                    const cleanUnderlying = underlyingType.replace(/\{[^}]*\}/g, '');
+                    const uStars = cleanUnderlying.match(/\*/g)?.join('') || "";
+                    const uBase = underlyingType.replace(/\*/g, '').trim();
+                    // Merge prefixes: current pointers + underlying pointers
+                    const allStars = (prefix + uStars).trim();
+                    const result = `${uBase}${allStars ? ' ' + allStars : ''}`.trim() + suffix;
+                    return result.replace(/\s+/g, ' ');
+                }
+            }
+        }
+
         let baseType = typeNode ? typeNode.text : "void";
         if (typeNode && ((typeNode.type as string) === 'struct_specifier' || (typeNode.type as string) === 'union_specifier' || (typeNode.type as string) === 'enum_specifier')) {
             const tag = typeNode.child(1);
@@ -204,7 +233,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         if (prefix) result += " " + prefix;
         if (suffix) result += suffix;
 
-        return result.trim();
+        return result.trim().replace(/\s+/g, ' ');
     }
 
     /**
@@ -213,15 +242,9 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {number} Array depth.
      */
     getArrayDepth(defNode: SourceNode<CNodeTypes>): number {
-        if (!defNode) return 0;
-        let depth = 0;
-        let p: SourceNode<CNodeTypes> | null = defNode;
-        while (p) {
-            if (p.type === 'array_declarator') depth++;
-            if (['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition'].includes(p.type as string)) break;
-            p = p.parent as SourceNode<CNodeTypes> | null;
-        }
-        return depth;
+        const type = this.getType(defNode);
+        const matches = type.match(/\[\]/g);
+        return matches ? matches.length : 0;
     }
 
     /**
@@ -230,21 +253,29 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {SourceNode<CNodeTypes>|null} The scope node.
      */
     getEnclosingScope(node: SourceNode<any>): SourceNode<CNodeTypes> | null {
-        if (!node) return null;
-        let p = node.parent as SourceNode<CNodeTypes> | null;
+        let p = node.parent || (node as any)._detachedParent;
         while (p) {
-            if (['compound_statement', 'translation_unit', 'field_declaration_list', 'enumerator_list'].includes(p.type as string)) {
-                return p;
+            if (p.type === 'compound_statement' || p.type === 'translation_unit') {
+                return p as SourceNode<CNodeTypes>;
             }
             if (p.type === 'function_definition') {
-                const sig = this.getFunctionSignature(p);
-                if (sig.nameNode && (sig.nameNode === node || this.isDescendant(sig.nameNode, node))) {
-                    p = p.parent as SourceNode<CNodeTypes> | null;
+                // If we are looking for the scope of the function name or its return type/storage class, 
+                // it is NOT this function_definition, but its parent.
+                // However, parameters (inside the declarator) and the body ARE in the function scope.
+                const declarator = p.named['declarator'];
+                // We check if the node is the name or part of the return type logic, but NOT part of the parameters.
+                // In tree-sitter C, the parameters are children of the function_declarator.
+                const parameters = declarator?.find('parameter_list')[0];
+                const isInsideParams = parameters && (this.isDescendant(parameters, node) || parameters === node);
+
+                if (declarator && (this.isDescendant(declarator, node) || declarator === node) && !isInsideParams) {
+                    // Function name/return type belongs to the parent scope
+                    p = p.parent || (p as any)._detachedParent;
                     continue;
                 }
-                return p;
+                return p as SourceNode<CNodeTypes>;
             }
-            p = p.parent as SourceNode<CNodeTypes> | null;
+            p = p.parent || (p as any)._detachedParent;
         }
         return null;
     }
@@ -255,36 +286,29 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {FunctionSignature} Signature details.
      */
     getFunctionSignature(fnNode: SourceNode<CNodeTypes>): FunctionSignature {
-        if (!fnNode) {
-            // This is a safety fallback, though fnNode should usually be valid if called correctly
-            throw new Error("getFunctionSignature: Argument must be a valid function node");
+        const declarator = fnNode.named.declarator;
+        let funcDeclarator = declarator;
+        while (funcDeclarator && funcDeclarator.type !== 'function_declarator') {
+            funcDeclarator = (funcDeclarator as any).named.declarator;
         }
 
-        let typeNode = fnNode.named.type;
-        if (!typeNode) {
-            typeNode = fnNode.children.find(c => (c.type as string).includes('type_specifier') || c.type === 'primitive_type');
-        }
-        const returnType = typeNode ? typeNode.text : "void";
-
-        let declarator = fnNode.named.declarator;
-        if (!declarator) {
-            declarator = fnNode.children.find(c => c.type !== 'compound_statement' && c !== typeNode);
+        if (!funcDeclarator) {
+            throw new Error("helpers.getFunctionSignature: function_declarator not found");
         }
 
-        let funcDecl = declarator as SourceNode<CNodeTypes>;
-        while (funcDecl && (funcDecl.type === 'pointer_declarator' || funcDecl.type === 'parenthesized_declarator')) {
-            funcDecl = funcDecl.named.declarator as SourceNode<CNodeTypes> || funcDecl.children.find(c => (c.type as string).includes('declarator')) as SourceNode<CNodeTypes>;
-        }
+        const nameNode = funcDeclarator.named.declarator;
+        const name = nameNode ? nameNode.text : "";
+        const params = funcDeclarator.named.parameters ? funcDeclarator.named.parameters.text : "()";
+        const returnType = this.getType(fnNode);
 
-        const nameNode = funcDecl ? (funcDecl.named.declarator || funcDecl.children[0]) : null;
-        const name = nameNode ? nameNode.text : "unknown";
-
-        const paramList = funcDecl ? (funcDecl.named.parameters || funcDecl.children.find(c => c.type === 'parameter_list')) : null;
-        const params = paramList ? paramList.text : "()";
-
-        let bodyNode = fnNode.named.body || fnNode.children.find(c => c.type === 'compound_statement');
-
-        return { returnType, name, params, bodyNode: bodyNode as SourceNode<CNodeTypes>, node: fnNode, nameNode: nameNode as SourceNode<CNodeTypes> };
+        return new FunctionSignature(
+            returnType,
+            name,
+            params,
+            fnNode,
+            nameNode,
+            fnNode.named.body
+        );
     }
 
     /**
@@ -399,35 +423,47 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {SourceNode<CNodeTypes>[]} The references.
      */
     findReferences(node: SourceNode<CNodeTypes>): SourceNode<CNodeTypes>[] {
-        const idInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => {
-            if (n.type !== 'identifier' && n.type !== 'field_identifier' && n.type !== 'type_identifier') return false;
+        const root = this.findRoot();
+        if (!root) return [];
 
-            // The identifier must be part of the 'declarator' field of the definition or its sub-declarators.
-            // This excludes identifiers used as types (e.g. 'PointRef' in 'PointRef p').
-            let isDeclarator = n.fieldName === 'declarator';
+        const idsInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) =>
+            n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier'
+        );
+
+        let idInDef = idsInDef.find(n => {
             let p = n.parent;
             while (p && p !== node) {
-                if (p.fieldName === 'declarator') isDeclarator = true;
-                if (p.type === 'compound_statement' || p.type === 'field_declaration_list' || p.type === 'parameter_list') return false;
+                if (p.type.endsWith('declarator') || p.type === 'init_declarator' || p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') return true;
                 p = p.parent;
             }
-            return isDeclarator;
-        })[0];
+            return false;
+        });
 
         const name = idInDef ? idInDef.text : node.text;
-        if (!name) throw new Error("helpers.findReferences: Invalid node");
-
-        const root = this.findRoot();
-        if (!root) throw new Error("helpers.findReferences: Invalid root");
-        const ids = root.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
+        if (!name || (idInDef && idInDef.type !== 'identifier' && idInDef.type !== 'field_identifier' && idInDef.type !== 'type_identifier')) {
+            // If we can't find a valid name (e.g. complex declarator without identifier), it shouldn't have references.
+            return [];
+        }
 
         const refs: SourceNode<CNodeTypes>[] = [];
+        const ids = root.find<CNodeTypes>((n: SourceNode<CNodeTypes>) =>
+            n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier'
+        );
+
         for (const idNode of ids) {
             if (idNode.text === name) {
-                if (idInDef && idNode === idInDef) continue;
                 const def = this.findDefinitionOrNull(idNode);
                 if (def && def === node) {
                     refs.push(idNode);
+                } else if (!node.parent && (node as any)._detachedParent) {
+                    // Fallback for detached nodes: check name and scope equality
+                    // If we can't find a direct identity match because 'node' is a detached fragment,
+                    // we check if the reference resolves to something with the same name in the same scope.
+                    const refScope = this.getEnclosingScope(idNode);
+                    const defScope = this.getEnclosingScope(node);
+                    if (refScope && defScope && (refScope === defScope || refScope.id === defScope.id)) {
+                        refs.push(idNode);
+                    }
                 }
             }
         }
@@ -440,81 +476,23 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
     withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
-        if (!definitionNode || definitionNode.type === 'identifier' || definitionNode.type === 'type_identifier') {
-            throw new Error(`withReferences: Expected declaration/definition node, found ${definitionNode ? definitionNode.type : 'null'}`);
-        }
-
-        const idInDef = definitionNode.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier')[0];
-        if (!idInDef) {
-            throw new Error("withReferences: Could not find identifier in definition node");
-        }
-        const originalName = idInDef.text;
-
-        const rule: TransformRule<CNodeTypes> = {
-            active: true,
-            matcher: (node: SourceNode<CNodeTypes>, helpers: UppHelpersBase<any>) => {
-                const cHelpers = helpers as UppHelpersC;
-                if (node.type !== 'identifier' && node.type !== 'field_identifier') return false;
-                if (node.text !== originalName) return false;
-                const def = cHelpers.findDefinitionOrNull(node);
-                // Compare by index/type since node objects might not be stable across major parses
-                return !!(def && def.startIndex === definitionNode.startIndex && def.type === definitionNode.type);
-            },
-            callback: (node: SourceNode<CNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersC)
-        };
-        this.registry.registerTransformRule(rule);
-
-        // 2. Immediate Eager Sweep (Evaluate on already-visited/constructed nodes)
-        // We do this immediately so that any existing references in the current AST are transformed.
         const refs = this.findReferences(definitionNode);
-        if (idInDef) {
-            refs.push(idInDef);
-        }
+
+        // We register markers for each reference
         for (const ref of refs) {
-            const result = callback(ref, this);
-            if (result !== undefined) {
-                this.replace(ref, result === null ? '' : result);
-            }
+            ref.markers.push({
+                callback: (node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC)
+            } as any);
         }
     }
 
     /**
-     * Finds and transforms a definition node intelligently.
-     * @param {AnySourceNode|string} target - The node or name.
-     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): MacroResult} callback - Transformation callback.
-     */
-    withDefinition(target: AnySourceNode | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => MacroResult): void {
-        const defNode = this.findDefinitionOrNull(target);
-        if (!defNode) return;
-        this.withNode(defNode, (node, helpers) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC));
-    }
-
-
-
-    /**
-     * Determines how an array should be expanded based on its C/UPP parent context.
+     * Replaces placeholders in an array of nodes/strings.
      * @param {InterpolationValue[]} values The values to expand.
      * @param {CNodeTypes} parentType The tree-sitter node type of the parent.
      * @returns {InterpolationValue[]} The expanded list of nodes/text.
      */
-    protected override getArrayExpansion(values: InterpolationValue[], parentType: CNodeTypes): InterpolationValue[] {
-        const result: InterpolationValue[] = [];
-        const isStatementBlock = (parentType as string) === 'compound_statement' || (parentType as string) === 'translation_unit';
-        const isList = (parentType as string) === 'parameter_list' || (parentType as string) === 'argument_list' || (parentType as string) === 'initializer_list';
-
-        let first = true;
-        for (const val of values) {
-            if (!first) {
-                if (isStatementBlock) result.push('\n');
-                else if (isList) result.push(', ');
-                else result.push(' ');
-            }
-            first = false;
-            result.push(val);
-            if (isStatementBlock) result.push(';');
-        }
-        return result;
+    getArrayExpansion(values: InterpolationValue[], _parentType: CNodeTypes): InterpolationValue[] {
+        return values;
     }
 }
-
-export { UppHelpersC };

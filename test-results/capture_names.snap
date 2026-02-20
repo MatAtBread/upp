@@ -15,8 +15,8 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-int my_fn_v2(int x , int y) {
-        return 123;;
+int my_fn_v2(int x,int y) {
+        return 123;
     } 
 int main() {
     printf("%d\n", my_fn_v2(1, 2));

@@ -66,6 +66,7 @@ export interface RegistryContext {
     originPath: string;
     invocations: Invocation[];
     helpers: UppHelpersBase<any> | null;
+    transformed: Set<string>;
 }
 
 type TreeSitterLang = Language;
@@ -358,16 +359,19 @@ class Registry {
         }
         const sourceTree = this.tree!;
 
+        // Define helpers first, then context
+        const helpers = new this.UppHelpersC(sourceTree.root as any, this, parentHelpers) as any;
+
         const context: RegistryContext = {
             source: cleanSource, // This will be stale, should use sourceTree.source
             tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
-            helpers: null as any
+            helpers: helpers, // Now helpers is defined
+            transformed: new Set<string>() // Add transformed set
         };
 
         if (!sourceTree) throw new Error("Could not create source tree for transformation.");
-        const helpers = new this.UppHelpersC(sourceTree.root as any, this, parentHelpers) as any;
         context.helpers = helpers;
         helpers.context = context;
         helpers.root = sourceTree.root;
@@ -470,6 +474,10 @@ class Registry {
         // Skip invalidated nodes
         if (node.startIndex === -1) return;
 
+        // Skip already transformed nodes in this pass
+        if (context.transformed.has(String(node.id))) return;
+        context.transformed.add(String(node.id));
+
         // 1. Check for attached markers/callbacks (Deferred transformations)
         const markers = [...node.markers];
         node.markers = []; // Clear so we don't re-run
@@ -554,7 +562,13 @@ class Registry {
                     if (rule.matcher(node, helpers)) {
                         const result = rule.callback(node, helpers);
                         if (result !== undefined) {
-                            helpers.replace(node, result);
+                            const newNodes = helpers.replace(node, result);
+                            if (newNodes) {
+                                const list = Array.isArray(newNodes) ? newNodes : [newNodes];
+                                for (const newNode of list) {
+                                    this.transformNode(newNode, helpers, context);
+                                }
+                            }
                         }
                         if (node.startIndex === -1) return;
                     }
@@ -566,9 +580,22 @@ class Registry {
 
         // 4. Recursive Stable Walk
         // NOTE: We snapshot children because transformations might add/remove nodes
-        const children = [...node.children];
-        for (const child of children) {
+        const originalChildren = [...node.children];
+        for (const child of originalChildren) {
             this.transformNode(child, helpers, context);
+        }
+
+        // Post-walk check for newly inserted siblings
+        let hasNewSiblings = true;
+        while (hasNewSiblings) {
+            hasNewSiblings = false;
+            for (const child of node.children) {
+                if (child.startIndex !== -1 && !context.transformed.has(String(child.id))) {
+                    this.transformNode(child, helpers, context);
+                    hasNewSiblings = true;
+                    break;
+                }
+            }
         }
     }
 

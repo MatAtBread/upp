@@ -1,0 +1,141 @@
+==== examples/ref-count.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+#include "fieldsof.h"
+#include "defer.h"
+#include "method.h"
+struct _ReferenceCount {
+  int ref_count;
+};
+static inline void *_Managed_allocate(int size) {
+  struct _ReferenceCount *p = malloc(size);
+  p->ref_count = 1;
+  printf("[%d] Allocate %d bytes\n", p->ref_count,size);
+  return (void *)p;
+}
+static inline void *_Managed_retain(struct _ReferenceCount *p) {
+  p->ref_count++;
+  printf("[%d] Retain\n", p->ref_count);
+  return p;
+}
+static inline void _Managed_release(void **_p) {
+  struct _ReferenceCount *p = (struct _ReferenceCount *)*_p;
+  if (p) {
+    p->ref_count--;
+    printf("[%d] Release\n", p->ref_count);
+    if (p->ref_count <= 0) {
+      free(p);
+      *_p = ((void *)0);
+    }
+  } else {
+    printf("NULL release\n");
+  }
+}
+static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
+  struct _ReferenceCount **dest = _dest;
+  if (*dest) {
+    printf("[%d] Set\n", (*dest)->ref_count);
+    _Managed_release(dest);
+  }
+  return *dest = (_src ? _Managed_retain(_src) : ((void *)0));
+}
+
+
+typedef struct Point_s {
+    int x;
+    int y;
+} Point;
+typedef struct { int ref_count;
+    ; int x;
+    int y;
+    ; } *PointRef;
+
+Point* _PointRef_method_struct(PointRef p) {
+    return (Point *)((char *)p + sizeof(struct _ReferenceCount));
+}
+
+; 
+ void _PointRef_method_print(PointRef p) {
+          _Managed_retain(p);
+           
+          printf("(%d, %d)\n", p->x, p->y);
+          _Managed_release(&p);}
+void fn(PointRef p) {
+          _Managed_retain(p);
+           
+          printf("[%d] (%d, %d)\n", p->ref_count, p->x, p->y);
+          _Managed_release(&p);}
+PointRef origin() {
+    PointRef p = _Managed_allocate(sizeof(*p));
+
+
+    p->x = 0;
+    p->y = 0;
+    _Managed_release(&p);
+return p;
+}
+int main() {
+    PointRef p = _Managed_allocate(sizeof(*p));
+
+
+    PointRef q = origin();
+
+
+    _Managed_set(&q, ((void *)0));
+    printf("q %p\n", q);
+    p->x = 10;
+    p->y = 20;
+    fn(p);
+    _PointRef_method_struct(p)
+->x = 100;
+    _PointRef_method_print(p)
+;
+    _Managed_release(&p);
+_Managed_release(&q);
+return 0;
+}
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/fieldsof.h ===
+#ifndef __UPP_STDLIB_FIELDSOF_H__
+#define __UPP_STDLIB_FIELDSOF_H__
+
+
+#endif
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+[1] Allocate 12 bytes
+[1] Allocate 12 bytes
+[0] Release
+q 0x0
+[2] Retain
+[2] (10, 20)
+[1] Release
+[2] Retain
+(100, 20)
+[1] Release
+[0] Release
+NULL release
+

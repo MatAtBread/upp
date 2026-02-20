@@ -21,7 +21,7 @@ static int _trace_my_function_1(int x, char *y) {
     }
     return g;
 }
-int my_function(int x , char *y) {
+int my_function(int x,char *y) {
     printf(">> my_function (x = %d, y = %s)\n", x, y);
     int r = _trace_my_function_1(x, y);
     printf("<< my_function = %d\n", r);
