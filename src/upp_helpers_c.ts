@@ -399,19 +399,19 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {SourceNode<CNodeTypes>[]} The references.
      */
     findReferences(node: SourceNode<CNodeTypes>): SourceNode<CNodeTypes>[] {
-        if (!node || node.type === 'identifier' || node.type === 'type_identifier') {
-            throw new Error(`findReferences: Expected declaration/definition node, found ${node ? node.type : 'null'}`);
-        }
-
         const idInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => {
-            if (n.type !== 'identifier' && n.type !== 'field_identifier') return false;
+            if (n.type !== 'identifier' && n.type !== 'field_identifier' && n.type !== 'type_identifier') return false;
+
+            // The identifier must be part of the 'declarator' field of the definition or its sub-declarators.
+            // This excludes identifiers used as types (e.g. 'PointRef' in 'PointRef p').
+            let isDeclarator = n.fieldName === 'declarator';
             let p = n.parent;
             while (p && p !== node) {
+                if (p.fieldName === 'declarator') isDeclarator = true;
                 if (p.type === 'compound_statement' || p.type === 'field_declaration_list' || p.type === 'parameter_list') return false;
-                if (p.type === 'init_declarator' && n.fieldName === 'value') return false;
                 p = p.parent;
             }
-            return true;
+            return isDeclarator;
         })[0];
 
         const name = idInDef ? idInDef.text : node.text;
@@ -419,7 +419,7 @@ class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         const root = this.findRoot();
         if (!root) throw new Error("helpers.findReferences: Invalid root");
-        const ids = root.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier');
+        const ids = root.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
 
         const refs: SourceNode<CNodeTypes>[] = [];
         for (const idNode of ids) {

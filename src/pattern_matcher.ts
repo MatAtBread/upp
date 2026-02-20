@@ -199,7 +199,10 @@ export class PatternMatcher {
 
         // 2. Strict type check
         if (target.type !== pattern.type) {
-            return false;
+            // Allow declaration to match parameter_declaration and vice-versa
+            const isDeclMatch = (target.type === 'declaration' || target.type === 'parameter_declaration') &&
+                (pattern.type === 'declaration' || pattern.type === 'parameter_declaration');
+            if (!isDeclMatch) return false;
         }
 
         // 3. Leaf check (text match for keywords/literals)
@@ -208,8 +211,18 @@ export class PatternMatcher {
         }
 
         // 4. Children check
-        const targetChildren = this.getChildren(target);
+        let targetChildren = this.getChildren(target);
         const patternChildren = this.getChildren(pattern);
+
+        // If the pattern doesn't end with a semicolon but the target does, ignore it.
+        // This allows patterns like "PointRef $id" to match "PointRef q;".
+        if (targetChildren.length > 0 && patternChildren.length > 0) {
+            const lastTarget = targetChildren[targetChildren.length - 1];
+            const lastPattern = patternChildren[patternChildren.length - 1];
+            if (lastTarget.type === ';' && lastPattern.type !== ';') {
+                targetChildren = targetChildren.slice(0, -1);
+            }
+        }
 
         let ti = 0;
         for (let pi = 0; pi < patternChildren.length; pi++) {
