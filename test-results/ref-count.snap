@@ -68,15 +68,15 @@ Point* _PointRef_method_struct(PointRef p) {
 }
 
 ; 
- void _PointRef_method_print(PointRef p) {
+ void _PointRef_method_print(PointRef p, const char *s) {
           _Managed_retain(p);
            
-          printf("(%d, %d)\n", p->x, p->y);
+          printf("%s (%d, %d)\n", s, p->x, p->y);
           _Managed_release(&p);}
 void fn(PointRef p) {
           _Managed_retain(p);
            
-          printf("[%d] (%d, %d)\n", p->ref_count, p->x, p->y);
+          printf("fn [%d] (%d, %d)\n", p->ref_count, p->x, p->y);
           _Managed_release(&p);}
 PointRef origin() {
     PointRef p = _Managed_allocate(sizeof(*p));
@@ -84,8 +84,15 @@ PointRef origin() {
 
     p->x = 0;
     p->y = 0;
-    _Managed_release(&p);
-return p;
+    _Managed_retain(p);_Managed_release(&p);return p;
+}
+PointRef point(int x, int y) {
+    PointRef p = _Managed_allocate(sizeof(*p));
+
+
+    p->x = x;
+    p->y = y;
+    _Managed_retain(p);_Managed_release(&p);return p;
 }
 int main() {
     PointRef p = _Managed_allocate(sizeof(*p));
@@ -101,11 +108,15 @@ int main() {
     fn(p);
     _PointRef_method_struct(p)
 ->x = 100;
-    _PointRef_method_print(p)
-;
-    _Managed_release(&p);
-_Managed_release(&q);
-return 0;
+    _PointRef_method_print(p, "p");
+    _Managed_set(&q, origin("q"));
+    _Managed_set(&p, q);
+    PointRef r = point(1, 2);
+
+
+    _PointRef_method_print(r, "r");
+    _PointRef_method_print(p, "p");
+    _Managed_release(&p);_Managed_release(&q);_Managed_release(&r);return 0;
 }
 
 ==== std/defer.h ===
@@ -128,14 +139,34 @@ return 0;
 ==== RUN OUTPUT ===
 [1] Allocate 12 bytes
 [1] Allocate 12 bytes
+[2] Retain
+[1] Release
+[1] Set
 [0] Release
 q 0x0
 [2] Retain
-[2] (10, 20)
+fn [2] (10, 20)
 [1] Release
 [2] Retain
-(100, 20)
+p (100, 20)
+[1] Release
+[1] Allocate 12 bytes
+[2] Retain
+[1] Release
+[2] Retain
+[1] Set
+[0] Release
+[3] Retain
+[1] Allocate 12 bytes
+[2] Retain
+[1] Release
+[2] Retain
+r (1, 2)
+[1] Release
+[4] Retain
+p (0, 0)
+[3] Release
+[2] Release
 [1] Release
 [0] Release
-NULL release
 

@@ -117,7 +117,18 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      */
     findScope(): SourceNode<CNodeTypes> | null {
         const startNode = (this.lastConsumedNode && this.lastConsumedNode.parent) ? this.lastConsumedNode : this.contextNode;
-        return this.findEnclosing(startNode!, (['compound_statement', 'translation_unit'] as CNodeTypes[]));
+        if (!startNode) return null;
+
+        // 1. Try to find the nearest enclosing block
+        const block = this.findEnclosing(startNode, ['compound_statement']);
+        if (block) return block;
+
+        // 2. If we are in a function definition but not inside the body (e.g. in parameters), find the body
+        const fn = this.findEnclosing(startNode, ['function_definition']);
+        if (fn && fn.named.body) return fn.named.body;
+
+        // 3. Fallback to translation unit
+        return this.findEnclosing(startNode, ['translation_unit']);
     }
 
     /**
@@ -136,11 +147,11 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
- * extracts the C type string from a definition node.
- * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
- * @param {{ resolve?: boolean }} [options] - Options for type resolution.
- * @returns {string} The C type string (e.g. "char *").
- */
+     * extracts the C type string from a definition node.
+     * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
+     * @param {{ resolve?: boolean }} [options] - Options for type resolution.
+     * @returns {string} The C type string (e.g. "char *").
+     */
     getType(node: SourceNode<CNodeTypes> | string | null, options: { resolve?: boolean } = {}, _visited: Set<string> = new Set()): string {
         if (!node) return "";
         const target = typeof node === 'string' ? this.findDefinition(node) : node;
@@ -471,19 +482,73 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
+     * Registers a rule to transform any identifier that resolves to a specific definition.
+     * This is robust against code rewrites as it doesn't depend on specific node instances.
+     * @param {SourceNode<CNodeTypes>} definitionNode - The definition node to track.
+     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
+     */
+    withDefinition(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
+        const definitionId = definitionNode.id;
+
+        // Find the actual identifier name node within the definition
+        let idNode = (definitionNode.type === 'identifier' || definitionNode.type === 'type_identifier') ? definitionNode : null;
+        if (!idNode) {
+            const ids = definitionNode.find<CNodeTypes>(n => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier');
+            // We want the node that is acting as the "declarator"
+            idNode = ids.find(n => {
+                let p = n.parent;
+                while (p && p !== definitionNode) {
+                    const t = p.type;
+                    if (t.endsWith('declarator') || t === 'init_declarator' || t === 'struct_specifier' || t === 'union_specifier' || t === 'enum_specifier') return true;
+                    p = p.parent;
+                }
+                return false;
+            }) || ids.find(n => n.fieldName === 'declarator' || n.parent?.fieldName === 'declarator') || ids[ids.length - 1] || null;
+        }
+
+        if (!idNode) return;
+
+        const definitionName = idNode.text;
+        const definitionScope = this.getEnclosingScope(definitionNode);
+        const definitionScopeId = definitionScope ? definitionScope.id : null;
+
+        this.registry.registerPendingRule({
+            contextNode: this.findRoot()!,
+            matcher: (node, helpers) => {
+                if (node.type !== 'identifier' && node.type !== 'type_identifier' && node.type !== 'field_identifier') return false;
+
+                // CRITICAL: We only match if the current text matches the definition name.
+                // This avoids infinite loops for rename transformations.
+                if (node.text !== definitionName) return false;
+
+                const def = (helpers as UppHelpersC).findDefinitionOrNull(node);
+                if (def) {
+                    if (def.id === definitionId) return true;
+
+                    // Fallback for morphed definitions: match by name and scope identity
+                    if (def.text === definitionName) {
+                        const defScope = (helpers as UppHelpersC).getEnclosingScope(def);
+                        if (defScope && definitionScopeId && defScope.id === definitionScopeId) return true;
+                    }
+                } else {
+                    // Fallback for detached definitions (e.g. during macro transformation)
+                    const refScope = (helpers as UppHelpersC).getEnclosingScope(node);
+                    if (refScope && definitionScopeId && refScope.id === definitionScopeId) return true;
+                }
+                return false;
+            },
+            callback: (node, helpers) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC)
+        });
+
+    }
+
+    /**
      * Transforms references to a definition intelligently.
      * @param {SourceNode<CNodeTypes>} definitionNode - The definition node.
      * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
     withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
-        const refs = this.findReferences(definitionNode);
-
-        // We register markers for each reference
-        for (const ref of refs) {
-            ref.markers.push({
-                callback: (node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC)
-            } as any);
-        }
+        this.withDefinition(definitionNode, callback);
     }
 
     /**

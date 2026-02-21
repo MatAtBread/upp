@@ -1,0 +1,19 @@
+#include "io-lite.h"
+
+@define DefRef(label) {
+    const target = upp.nextNode();
+    upp.withReferences(target, (ref) => {
+        return upp.code`/* Ref ${label} */ ${ref}`;
+    });
+    return upp.code`/* Declare ${label} */ ${target}`;
+}
+
+@DefRef("fn") void fn(int i){}
+@DefRef("MyType") typedef int MyType;
+
+int main() {
+    @DefRef("x") MyType x = 10;
+    x = 5;
+    fn(x);
+    return 0;
+}

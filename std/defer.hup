@@ -15,7 +15,7 @@
         const returns = scope.find('return_statement');
         const returnOffsets = new Set();
         for (const node of returns) {
-            helpers.replace(node, "\n" + codeText + "\n" + node.text);
+            node.insertBefore(codeText);
             returnOffsets.add(node.startIndex);
         }
 

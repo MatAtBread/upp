@@ -1,4 +1,4 @@
-#include "../examples/io-lite.h"
+#include "io-lite.h"
 
 @include(fieldsof.hup)
 @include(defer.hup)
@@ -59,9 +59,6 @@ static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
           return upp.code`_Managed_set(&${nameText}, ${rhs})`;
         })
       }
-      // if (ref.parent.type === 'argument_list') {
-      //   return undefined; // upp.code`_Managed_retain(${nameText})`;
-      // }
       if (ref.parent.type === 'return_statement') {
         upp.withNode(ref.parent, (node, upp) => {
           node.insertBefore(upp.code`_Managed_retain(${nameText});`);
@@ -121,18 +118,25 @@ typedef struct Point_s {
 
 @ManagedStruct(Point) PointRef;
 
-@method(PointRef) void print(PointRef p) {
-    printf("(%d, %d)\n", p->x, p->y);
+@method(PointRef) void print(PointRef p, const char *s) {
+    printf("%s (%d, %d)\n", s, p->x, p->y);
 }
 
 void fn(PointRef p) {
-    printf("[%d] (%d, %d)\n", p->ref_count, p->x, p->y);
+    printf("fn [%d] (%d, %d)\n", p->ref_count, p->x, p->y);
 }
 
 PointRef origin() {
     PointRef p;
     p->x = 0;
     p->y = 0;
+    return p;
+}
+
+PointRef point(int x, int y) {
+    PointRef p;
+    p->x = x;
+    p->y = y;
     return p;
 }
 
@@ -145,6 +149,11 @@ int main() {
     p->y = 20;
     fn(p);
     p.struct()->x = 100;
-    p.print();
+    p.print("p");
+    q = origin("q");
+    p = q;
+    PointRef r = point(1, 2);
+    r.print("r");
+    p.print("p");
     return 0;
 }

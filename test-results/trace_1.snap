@@ -23,11 +23,9 @@ int my_function(int x) {
     int g = 1;for (int i = 1; i < x; i++) {
         g = g * i;
         if (g > 100) {
-            { puts("Exiting: my_function\n"); }
-return -1;
+            { puts("Exiting: my_function\n"); }return -1;
         }
-    }{ puts("Exiting: my_function\n"); }
-return g;
+    }{ puts("Exiting: my_function\n"); }return g;
 }
 
 int main() {

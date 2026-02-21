@@ -21,8 +21,7 @@ int main() {
      
     str1[0] = 0;
     printf("returning\n");
-    { free(str1); str1 = ((void *)0); printf("deferred\n"); }
-return 0;
+    { free(str1); str1 = ((void *)0); printf("deferred\n"); }return 0;
 }
 
 ==== std/defer.h ===

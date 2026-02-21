@@ -1,7 +1,7 @@
 ==== examples/trap.c ===
-int x_trap_1(int value) { return value * 2; }
-
 int z_trap_2(int value) { return value + 1; }
+
+int x_trap_1(int value) { return value * 2; }
 
 #include "trap.h"
 /* A minimal C stdio/stdlib/string for upp to make it easy to

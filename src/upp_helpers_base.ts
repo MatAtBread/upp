@@ -221,6 +221,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
             finalContent = prepared.cleanSource;
         }
 
+
         if (n.replaceWith) {
             const result = n.replaceWith(finalContent as any);
             if (this.contextNode === n) this.contextNode = result as any;
@@ -568,14 +569,19 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {function(SourceNode<any>): void} callback - The callback to execute for each node.
      */
     walk(node: SourceNode<any>, callback: (n: SourceNode<any>) => void): void {
-        if (!node) return;
-        callback(node);
-        const rawNode = (node as any).__internal_raw_node || node;
-        // const lateBound = !!(node as any).__isLateBound; // We might need to track this
-        // const sourceOverride = (node as any).__sourceOverride; // And this
-
-        for (let i = 0; i < rawNode.childCount; i++) {
-            this.walk(rawNode.child(i), callback);
+        const stack: SourceNode<any>[] = [node];
+        const visited = new Set<SourceNode<any>>();
+        while (stack.length > 0) {
+            const current = stack.pop();
+            if (!current || visited.has(current)) continue;
+            visited.add(current);
+            callback(current);
+            // Snapshot children to prevent cycles/issues if modified during walk
+            const children = [...current.children];
+            for (let i = children.length - 1; i >= 0; i--) {
+                const child = children[i];
+                if (child) stack.push(child);
+            }
         }
     }
 

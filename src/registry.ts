@@ -27,6 +27,7 @@ export interface TransformRule<T extends string = string> {
 }
 
 export interface PendingRule<T extends string = string> {
+    id: number;
     contextNode: SourceNode<any>;
     matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
@@ -67,6 +68,8 @@ export interface RegistryContext {
     invocations: Invocation[];
     helpers: UppHelpersBase<any> | null;
     transformed: Set<string>;
+    appliedRules: WeakMap<SourceNode<any>, Set<number>>;
+    mutated?: boolean;
 }
 
 type TreeSitterLang = Language;
@@ -168,8 +171,11 @@ class Registry {
      * Registers a context-bound rule that will be evaluated whenever new nodes are inserted into the AST.
      * @param {PendingRule<any>} rule - The rule to register.
      */
-    registerPendingRule(rule: PendingRule<any>): void {
-        this.pendingRules.push(rule);
+    registerPendingRule(rule: Omit<PendingRule<any>, 'id'>): number {
+        const id = ++this.ruleIdCounter;
+        const fullRule = { ...rule, id };
+        this.pendingRules.push(fullRule);
+        return id;
     }
 
     /**
@@ -344,6 +350,7 @@ class Registry {
 
         // Initialize tree as early as possible so dependencies can see us
         this.tree = new SourceTree<any>(source, this.language as any);
+        this.tree.onMutation = () => this.markMutated();
         this.helpers = new (this.UppHelpersC as any)(this.tree.root, this, parentHelpers);
 
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
@@ -368,7 +375,8 @@ class Registry {
             originPath: originPath,
             invocations: foundInvs,
             helpers: helpers, // Now helpers is defined
-            transformed: new Set<string>() // Add transformed set
+            transformed: new Set<string>(), // Add transformed set
+            appliedRules: new WeakMap()
         };
 
         if (!sourceTree) throw new Error("Could not create source tree for transformation.");
@@ -398,9 +406,18 @@ class Registry {
 
         this.transformNode(sourceTree.root, helpers, context);
 
+        // Final pass for pending rules registered during the walk
+        this.evaluatePendingRules([sourceTree.root], helpers, context);
+
         this.executeDeferredMarkers(helpers);
 
         return sourceTree.source;
+    }
+
+    public markMutated(): void {
+        if (this.mainContext) {
+            this.mainContext.mutated = true;
+        }
     }
 
     /**
@@ -418,8 +435,9 @@ class Registry {
 
         while (currentNodes.length > 0 && iterations < MAX_ITERATIONS) {
             iterations++;
+            context.mutated = false;
+            let currentIterationMutated = false;
             const nextNodes: SourceNode<any>[] = [];
-            let mutated = false;
 
             for (const node of currentNodes) {
                 if (node.startIndex === -1) continue; // Skip invalidated
@@ -427,21 +445,33 @@ class Registry {
                 // We must check if `node` falls underneath ANY registered rule's context
                 for (const rule of this.pendingRules) {
                     try {
-                        // Quick check: is the inserted node within the rule's broader context scope?
-                        // (Alternatively, we can just walk the new node and apply the matcher)
                         helpers.walk(node, (descendant: SourceNode<any>) => {
                             if (descendant.startIndex === -1) return;
 
                             if (rule.matcher(descendant, helpers)) {
+                                // Guard: only apply a rule once per node (identity preservation across re-parses)
+                                const nodeKey = descendant;
+                                let applied = context.appliedRules.get(nodeKey);
+                                if (!applied) {
+                                    applied = new Set();
+                                    context.appliedRules.set(nodeKey, applied);
+                                }
+                                if (applied.has(rule.id)) return;
+                                applied.add(rule.id);
+
+                                helpers.contextNode = descendant;
+                                helpers.lastConsumedNode = null;
                                 const result = rule.callback(descendant, helpers);
                                 if (result !== undefined) {
                                     const replacementNodes = helpers.replace(descendant, result);
-                                    mutated = true;
+                                    currentIterationMutated = true;
                                     if (replacementNodes) {
                                         const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
                                         for (const newNode of list) {
-                                            nextNodes.push(newNode);
-                                            this.transformNode(newNode, helpers, context);
+                                            if (newNode instanceof SourceNode) {
+                                                nextNodes.push(newNode);
+                                                this.transformNode(newNode, helpers, context);
+                                            }
                                         }
                                     }
                                 }
@@ -453,8 +483,14 @@ class Registry {
                 }
             }
 
-            if (!mutated) break;
+            if (!currentIterationMutated && !context.mutated) break;
             currentNodes = nextNodes;
+
+            // If something else mutated (like insertBefore) but we don't have SPECIFIC new nodes to walk,
+            // we have to re-evaluate the whole initial set to catch side-effects.
+            if (currentNodes.length === 0 && context.mutated) {
+                currentNodes = nodes;
+            }
         }
 
         if (iterations >= MAX_ITERATIONS) {
@@ -477,6 +513,9 @@ class Registry {
         // Skip already transformed nodes in this pass
         if (context.transformed.has(String(node.id))) return;
         context.transformed.add(String(node.id));
+
+        helpers.contextNode = node;
+        helpers.lastConsumedNode = null;
 
         // 1. Check for attached markers/callbacks (Deferred transformations)
         const markers = [...node.markers];
@@ -575,6 +614,39 @@ class Registry {
                 } catch (e) {
                     // rule failed
                 }
+            }
+        }
+
+        // --- NEW: Evaluate Pending Rules (Symbol Tracking) ---
+        for (const rule of [...this.pendingRules]) {
+            try {
+                if (rule.matcher(node, helpers)) {
+                    // Guard: only apply a rule once per node (identity preservation across re-parses)
+                    const nodeKey = node;
+                    let applied = context.appliedRules.get(nodeKey);
+                    if (!applied) {
+                        applied = new Set();
+                        context.appliedRules.set(nodeKey, applied);
+                    }
+                    if (applied.has(rule.id)) continue;
+                    applied.add(rule.id);
+
+                    const result = rule.callback(node, helpers);
+                    if (result !== undefined) {
+                        const newNodes = helpers.replace(node, result);
+                        if (newNodes) {
+                            const list = Array.isArray(newNodes) ? newNodes : [newNodes];
+                            for (const newNode of list) {
+                                // IMPORTANT: transformNode will handle recursion and macro expansion.
+                                // We don't call evaluatePendingRules here to avoid infinite recursion loops.
+                                this.transformNode(newNode, helpers, context);
+                            }
+                        }
+                    }
+                    if (node.startIndex === -1) return;
+                }
+            } catch (e) {
+                // symbol rule check failed
             }
         }
 

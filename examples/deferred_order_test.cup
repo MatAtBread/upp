@@ -4,7 +4,7 @@
 
     // 2. Transform the ancestor (deferred)
     upp.withNode(scope, (node, helpers) => {
-        return `// Start of function\n${node.text}`;
+        return `/* Start of function */\n${node.text}`;
     });
 
     // 3. Transform a sub-node (immediate)
@@ -16,7 +16,7 @@
         });
     }
 
-    return "// Macro expanded";
+    return "/* Macro expanded */";
 }
 
 void main() {
