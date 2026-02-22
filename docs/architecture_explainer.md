@@ -35,7 +35,7 @@ The Registry performs a **single-pass, top-down walk** of the AST.
 This is the most critical phase for non-local transformations (like ref-counting).
 1.  **Fixed-Point Evaluation**: When a macro returns new nodes, UPP does not just continue walking. It enters a "Fixed-Point" loop.
 2.  **The Handover Point**: Rule Matching occurs **after** a node has been officially inserted back into the main source tree via `helpers.replace`. This is the atomic boundary where a node transitions from a detached fragment to a stable part of the AST.
-3.  **Rule Matching**: Every *newly inserted* node is matched against all `pendingRules` (registered via `withReferences` or `withDefinition`).
+3.  **Rule Matching**: Every *newly inserted* node is matched against all `pendingRules` (registered via `withReferences`).
 4.  **Recursion**: If a rule transforms an inserted node, the process repeats for the *newest* nodes until the tree stabilizes.
 
 ---
@@ -70,7 +70,7 @@ When you write: `return upp.code`/* Ref */ ${target}``:
 - **Mechanism**: A "hybrid" macro. It transforms a declaration AND uses `withReferences` to find all assignments to that variable.
 - **Challenge**: It must distinguish between the *initialization* of the variable (part of the declaration) and subsequent *assignments*. It does this by checking `node.parent.type`.
 
-### `withReferences` / `withDefinition`
+### `withReferences`
 - **Mechanism**: These do not transform nodes immediately during a walk. They register a `PendingRule`.
 - **The Detached Node Problem**: In the `DefRef` example, `upp.code` moves a node into a fragment. If a transformation rule runs while the node is "in-flight" (between trees), `helpers.replace` will fail because the node has no parent in the original tree.
 - **The Correct Pattern**: Rules must be **reactive**, never **imperative**. They should only trigger on nodes that are part of the main `SourceTree`. UPP handles this by re-evaluating rules whenever a fragment is spliced back into the main tree at the **Handover Point**.

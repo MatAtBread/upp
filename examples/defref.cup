@@ -2,10 +2,10 @@
 
 @define DefRef(label) {
     const target = upp.nextNode();
-    upp.withReferences(target, (ref) => {
-        return upp.code`/* Ref ${label} */ ${ref}`;
+    upp.withReferences(target, (ref, h) => {
+        const kind = h.isDeclaration() ? "Declare" : "Ref";
+        return upp.code`/* ${kind} ${label} */ ${ref}`;
     });
-    return upp.code`/* Declare ${label} */ ${target}`;
 }
 
 @DefRef("fn") void fn(int i){}

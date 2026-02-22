@@ -495,12 +495,21 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     /**
+     * Checks if the currently being transformed node is the declaration node
+     * for the symbol we are tracking with withReferences.
+     * @returns {boolean} True if the current node is the declaration.
+     */
+    isDeclaration(): boolean {
+        return false;
+    }
+
+    /**
      * Registers a rule to transform any identifier that resolves to a specific definition.
      * This is robust against code rewrites as it doesn't depend on specific node instances.
      * @param {SourceNode<CNodeTypes>} definitionNode - The definition node to track.
      * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
-    withDefinition(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
+    withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
         const definitionId = definitionNode.id;
 
         // Find the actual identifier name node within the definition
@@ -521,6 +530,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
         if (!idNode) return;
 
+        const declarationIdNode = idNode;
         const definitionName = idNode.text;
         const definitionScope = this.getEnclosingScope(definitionNode);
         const definitionScopeId = definitionScope ? definitionScope.id : null;
@@ -554,18 +564,12 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 }
                 return false;
             },
-            callback: (node, helpers) => callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC)
+            callback: (node, helpers) => {
+                const shadowHelpers = Object.create(helpers);
+                shadowHelpers.isDeclaration = () => node.id === declarationIdNode.id;
+                return callback(node as SourceNode<CNodeTypes>, shadowHelpers as UppHelpersC);
+            }
         });
-
-    }
-
-    /**
-     * Transforms references to a definition intelligently.
-     * @param {SourceNode<CNodeTypes>} definitionNode - The definition node.
-     * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
-     */
-    withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
-        this.withDefinition(definitionNode, callback);
     }
 
     /**
