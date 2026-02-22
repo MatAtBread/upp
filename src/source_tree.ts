@@ -1,6 +1,6 @@
 import Parser from 'tree-sitter';
 import type { Tree, SyntaxNode } from 'tree-sitter';
-import type { Marker } from './registry.ts';
+
 import type { Language } from './types.ts';
 
 /**
@@ -244,7 +244,7 @@ export class SourceNode<T extends string = string> {
     public children: SourceNode<any>[];
     public parent: SourceNode<any> | null;
     public fieldName: string | null;
-    public markers: Marker[];
+
     public data: Record<string, unknown>;
     public _capturedText?: string;
     public _snapshotSearchable?: string;
@@ -278,7 +278,7 @@ export class SourceNode<T extends string = string> {
             }
         }
 
-        this.markers = [];
+
         this.data = {};
     }
 
@@ -653,8 +653,7 @@ export class SourceNode<T extends string = string> {
                 this._capturedText = originalText;
             }
 
-            // Markers: Should we take new ones? Usually yes as this is a new identity.
-            this.markers = firstNew.markers as any;
+
 
             // Update children parent pointers to this (morphed) node
             for (const child of this.children) {

@@ -193,10 +193,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The callback to execute.
      * @returns {string} Always empty string (transformations happen via markers).
      */
-    withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
+    withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void {
         const root = this.findRoot();
         if (!root) throw new Error("upp.withRoot: No root node found.");
-        return this.withNode(root, callback);
+        this.withNode(root, callback);
     }
 
     /**
@@ -204,10 +204,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The callback to execute.
      * @returns {string} Always empty string.
      */
-    withScope(callback: (scope: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
+    withScope(callback: (scope: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void {
         const scope = this.findScope();
-        if (!scope) return "";
-        return this.withNode(scope, callback);
+        if (!scope) return;
+        this.withNode(scope, callback);
     }
 
     /**
@@ -247,13 +247,15 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The transformation callback.
      * @returns {string} Always empty string.
      */
-    withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): string {
-        if (!node) return "";
-        node.markers.push({
-            callback: (target: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(target as any, helpers as any),
-            data: {}
+    withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void {
+        if (!node) return;
+
+        const targetNode = node;
+        this.registry.registerPendingRule({
+            contextNode: this.findRoot()!,
+            matcher: (n) => n === targetNode,
+            callback: (n, h) => callback(n as SourceNode<LanguageNodeTypes>, h as UppHelpersBase<LanguageNodeTypes>)
         });
-        return "";
     }
 
     /**
@@ -374,10 +376,19 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
     */
     withMatch(scope: AnySourceNode, pattern: string, callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
-        const matches = this.matchAll(scope, pattern);
-        for (const match of matches) {
-            this.withNode(match.node, ((_node: SourceNode<any>, helpers: UppHelpersBase<any>) => callback(match.captures, helpers as UppHelpersBase<LanguageNodeTypes>, _node)));
-        }
+        this.registry.registerPendingRule({
+            contextNode: scope as SourceNode<any>,
+            matcher: (n, h) => {
+                // Must be a descendant of the scope to match
+                if (!h.isDescendant(scope as SourceNode<any>, n)) return false;
+                // Live structural match
+                return !!h.match(n, pattern);
+            },
+            callback: (n, h) => {
+                const m = h.match(n, pattern);
+                return callback(m, h as UppHelpersBase<LanguageNodeTypes>, n);
+            }
+        });
     }
 
     /**

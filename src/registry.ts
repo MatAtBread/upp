@@ -56,10 +56,7 @@ export interface RegistryConfig {
     comments?: boolean;
 }
 
-export interface Marker<T extends string = string> {
-    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
-    data?: unknown;
-}
+
 
 export interface RegistryContext {
     source: string;
@@ -104,7 +101,7 @@ class Registry {
     public UppHelpersC: typeof UppHelpersC;
     public source?: string;
     public tree?: SourceTree<any>;
-    public deferredMarkers?: Marker<any>[];
+
     public activeTransformNode?: SourceNode<any> | null;
     public originPath?: string;
 
@@ -387,7 +384,6 @@ class Registry {
         const isMain = !this.mainContext;
         if (isMain) {
             this.mainContext = context;
-            this.deferredMarkers = [];
         }
 
         if (parentHelpers) {
@@ -408,8 +404,6 @@ class Registry {
 
         // Final pass for pending rules registered during the walk
         this.evaluatePendingRules([sourceTree.root], helpers, context);
-
-        this.executeDeferredMarkers(helpers);
 
         return sourceTree.source;
     }
@@ -440,49 +434,55 @@ class Registry {
             const nextNodes: SourceNode<any>[] = [];
 
             for (const node of currentNodes) {
-                if (node.startIndex === -1) continue; // Skip invalidated
+                if (node.startIndex === -1) continue;
 
-                // We must check if `node` falls underneath ANY registered rule's context
-                for (const rule of this.pendingRules) {
-                    try {
-                        helpers.walk(node, (descendant: SourceNode<any>) => {
-                            if (descendant.startIndex === -1) return;
+                // Build a linear list of all descendants to process bottom-up
+                const descendants: SourceNode<any>[] = [];
+                helpers.walk(node, (d) => descendants.push(d));
 
-                            if (rule.matcher(descendant, helpers)) {
-                                // Guard: only apply a rule once per node (identity preservation across re-parses)
-                                let applied = descendant.data._appliedRules as Set<number>;
-                                if (!applied) {
-                                    applied = new Set();
-                                    descendant.data._appliedRules = applied;
-                                }
-                                if (applied.has(rule.id)) return;
-                                applied.add(rule.id);
+                // Sort bottom-up (right-to-left) to match legacy executeDeferredMarkers behavior
+                descendants.sort((a, b) => {
+                    if (b.startIndex !== a.startIndex) return b.startIndex - a.startIndex;
+                    return b.endIndex - a.endIndex;
+                });
 
-                                helpers.contextNode = descendant;
-                                helpers.lastConsumedNode = null;
-                                const result = rule.callback(descendant, helpers);
-                                if (result !== undefined) {
-                                    const replacementNodes = helpers.replace(descendant, result);
-                                    currentIterationMutated = true;
-                                    if (replacementNodes) {
-                                        const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
-                                        for (const newNode of list) {
-                                            if (newNode instanceof SourceNode) {
-                                                helpers.walk(newNode, (child) => {
-                                                    let app = child.data._appliedRules as Set<number>;
-                                                    if (!app) { app = new Set(); child.data._appliedRules = app; }
-                                                    app.add(rule.id);
-                                                });
-                                                nextNodes.push(newNode);
-                                                this.transformNode(newNode, helpers, context);
-                                            }
+                for (const descendant of descendants) {
+                    if (descendant.startIndex === -1) continue;
+
+                    for (const rule of this.pendingRules) {
+                        if (rule.matcher(descendant, helpers)) {
+                            // Guard: only apply a rule once per node
+                            let applied = descendant.data._appliedRules as Set<number>;
+                            if (!applied) {
+                                applied = new Set();
+                                descendant.data._appliedRules = applied;
+                            }
+                            if (applied.has(rule.id)) continue;
+                            applied.add(rule.id);
+
+                            helpers.contextNode = descendant;
+                            helpers.lastConsumedNode = null;
+                            const result = rule.callback(descendant, helpers);
+                            if (result !== undefined) {
+                                const replacementNodes = helpers.replace(descendant, result);
+                                currentIterationMutated = true;
+                                if (replacementNodes) {
+                                    const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
+                                    for (const newNode of list) {
+                                        if (newNode instanceof SourceNode) {
+                                            helpers.walk(newNode, (child) => {
+                                                let app = child.data._appliedRules as Set<number>;
+                                                if (!app) { app = new Set(); child.data._appliedRules = app; }
+                                                app.add(rule.id);
+                                            });
+                                            nextNodes.push(newNode);
+                                            this.transformNode(newNode, helpers, context);
                                         }
                                     }
                                 }
                             }
-                        });
-                    } catch (e) {
-                        console.error(`PendingRule callback failed on ${node.type}:`, e);
+                            if (descendant.startIndex === -1) break; // Node replaced
+                        }
                     }
                 }
             }
@@ -521,31 +521,7 @@ class Registry {
         helpers.contextNode = node;
         helpers.lastConsumedNode = null;
 
-        // 1. Check for attached markers/callbacks (Deferred transformations)
-        const markers = [...node.markers];
-        node.markers = []; // Clear so we don't re-run
-        for (const marker of markers) {
-            try {
-                const result = marker.callback(node, helpers);
-                if (result !== undefined) {
-                    const newNodes = helpers.replace(node, result);
-                    if (newNodes) {
-                        const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                        this.evaluatePendingRules(list, helpers, context);
-                        for (const newNode of list) {
-                            this.transformNode(newNode, helpers, context);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error(`Marker callback failed on ${node.type}:`, e);
-            }
-        }
-
-        // Re-check validity after markers (node might have been replaced)
-        if (node.startIndex === -1) return;
-
-        // 2. Check for Macro Invocation (wrapped in comments by prepareSource)
+        // 1. Check for Macro Invocation (wrapped in comments by prepareSource)
         if (node.type === 'comment') {
             const nodeText = node.text;
             if (nodeText.startsWith('/*@') && nodeText.endsWith('*/')) {
@@ -681,62 +657,6 @@ class Registry {
         }
     }
 
-
-    executeDeferredMarkers(helpers: UppHelpersBase<any>): void {
-        if (this.isExecutingDeferred) return;
-        this.isExecutingDeferred = true;
-
-        try {
-            let iterations = 0;
-            const MAX_ITERATIONS = 100;
-
-            while (iterations < MAX_ITERATIONS) {
-                // Find all nodes that have pending markers
-                const nodesWithMarkers = this.tree!.root.find(n => n.markers.length > 0 && n.startIndex !== -1);
-
-                if (nodesWithMarkers.length === 0) break;
-
-                iterations++;
-
-                // Sort bottom-up and right-to-left for predictable execution
-                nodesWithMarkers.sort((a, b) => {
-                    if (b.startIndex !== a.startIndex) return b.startIndex - a.startIndex;
-                    return b.endIndex - a.endIndex;
-                });
-
-                for (const node of nodesWithMarkers) {
-                    if (node.startIndex === -1) continue; // Skip if already invalidated
-
-                    const markers = [...node.markers];
-                    node.markers = [];
-                    for (const marker of markers) {
-                        try {
-                            const result = marker.callback(node, helpers);
-                            if (result !== undefined) {
-                                const newNodes = helpers.replace(node, result);
-                                if (newNodes) {
-                                    const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                                    const context = (helpers as any).context || this.mainContext;
-                                    this.evaluatePendingRules(list, helpers, context);
-                                    for (const newNode of list) {
-                                        this.transformNode(newNode, helpers, context);
-                                    }
-                                }
-                            }
-                            if (node.startIndex === -1) break; // Node replaced, stop running markers on it
-                        } catch (e) {
-                            console.error(`Deferred marker failed on ${node.type}:`, e);
-                        }
-                    }
-                }
-            }
-            if (iterations === MAX_ITERATIONS) {
-                console.warn("MAX_ITERATIONS reached in executeDeferredMarkers (possible infinite marker loop)");
-            }
-        } finally {
-            this.isExecutingDeferred = false;
-        }
-    }
 
     /**
      * Evaluates a macro invocation and returns the resulting content.
