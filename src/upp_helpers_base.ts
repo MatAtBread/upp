@@ -155,9 +155,11 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
                         const expansion = this.getArrayExpansion(originalValue, parentType);
                         pNode.replaceWith(expansion);
                     } else {
-                        const nodeToInsert = originalValue as SourceNode;
+                        let nodeToInsert = originalValue as SourceNode;
+                        // To preserve referential stability, we always remove the node so it interpolates correctly.
+                        // Any cyclic graphs created during replacement are broken by SourceNode.replaceWith's breakCycles.
                         nodeToInsert.remove();
-                        pNode.replaceWith(nodeToInsert);
+                        pNode.replaceWith(nodeToInsert, false);
                     }
                 }
             }
@@ -571,7 +573,13 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     walk(node: SourceNode<any>, callback: (n: SourceNode<any>) => void): void {
         const stack: SourceNode<any>[] = [node];
         const visited = new Set<SourceNode<any>>();
+        let counter = 0;
         while (stack.length > 0) {
+            counter++;
+            if (counter > 5000) {
+                console.error(`Infinite loop in walk() detected! Node type: ${stack[stack.length - 1]?.type}, text: ${stack[stack.length - 1]?.text}`);
+                throw new Error("Infinite loop in walk()");
+            }
             const current = stack.pop();
             if (!current || visited.has(current)) continue;
             visited.add(current);

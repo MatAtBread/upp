@@ -450,11 +450,10 @@ class Registry {
 
                             if (rule.matcher(descendant, helpers)) {
                                 // Guard: only apply a rule once per node (identity preservation across re-parses)
-                                const nodeKey = descendant;
-                                let applied = context.appliedRules.get(nodeKey);
+                                let applied = descendant.data._appliedRules as Set<number>;
                                 if (!applied) {
                                     applied = new Set();
-                                    context.appliedRules.set(nodeKey, applied);
+                                    descendant.data._appliedRules = applied;
                                 }
                                 if (applied.has(rule.id)) return;
                                 applied.add(rule.id);
@@ -469,6 +468,11 @@ class Registry {
                                         const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
                                         for (const newNode of list) {
                                             if (newNode instanceof SourceNode) {
+                                                helpers.walk(newNode, (child) => {
+                                                    let app = child.data._appliedRules as Set<number>;
+                                                    if (!app) { app = new Set(); child.data._appliedRules = app; }
+                                                    app.add(rule.id);
+                                                });
                                                 nextNodes.push(newNode);
                                                 this.transformNode(newNode, helpers, context);
                                             }
@@ -622,11 +626,10 @@ class Registry {
             try {
                 if (rule.matcher(node, helpers)) {
                     // Guard: only apply a rule once per node (identity preservation across re-parses)
-                    const nodeKey = node;
-                    let applied = context.appliedRules.get(nodeKey);
+                    let applied = node.data._appliedRules as Set<number>;
                     if (!applied) {
                         applied = new Set();
-                        context.appliedRules.set(nodeKey, applied);
+                        node.data._appliedRules = applied;
                     }
                     if (applied.has(rule.id)) continue;
                     applied.add(rule.id);
@@ -637,6 +640,13 @@ class Registry {
                         if (newNodes) {
                             const list = Array.isArray(newNodes) ? newNodes : [newNodes];
                             for (const newNode of list) {
+                                if (newNode instanceof SourceNode) {
+                                    helpers.walk(newNode, (child) => {
+                                        let app = child.data._appliedRules as Set<number>;
+                                        if (!app) { app = new Set(); child.data._appliedRules = app; }
+                                        app.add(rule.id);
+                                    });
+                                }
                                 // IMPORTANT: transformNode will handle recursion and macro expansion.
                                 // We don't call evaluatePendingRules here to avoid infinite recursion loops.
                                 this.transformNode(newNode, helpers, context);

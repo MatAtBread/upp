@@ -265,8 +265,16 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      */
     getEnclosingScope(node: SourceNode<any>): SourceNode<CNodeTypes> | null {
         let p = node.parent || (node as any)._detachedParent;
+        let counter = 0;
+        const path: string[] = [];
         while (p) {
-            if (p.type === 'compound_statement' || p.type === 'translation_unit') {
+            path.push(`${p.type}@${p.startIndex}`);
+            counter++;
+            if (counter > 500) {
+                console.error(`Extremely deep tree in getEnclosingScope! Depth > 500. Node: ${node.type} at ${node.startIndex}`);
+                return null;
+            }
+            if (p.type === 'compound_statement' || (p.type === 'translation_unit' && !p.parent)) {
                 return p as SourceNode<CNodeTypes>;
             }
             if (p.type === 'function_definition') {
@@ -378,7 +386,12 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         };
 
         let current: SourceNode<CNodeTypes> | null = startScope;
+        let loopCounter = 0;
         while (current) {
+            loopCounter++;
+            if (loopCounter > 1000) {
+                throw new Error(`Infinite loop detected in findDefinition up-tree traversal for '${name}'! current.type=${current.type}`);
+            }
             const identifiers = findInScope(current);
 
             for (const idNode of identifiers) {
@@ -523,17 +536,21 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
                 const def = (helpers as UppHelpersC).findDefinitionOrNull(node);
                 if (def) {
-                    if (def.id === definitionId) return true;
+                    if (def.id === definitionId) {
+                        return true;
+                    }
 
-                    // Fallback for morphed definitions: match by name and scope identity
-                    if (def.text === definitionName) {
-                        const defScope = (helpers as UppHelpersC).getEnclosingScope(def);
-                        if (defScope && definitionScopeId && defScope.id === definitionScopeId) return true;
+                    // Fallback for morphed definitions: match by scope identity
+                    const defScope = (helpers as UppHelpersC).getEnclosingScope(def);
+                    if (defScope && definitionScopeId && defScope.id === definitionScopeId) {
+                        return true;
                     }
                 } else {
                     // Fallback for detached definitions (e.g. during macro transformation)
                     const refScope = (helpers as UppHelpersC).getEnclosingScope(node);
-                    if (refScope && definitionScopeId && refScope.id === definitionScopeId) return true;
+                    if (refScope && definitionScopeId && refScope.id === definitionScopeId) {
+                        return true;
+                    }
                 }
                 return false;
             },

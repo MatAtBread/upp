@@ -1,4 +1,4 @@
-==== examples/repro-stale-node.c ===
+==== examples/defref.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -14,8 +14,28 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
+/* Declare "fn" */
+void /* Ref "fn" */
+fn
+(int i){}
+ 
+/* Declare "MyType" */
+typedef int/* Ref "MyType" */
+MyType
+ ;
+ 
 int main() {
-    // Using stale identifier: str1int some_new_var = 123; 
+    /* Declare "x" */
+MyType /* Ref "x" */
+x
+ = 10;
+ 
+    /* Ref "x" */
+x
+ = 5;
+    fn(/* Ref "x" */
+x
+);
     return 0;
 }
 

@@ -498,9 +498,10 @@ export class SourceNode<T extends string = string> {
     /**
      * Replaces this node with another node or text.
      * @param {string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>} content The node or text to replace with.
+     * @param {boolean} [morphIdentity=true] Whether the current node should morph into the replacement node, preserving the current node's AST reference.
      * @returns {SourceNode<any> | SourceNode<any>[] | null}
      */
-    replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>): SourceNode<any> | SourceNode<any>[] | null {
+    replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>, morphIdentity: boolean = true): SourceNode<any> | SourceNode<any>[] | null {
         let tree = this.tree;
         let start = this.startIndex;
         let end = this.endIndex;
@@ -600,7 +601,7 @@ export class SourceNode<T extends string = string> {
         }
 
         // re-point current node if there is at least one new node
-        if (attachedList.length > 0 && !isNewObject) {
+        if (attachedList.length > 0 && !isNewObject && morphIdentity) {
             const firstNew = attachedList[0] as SourceNode<any>;
             const oldId = this.id;
 
@@ -944,4 +945,24 @@ export class SourceNode<T extends string = string> {
         const lastChild = this.children[this.children.length - 1];
         return lastChild.insertAfter(newNode);
     }
+
+    /**
+     * Creates a deep clone of the node by parsing its text as a new fragment.
+     * @returns {SourceNode<T>} A new node instance with the same content but fresh identity.
+     */
+    public clone(): SourceNode<T> {
+        const tempTree = new SourceTree<any>(this.text, this.tree.language);
+        const clonedNode = tempTree.root as any;
+
+        const propagateData = (n: SourceNode<any>) => {
+            n.data = { ...this.data };
+            for (const child of n.children) {
+                propagateData(child);
+            }
+        };
+        propagateData(clonedNode);
+
+        return clonedNode;
+    }
 }
+
