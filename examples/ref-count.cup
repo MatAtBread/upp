@@ -1,77 +1,44 @@
 #include "io-lite.h"
 
-@include(fieldsof.hup)
 @include(defer.hup)
 @include(method.hup)
 
-struct _ReferenceCount {
-  int ref_count;
-};
-
-static inline void *_Managed_allocate(int size) {
-  struct _ReferenceCount *p = malloc(size);
-  p->ref_count = 1;
-  printf("[%d] Allocate %d bytes\n", p->ref_count,size);
-  return (void *)p;
-}
-
-static inline void *_Managed_retain(struct _ReferenceCount *p) {
-  p->ref_count++;
-  printf("[%d] Retain\n", p->ref_count);
-  return p;
-}
-
-static inline void _Managed_release(void **_p) {
-  struct _ReferenceCount *p = (struct _ReferenceCount *)*_p;
-  if (p) {
-    p->ref_count--;
-    printf("[%d] Release\n", p->ref_count);
-    if (p->ref_count <= 0) {
-      free(p);
-      *_p = NULL;
-    }
-  } else {
-    printf("NULL release\n");
-  }
-}
-
-static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
-  struct _ReferenceCount **dest = _dest;
-  
-  if (*dest) { 
-    printf("[%d] Set\n", (*dest)->ref_count);
-    _Managed_release(dest);
-  }
-  return *dest = (_src ? _Managed_retain(_src) : NULL);
-}
-
 @define ReferenceCounted() {
-  const name = upp.consume().text;
+  const nameNode = upp.consume();
+  if (!nameNode) return null;
+  const name = nameNode.text.replace(/;$/, '');
   upp.withMatch(upp.root, [`${name} $id;`, `${name} $id`], ({ id }, upp, node) => {
-    let nameText = id.text;
+    if (!id) return undefined;
+    
+    // Robustly get the identifier from the declaration or parameter
+    const getIdentifier = (n) => {
+      if (n.type === 'identifier') return n;
+      if (n.named && n.named.declarator) return getIdentifier(n.named.declarator);
+      return n.find(c => c.type === 'identifier')[0];
+    };
+    const idNode = getIdentifier(node);
+    if (!idNode) return undefined;
+    const nameText = idNode.text;
 
     const handleReference = (ref, upp) => {
-      if (ref.parent.type === 'assignment_expression' && ref.parent.named.left === ref) {
-        return upp.withNode(ref.parent, (parent, upp) => {
+      if (ref && ref.parent && ref.parent.type === 'assignment_expression' && ref.parent.named.left?.id === ref.id) {
+          const parent = ref.parent;
           const eqIndex = parent.children.findIndex(c => c.type === '=');
-          const rhsNodes = parent.children.slice(eqIndex + 1).filter(c => c.text.length > 0);
+          const rhsNodes = parent.children.slice(eqIndex + 1).filter(c => c && c.text && c.text.trim().length > 0);
           const rhs = rhsNodes.length === 1 ? rhsNodes[0] : rhsNodes;
-          return upp.code`_Managed_set(&${nameText}, ${rhs})`;
-        })
+          upp.replace(parent, upp.code`_Managed_set(&${nameText}, ${rhs})`);
+          return undefined;
       }
-      if (ref.parent.type === 'return_statement') {
-        upp.withNode(ref.parent, (node, upp) => {
-          node.insertBefore(upp.code`_Managed_retain(${nameText});`);
-        })
+      if (ref && ref.parent && ref.parent.type === 'return_statement') {
+          ref.parent.insertBefore(upp.code`_Managed_retain(${nameText});`);
+          return undefined;
       }
       return undefined;
     };
 
-    // If it's a parameter, we don't want to re-declare or re-allocate it.
-    // We just want to track its references.
     if (node.type === 'parameter_declaration') {
       upp.withReferences(node, handleReference);
-      if (node.parent.parent.parent.type == 'function_definition') {
+      if (node.parent && node.parent.parent && node.parent.parent.parent && node.parent.parent.parent.type == 'function_definition') {
         upp.withNode(node.parent.parent.parent.named.body, (body, upp) => {
           return upp.code`{
           _Managed_retain(${nameText}); 
@@ -80,15 +47,15 @@ static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
           }`;
         });
       }
-      return undefined; // Leave the parameter declaration as is.
+      return undefined; 
     }
 
     upp.withReferences(node, handleReference);
 
-    if (node.named.declarator.named.value) {
-      nameText = node.named.declarator.named.declarator.text;
+    if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
+      const val = node.named.declarator.named.value;
       return upp.code`
-      ${name} ${nameText} = ${node.named.declarator.named.value};
+      ${name} ${nameText} = ${val};
       @defer _Managed_release(&${nameText});
       `;
     }
@@ -102,10 +69,58 @@ static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
 
 @define ManagedStruct(T) {
     const name = upp.consume().text.replace(/;$/, '');
+    let boilerplate = "";
+    if (!upp.root.find(n => n.text.includes("struct _ReferenceCount")).length) {
+        boilerplate = `
+struct _ReferenceCount {
+  int ref_count;
+};
+static inline void *_Managed_allocate(int size) {
+  struct _ReferenceCount *p = malloc(size + sizeof(struct _ReferenceCount));
+  p->ref_count = 1;
+  printf("{%d} Allocate %d bytes\\n", p->ref_count, size);
+  return (void *)(p + 1);
+}
+static inline void *_Managed_retain(void *data) {
+  struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+  p->ref_count++;
+  printf("{%d} Retain\\n", p->ref_count);
+  return data;
+}
+static inline void _Managed_release(void *__p) {
+  void **_p = (void **)__p;
+  void *data = *_p;
+  if (data) {
+    struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+    p->ref_count--;
+    printf("{%d} Release\\n", p->ref_count);
+    if (p->ref_count <= 0) {
+      free(p);
+      *_p = NULL;
+    }
+  }
+}
+static inline void *_Managed_set(void *_dest, void *_src) {
+  void **dest = _dest;
+  if (*dest) { 
+    struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
+    printf("{%d} Set\\n", p->ref_count);
+    _Managed_release(dest);
+  }
+  return *dest = (_src ? _Managed_retain(_src) : NULL);
+}
+static inline int _Managed_ref_count(void *data) {
+    if (!data) return -1;
+    return ((struct _ReferenceCount *)data - 1)->ref_count;
+}
+`;
+    }
     return $`
-typedef struct { @fieldsof(struct _ReferenceCount); @fieldsof(${T}); } *${name};
-@method(${name}) ${T}* struct(${name} p) {
-    return (${T} *)((char *)p + sizeof(struct _ReferenceCount));
+${boilerplate}
+typedef ${T}* ${name};
+@method(${name}) int managed_reference_count(${name} p) {
+    if (!p) return -1;
+    return ((struct _ReferenceCount *)p - 1)->ref_count;
 }
 @ReferenceCounted ${name};
 `;
@@ -119,11 +134,11 @@ typedef struct Point_s {
 @ManagedStruct(Point) PointRef;
 
 @method(PointRef) void print(PointRef p, const char *s) {
-    printf("%s (%d, %d)\n", s, p->x, p->y);
+    printf("%s {%d} (%d, %d)\n", s, p.managed_reference_count(), p->x, p->y);
 }
 
 void fn(PointRef p) {
-    printf("fn [%d] (%d, %d)\n", p->ref_count, p->x, p->y);
+    p.print("fn");
 }
 
 PointRef origin() {
@@ -142,18 +157,23 @@ PointRef point(int x, int y) {
 
 int main() {
     PointRef p;
-    PointRef q = origin(); 
+    PointRef q = origin();
     q = NULL;
     printf("q %p\n", q);
     p->x = 10;
     p->y = 20;
     fn(p);
-    p.struct()->x = 100;
+    p->x = 100;
     p.print("p");
-    q = origin("q");
+    q = origin();
     p = q;
     PointRef r = point(1, 2);
     r.print("r");
     p.print("p");
+    PointRef s = NULL;
+    s = r;
+    s.print("s");
+    s = p;
+    s.print("s");
     return 0;
 }

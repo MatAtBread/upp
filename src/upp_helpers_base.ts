@@ -152,7 +152,14 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
 
                     if (isList) {
                         const parentType = pNode.parent ? pNode.parent.type : 'root';
-                        const expansion = this.getArrayExpansion(originalValue, parentType);
+                        const values = (originalValue as any[]).map(v => {
+                            if (v instanceof SourceNode) {
+                                v.remove();
+                                return v;
+                            }
+                            return v;
+                        });
+                        const expansion = this.getArrayExpansion(values, parentType);
                         pNode.replaceWith(expansion);
                     } else {
                         let nodeToInsert = originalValue as SourceNode;
