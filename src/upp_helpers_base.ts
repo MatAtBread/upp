@@ -153,7 +153,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
                     if (isList) {
                         const parentType = pNode.parent ? pNode.parent.type : 'root';
                         const values = (originalValue as any[]).map(v => {
-                            if (v instanceof SourceNode) {
+                            if (v instanceof SourceNode && v.tree !== fragment.tree) {
                                 v.remove();
                                 return v;
                             }
@@ -164,8 +164,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
                     } else {
                         let nodeToInsert = originalValue as SourceNode;
                         // To preserve referential stability, we always remove the node so it interpolates correctly.
-                        // Any cyclic graphs created during replacement are broken by SourceNode.replaceWith's breakCycles.
-                        nodeToInsert.remove();
+                        // We only remove if it's not already in our target fragment tree (avoiding redundant removals in duplication cases).
+                        if (nodeToInsert instanceof SourceNode && nodeToInsert.tree !== fragment.tree) {
+                            nodeToInsert.remove();
+                        }
                         pNode.replaceWith(nodeToInsert, false);
                     }
                 }

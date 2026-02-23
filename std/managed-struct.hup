@@ -1,0 +1,125 @@
+@include(defer.hup)
+@include(method.hup)
+
+@define ReferenceCounted() {
+  const nameNode = upp.consume();
+  if (!nameNode) return null;
+  const name = nameNode.text.replace(/;$/, '');
+  upp.withMatch(upp.root, [`${name} $id;`, `${name} $id`], ({ id }, upp, node) => {
+    if (!id) return undefined;
+    
+    // Robustly get the identifier from the declaration or parameter
+    const getIdentifier = (n) => {
+      if (n.type === 'identifier') return n;
+      if (n.named && n.named.declarator) return getIdentifier(n.named.declarator);
+      return n.find(c => c.type === 'identifier')[0];
+    };
+    const idNode = getIdentifier(node);
+    if (!idNode) return undefined;
+    const nameText = idNode.text;
+
+    const handleReference = (ref, upp) => {
+      if (ref && ref.parent && ref.parent.type === 'assignment_expression' && ref.parent.named.left?.id === ref.id) {
+          const parent = ref.parent;
+          const eqIndex = parent.children.findIndex(c => c.type === '=');
+          const rhsNodes = parent.children.slice(eqIndex + 1).filter(c => c && c.text && c.text.trim().length > 0);
+          const rhs = rhsNodes.length === 1 ? rhsNodes[0] : rhsNodes;
+          upp.replace(parent, upp.code`_Managed_set(&${nameText}, ${rhs})`);
+          return undefined;
+      }
+      if (ref && ref.parent && ref.parent.type === 'return_statement') {
+          ref.parent.insertBefore(upp.code`_Managed_retain(${nameText});`);
+          return undefined;
+      }
+      return undefined;
+    };
+
+    if (node.type === 'parameter_declaration') {
+      upp.withReferences(node, handleReference);
+      if (node.parent && node.parent.parent && node.parent.parent.parent && node.parent.parent.parent.type == 'function_definition') {
+        upp.withNode(node.parent.parent.parent.named.body, (body, upp) => {
+          return upp.code`{
+          _Managed_retain(${nameText}); 
+          @defer _Managed_release(&${nameText}); 
+          ${body.children.slice(1, -1)}
+          }`;
+        });
+      }
+      return undefined; 
+    }
+
+    upp.withReferences(node, handleReference);
+
+    if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
+      const val = node.named.declarator.named.value;
+      return upp.code`
+      ${name} ${nameText} = ${val};
+      @defer _Managed_release(&${nameText});
+      `;
+    }
+    return upp.code`
+    ${name} ${nameText} = _Managed_allocate(sizeof(*${nameText}));
+    @defer _Managed_release(&${nameText});
+    `;
+  });
+  return null;
+}
+
+@define ManagedStruct(T) {
+    const name = upp.consume().text.replace(/;$/, '');
+    let boilerplate = "";
+    if (!upp.root.find(n => n.text.includes("struct _ReferenceCount")).length) {
+        boilerplate = `
+struct _ReferenceCount {
+  int ref_count;
+};
+static inline void *_Managed_allocate(int size) {
+  struct _ReferenceCount *p = malloc(size + sizeof(struct _ReferenceCount));
+  p->ref_count = 1;
+  printf("{%d} Allocate %d bytes\\n", p->ref_count, size);
+  return (void *)(p + 1);
+}
+static inline void *_Managed_retain(void *data) {
+  struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+  p->ref_count++;
+  printf("{%d} Retain\\n", p->ref_count);
+  return data;
+}
+static inline void _Managed_release(void *__p) {
+  void **_p = (void **)__p;
+  void *data = *_p;
+  if (data) {
+    struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+    p->ref_count--;
+    printf("{%d} Release\\n", p->ref_count);
+    if (p->ref_count <= 0) {
+      free(p);
+      *_p = ((void *)0);
+    }
+  }
+}
+static inline void *_Managed_set(void *_dest, void *_src) {
+  void **dest = _dest;
+  if (*dest) { 
+    struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
+    printf("{%d} Set\\n", p->ref_count);
+    _Managed_release(dest);
+  }
+  return *dest = (_src ? _Managed_retain(_src) : ((void *)0));
+}
+static inline int _Managed_ref_count(void *data) {
+    if (!data) return -1;
+    return ((struct _ReferenceCount *)data - 1)->ref_count;
+}
+`;
+    }
+    return $`
+${boilerplate}
+typedef ${T}* ${name};
+@method(${name}) int managed_reference_count(${name} p) {
+    if (!p) return -1;
+    return ((struct _ReferenceCount *)p - 1)->ref_count;
+}
+@ReferenceCounted ${name};
+`;
+}

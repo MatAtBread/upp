@@ -23,7 +23,6 @@
     // Use withPattern to transform method calls
     upp.withPattern('call_expression',
         (callNode, helpers) => {
-            // Check if this is a field_expression call (obj.method() or obj->method())
             const funcNode = callNode.named['function'];
             if (!funcNode || funcNode.type !== 'field_expression') return false;
 
@@ -34,9 +33,7 @@
             if (methodNode.text !== originalName) return false;
 
             const objDef = helpers.findDefinitionOrNull(objectNode);
-            if (!objDef) {
-                return false;
-            }
+            if (!objDef) return false;
 
             let currentType = helpers.getType(objDef);
             let targetClean = targetType.replace(/struct /g, '').trim();
