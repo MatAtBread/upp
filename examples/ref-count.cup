@@ -47,7 +47,7 @@ static inline void *_Managed_set(void *_dest, struct _ReferenceCount *_src) {
 
 @define ReferenceCounted() {
   const name = upp.consume().text;
-  upp.withMatch(upp.root, `${name} $id`, ({ id }, upp, node) => {
+  upp.withMatch(upp.root, [`${name} $id;`, `${name} $id`], ({ id }, upp, node) => {
     let nameText = id.text;
 
     const handleReference = (ref, upp) => {

@@ -602,73 +602,75 @@ export class SourceNode<T extends string = string> {
 
         // re-point current node if there is at least one new node
         if (attachedList.length > 0 && !isNewObject && morphIdentity) {
-            const firstNew = attachedList[0] as SourceNode<any>;
-            const oldId = this.id;
+            const selfIndex = attachedList.indexOf(this);
+            if (selfIndex === -1) {
+                const firstNew = attachedList[0] as SourceNode<any>;
+                const oldId = this.id;
 
-            // We want to KEEP the same object identity.
-            // But we update all properties from the new node.
-            const newChildren = firstNew.children;
-            const newStartIndex = firstNew.startIndex;
-            const newEndIndex = firstNew.endIndex;
-            const newType = firstNew.type;
-            const newData = firstNew.data;
+                // We want to KEEP the same object identity.
+                // But we update all properties from the new node.
+                const newChildren = firstNew.children;
+                const newStartIndex = firstNew.startIndex;
+                const newEndIndex = firstNew.endIndex;
+                const newType = firstNew.type;
+                const newData = firstNew.data;
 
-            this.startIndex = newStartIndex;
-            this.endIndex = newEndIndex;
-            (this as any).type = newType;
-            // Recursive identity transfer (important for structural morphing like renames)
-            const transferIdentity = (oldNodes: SourceNode<any>[], newNodes: SourceNode<any>[]) => {
-                // Heuristic: If we have exactly one identifier in both, it's likely a rename
-                const oldIds = oldNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
-                const newIds = newNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
-                if (oldIds.length === 1 && newIds.length === 1) {
-                    const oldIdNode = oldIds[0];
-                    const newIdNode = newIds[0];
-                    if (newIdNode._capturedText === undefined) {
-                        newIdNode._capturedText = oldIdNode._snapshotSearchable || oldIdNode.text;
+                this.startIndex = newStartIndex;
+                this.endIndex = newEndIndex;
+                (this as any).type = newType;
+                // Recursive identity transfer (important for structural morphing like renames)
+                const transferIdentity = (oldNodes: SourceNode<any>[], newNodes: SourceNode<any>[]) => {
+                    // Heuristic: If we have exactly one identifier in both, it's likely a rename
+                    const oldIds = oldNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
+                    const newIds = newNodes.filter(c => c.type === 'identifier' || c.type === 'type_identifier');
+                    if (oldIds.length === 1 && newIds.length === 1) {
+                        const oldIdNode = oldIds[0];
+                        const newIdNode = newIds[0];
+                        if (newIdNode._capturedText === undefined) {
+                            newIdNode._capturedText = oldIdNode._snapshotSearchable || oldIdNode.text;
+                        }
                     }
-                }
-                // Also match by fieldName?
-                for (const oldChild of oldNodes) {
-                    if (!oldChild.fieldName) continue;
-                    const newChild = newNodes.find(c => c.fieldName === oldChild.fieldName);
-                    if (newChild && newChild.type === oldChild.type) {
-                        transferIdentity(oldChild.children, newChild.children);
+                    // Also match by fieldName?
+                    for (const oldChild of oldNodes) {
+                        if (!oldChild.fieldName) continue;
+                        const newChild = newNodes.find(c => c.fieldName === oldChild.fieldName);
+                        if (newChild && newChild.type === oldChild.type) {
+                            transferIdentity(oldChild.children, newChild.children);
+                        }
                     }
+                };
+
+                const prevChildren = this.children;
+                this.children = newChildren;
+                this.data = newData;
+                transferIdentity(prevChildren, this.children);
+
+                // Preserve captured text (important for stable symbol resolution during renames)
+                if (oldCaptured !== undefined) {
+                    this._capturedText = oldCaptured;
+                } else if (firstNew._capturedText !== undefined) {
+                    this._capturedText = firstNew._capturedText;
+                } else if (originalText !== newText && (this.type === 'identifier' || (this.type as string) === 'type_identifier')) {
+                    // If it's a rename of an identifier, capture the old name for symbol resolution continuity
+                    this._capturedText = originalText;
                 }
-            };
 
-            const prevChildren = this.children;
-            this.children = newChildren;
-            this.data = newData;
-            transferIdentity(prevChildren, this.children);
 
-            // Preserve captured text (important for stable symbol resolution during renames)
-            if (oldCaptured !== undefined) {
-                this._capturedText = oldCaptured;
-            } else if (firstNew._capturedText !== undefined) {
-                this._capturedText = firstNew._capturedText;
-            } else if (originalText !== newText && (this.type === 'identifier' || (this.type as string) === 'type_identifier')) {
-                // If it's a rename of an identifier, capture the old name for symbol resolution continuity
-                this._capturedText = originalText;
+
+                // Update children parent pointers to this (morphed) node
+                for (const child of this.children) {
+                    child.parent = this;
+                }
+
+                // Ensure ID is updated so we match the new tree-sitter node in subsequent wraps
+                if (firstNew.id !== oldId) {
+                    this.tree.nodeCache.delete(oldId);
+                    this.id = firstNew.id;
+                }
+                this.tree.nodeCache.set(this.id, this);
+
+                attachedList[0] = this;
             }
-
-
-
-            // Update children parent pointers to this (morphed) node
-            for (const child of this.children) {
-                child.parent = this;
-            }
-
-            // Ensure ID is updated so we match the new tree-sitter node in subsequent wraps
-            if (firstNew.id !== oldId) {
-                this.tree.nodeCache.delete(oldId);
-                this.id = firstNew.id;
-            }
-            this.tree.nodeCache.set(this.id, this);
-
-            // Crucially, the survivor in the tree must be 'this', not 'firstNew'
-            attachedList[0] = this;
         }
 
         // Update parent children
@@ -736,16 +738,16 @@ export class SourceNode<T extends string = string> {
         return attached as SourceNode | SourceNode[];
     }
 
-    /**
-     * Inserts a node or text before this node.
-     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
-     * @returns {SourceNode<any> | SourceNode<any>[]}
-     */
     /** @returns {SourceNode<any>[]} All children (including unnamed like '{', ';', etc.) */
     get allChildren(): SourceNode<any>[] {
         return this.children;
     }
 
+    /**
+     * Inserts a node or text before this node.
+     * @param {SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>} content The node or text to insert.
+     * @returns {SourceNode<any> | SourceNode<any>[]}
+     */
     insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
         if (!this.parent) return this.insertAt(-1, content);
         const siblings = this.parent.allChildren;
@@ -891,7 +893,10 @@ export class SourceNode<T extends string = string> {
             ? (n: SourceNode<any>) => n.type === predicate
             : predicate;
 
+        const visited = new Set<SourceNode<any>>();
         const walk = (n: SourceNode<any>) => {
+            if (visited.has(n)) return;
+            visited.add(n);
             if (isMatch(n)) results.push(n);
             for (const child of n.children) {
                 walk(child);
@@ -911,7 +916,10 @@ export class SourceNode<T extends string = string> {
     descendantForIndex(start: number, end: number): SourceNode<any> {
         let current: SourceNode<any> = this;
         let found = true;
+        const visited = new Set<SourceNode<any>>();
         while (found) {
+            if (visited.has(current)) break;
+            visited.add(current);
             found = false;
             for (const child of current.children) {
                 if (child.startIndex !== -1 && child.startIndex <= start && child.endIndex >= end) {

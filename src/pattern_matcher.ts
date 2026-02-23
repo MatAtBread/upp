@@ -44,7 +44,7 @@ export class PatternMatcher {
             return this.findMatch(targetNode, patternRoot, constraints);
         } else {
             const captures: CaptureResult = {};
-            if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
+            if (this.structuralMatch(targetNode, patternRoot, captures, constraints, new Set())) {
                 captures.node = targetNode;
                 return captures;
             }
@@ -62,7 +62,7 @@ export class PatternMatcher {
             return this.findAllMatches(targetNode, patternRoot, constraints);
         } else {
             const captures: CaptureResult = {};
-            if (this.structuralMatch(targetNode, patternRoot, captures, constraints)) {
+            if (this.structuralMatch(targetNode, patternRoot, captures, constraints, new Set())) {
                 captures.node = targetNode;
                 return [captures];
             }
@@ -83,6 +83,53 @@ export class PatternMatcher {
 
         let patternRoot = patternTree.rootNode;
 
+        // If the pattern is a fragment (like an expression or list of statements), 
+        // it may parse as an ERROR at top level. Try wrapping it in a function body.
+        const isErrorNode = (n: SyntaxNode) => {
+            if (n.type === 'ERROR') return true;
+            if (n.type === 'translation_unit') {
+                for (let i = 0; i < n.childCount; i++) {
+                    if (n.child(i)?.type === 'ERROR') return true;
+                }
+            }
+            return false;
+        };
+
+        if (isErrorNode(patternRoot)) {
+            const prefix = "void __upp_frag() { ";
+            const wrappedCode = `${prefix}${cleanPattern}\n}`;
+            const wrappedTree = this.parseFn(wrappedCode);
+            const wrappedRoot = wrappedTree.rootNode;
+
+            // Navigate to the compound_statement of the function definition
+            let body: SyntaxNode | null = null;
+            const findBody = (n: SyntaxNode) => {
+                if (n.type === 'compound_statement') { body = n; return; }
+                for (let i = 0; i < n.childCount; i++) {
+                    const c = n.child(i);
+                    if (c) findBody(c);
+                    if (body) return;
+                }
+            };
+            findBody(wrappedRoot);
+
+            if (body) {
+                const kids: SyntaxNode[] = [];
+                for (let i = 0; i < (body as SyntaxNode).childCount; i++) {
+                    const c = (body as SyntaxNode).child(i);
+                    if (c && c.type !== '{' && c.type !== '}' && c.type !== 'comment') {
+                        kids.push(c);
+                    }
+                }
+                if (kids.length === 1) {
+                    patternRoot = kids[0];
+                } else if (kids.length > 1) {
+                    // It's a list of statements/nodes
+                    patternRoot = body as SyntaxNode;
+                }
+            }
+        }
+
         if (patternRoot.type === 'translation_unit' && patternRoot.childCount > 0) {
             for (let i = 0; i < patternRoot.childCount; i++) {
                 const child = patternRoot.child(i);
@@ -93,9 +140,8 @@ export class PatternMatcher {
             }
         }
 
-        // Drill down from expression_statement if the pattern string doesn't end with a semicolon.
-        // This allows expression patterns (like assignments) to match expression nodes anywhere,
-        // rather than being locked to statement-level matching.
+        // Drill down from expression_statement to the underlying expression
+        // unless the pattern string explicitly ends with a semicolon.
         if (patternRoot.type === 'expression_statement') {
             const significantChildren: SyntaxNode[] = [];
             for (let i = 0; i < patternRoot.childCount; i++) {
@@ -117,7 +163,7 @@ export class PatternMatcher {
      */
     private findMatch(node: PatternMatchableNode, patternNode: SyntaxNode, constraints: ConstraintMap): CaptureResult | null {
         const captures: CaptureResult = {};
-        if (this.structuralMatch(node, patternNode, captures, constraints)) {
+        if (this.structuralMatch(node, patternNode, captures, constraints, new Set())) {
             captures.node = node;
             return captures;
         }
@@ -134,7 +180,7 @@ export class PatternMatcher {
     private findAllMatches(node: PatternMatchableNode, patternNode: SyntaxNode, constraints: ConstraintMap, results: CaptureResult[] = []): CaptureResult[] {
         const captures: CaptureResult = {};
         // Important: check if node matches
-        if (this.structuralMatch(node, patternNode, captures, constraints)) {
+        if (this.structuralMatch(node, patternNode, captures, constraints, new Set())) {
             captures.node = node;
             results.push(captures);
         }
@@ -162,9 +208,18 @@ export class PatternMatcher {
      * @param {ConstraintMap} constraints
      * @returns {boolean}
      */
-    private structuralMatch(target: PatternMatchableNode, pattern: SyntaxNode, captures: CaptureResult, constraints: ConstraintMap): boolean {
+    private structuralMatch(target: PatternMatchableNode, pattern: SyntaxNode, captures: CaptureResult, constraints: ConstraintMap, visited: Set<PatternMatchableNode> = new Set()): boolean {
+        if (!target || visited.has(target)) return false;
+
+        // 0. Explicitly block matching on ERROR nodes or macro-like constructs
+        if (target.type === 'ERROR' || pattern.type === 'ERROR') return false;
+        if (target.type === 'comment' && target.text.trim().startsWith('// @')) return false;
+
+        visited.add(target);
         // console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
-        const match = pattern.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
+
+        // 1. Wildcard check
+        const match = pattern.text.trim().match(/^UPP_WILDCARD_([a-zA-Z0-9_$]+);?$/);
         if (match) {
             let name = match[1];
             if (name.startsWith('opt$')) {
@@ -211,72 +266,65 @@ export class PatternMatcher {
         }
 
         // 4. Children check
-        let targetChildren = this.getChildren(target);
+        const targetChildren = this.getChildren(target);
         const patternChildren = this.getChildren(pattern);
 
-        // If the pattern doesn't end with a semicolon but the target does, ignore it.
-        // This allows patterns like "PointRef $id" to match "PointRef q;".
-        if (targetChildren.length > 0 && patternChildren.length > 0) {
-            const lastTarget = targetChildren[targetChildren.length - 1];
-            const lastPattern = patternChildren[patternChildren.length - 1];
-            if (lastTarget.type === ';' && lastPattern.type !== ';') {
-                targetChildren = targetChildren.slice(0, -1);
-            }
-        }
-
-        let ti = 0;
-        for (let pi = 0; pi < patternChildren.length; pi++) {
-            const pChild = patternChildren[pi];
-            const wildcardResult = this.getWildcard(pChild);
-
-            if (wildcardResult && wildcardResult.isUntil) {
-                const { name } = wildcardResult;
-                if (pi === patternChildren.length - 1) {
-                    // Last child, consume all remaining
-                    captures[name] = targetChildren.slice(ti);
-                    ti = targetChildren.length;
-                } else {
-                    // Match until next node in pattern
-                    const terminator = patternChildren[pi + 1];
-                    const startTi = ti;
-                    let found = false;
-                    while (ti < targetChildren.length) {
-                        const tmpCaptures = { ...captures };
-                        if (this.structuralMatch(targetChildren[ti], terminator, tmpCaptures, constraints)) {
-                            found = true;
-                            break;
-                        }
-                        ti++;
-                    }
-                    if (!found) return false;
-                    captures[name] = targetChildren.slice(startTi, ti);
-                }
-            } else {
-                if (ti >= targetChildren.length) return false;
-                if (!this.structuralMatch(targetChildren[ti], pChild, captures, constraints)) {
-                    return false;
-                }
-                ti++;
-            }
-        }
-
-        return ti === targetChildren.length;
+        return this.matchChildren(targetChildren, patternChildren, 0, 0, captures, constraints, visited);
     }
 
-    private getWildcard(node: SyntaxNode): { name: string; isUntil: boolean } | null {
-        // syntax: $name or $name;
-        const match = node.text.trim().match(/^\$([a-zA-Z0-9_$]+);?$/);
+    private matchChildren(targetChildren: PatternMatchableNode[] | SyntaxNode[], patternChildren: SyntaxNode[], ti: number, pi: number, captures: CaptureResult, constraints: ConstraintMap, visited: Set<PatternMatchableNode>): boolean {
+        if (pi === patternChildren.length) {
+            return ti === targetChildren.length;
+        }
+
+        const pChild = patternChildren[pi];
+        const wildcardResult = this.getWildcard(pChild);
+
+        if (wildcardResult && (wildcardResult.isUntil || wildcardResult.isPlus)) {
+            const { name, isPlus } = wildcardResult;
+            // Try all possible split points (backtracking)
+            // If isPlus is true, we need at least one element (split starting from ti + 1)
+            for (let split = isPlus ? ti + 1 : ti; split <= targetChildren.length; split++) {
+                const subCaptures = { ...captures };
+                subCaptures[name] = targetChildren.slice(ti, split);
+                if (this.matchChildren(targetChildren, patternChildren, split, pi + 1, subCaptures, constraints, visited)) {
+                    Object.assign(captures, subCaptures);
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            if (ti >= targetChildren.length) return false;
+            const subCaptures = { ...captures };
+            if (this.structuralMatch(targetChildren[ti] as any, pChild, subCaptures, constraints, visited)) {
+                if (this.matchChildren(targetChildren, patternChildren, ti + 1, pi + 1, subCaptures, constraints, visited)) {
+                    Object.assign(captures, subCaptures);
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private getWildcard(node: SyntaxNode): { name: string; isUntil: boolean; isPlus: boolean } | null {
+        // syntax: UPP_WILDCARD_name or UPP_WILDCARD_name;
+        const text = node.text.trim();
+        const match = text.match(/^UPP_WILDCARD_([a-zA-Z0-9_$]+);?$/);
         if (!match) return null;
         let name = match[1];
         let isUntil = false;
+        let isPlus = false;
         if (name.endsWith('__until')) {
             name = name.slice(0, -7);
             isUntil = true;
+        } else if (name.endsWith('__plus')) {
+            name = name.slice(0, -6);
+            isPlus = true;
         }
         if (name.startsWith('opt$')) {
             name = name.slice(4);
         }
-        return { name, isUntil };
+        return { name, isUntil, isPlus };
     }
 
     private getChildren<T extends PatternMatchableNode | SyntaxNode>(node: T): T[] {
@@ -306,7 +354,7 @@ export class PatternMatcher {
             if (types && types.length > 0) {
                 constraints.set(name, types);
             }
-            return '$' + name;
+            return 'UPP_WILDCARD_' + name;
         });
         return { cleanPattern, constraints };
     }
@@ -320,15 +368,18 @@ export class PatternMatcher {
         // syntax: name__type1__type2 or opt$name__type1 or name__until
         const parts = rawId.split('__');
         let name = parts[0];
-        const rawTypes = parts.slice(1).filter(t => t !== 'until');
+        const rawTypes = parts.slice(1).filter(t => t !== 'until' && t !== 'plus');
 
         if (name.startsWith('opt$')) {
             name = name.slice(4);
         }
 
-        // Re-append __until if it was present
+        // Re-append modifiers if they were present
         if (rawId.includes('__until')) {
             name += '__until';
+        }
+        if (rawId.includes('__plus')) {
+            name += '__plus';
         }
 
         const types = rawTypes.map(t => {

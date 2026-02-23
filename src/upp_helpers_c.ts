@@ -1,5 +1,5 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
-import type { Registry, TransformRule } from './registry.ts';
+import type { Registry, TransformRule, RegistryContext } from './registry.ts';
 import { SourceNode } from './source_tree.ts';
 import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts';
 
@@ -264,39 +264,42 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @returns {SourceNode<CNodeTypes>|null} The scope node.
      */
     getEnclosingScope(node: SourceNode<any>): SourceNode<CNodeTypes> | null {
+        const context = (this as any).context as RegistryContext;
+        if (context && context.enclosingScopeCache.has(node.id)) {
+            return context.enclosingScopeCache.get(node.id)!;
+        }
+
         let p = node.parent || (node as any)._detachedParent;
         let counter = 0;
-        const path: string[] = [];
+        let result: SourceNode<CNodeTypes> | null = null;
+
         while (p) {
-            path.push(`${p.type}@${p.startIndex}`);
             counter++;
             if (counter > 500) {
                 console.error(`Extremely deep tree in getEnclosingScope! Depth > 500. Node: ${node.type} at ${node.startIndex}`);
-                return null;
+                break;
             }
             if (p.type === 'compound_statement' || (p.type === 'translation_unit' && !p.parent)) {
-                return p as SourceNode<CNodeTypes>;
+                result = p as SourceNode<CNodeTypes>;
+                break;
             }
             if (p.type === 'function_definition') {
-                // If we are looking for the scope of the function name or its return type/storage class, 
-                // it is NOT this function_definition, but its parent.
-                // However, parameters (inside the declarator) and the body ARE in the function scope.
                 const declarator = p.named['declarator'];
-                // We check if the node is the name or part of the return type logic, but NOT part of the parameters.
-                // In tree-sitter C, the parameters are children of the function_declarator.
                 const parameters = declarator?.find('parameter_list')[0];
                 const isInsideParams = parameters && (this.isDescendant(parameters, node) || parameters === node);
 
                 if (declarator && (this.isDescendant(declarator, node) || declarator === node) && !isInsideParams) {
-                    // Function name/return type belongs to the parent scope
                     p = p.parent || (p as any)._detachedParent;
                     continue;
                 }
-                return p as SourceNode<CNodeTypes>;
+                result = p as SourceNode<CNodeTypes>;
+                break;
             }
             p = p.parent || (p as any)._detachedParent;
         }
-        return null;
+
+        if (context) context.enclosingScopeCache.set(node.id, result);
+        return result;
     }
 
     /**
@@ -357,6 +360,8 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         let startScope: SourceNode<any> | null = null;
         let finalOptions = (typeof nameOrOptions === 'object' && nameOrOptions !== null) ? { ...options, ...nameOrOptions } : options;
 
+        let cacheKey: string | number | null = null;
+
         if (typeof target === 'string') {
             name = target;
             startScope = this.contextNode || this.findRoot();
@@ -374,15 +379,28 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found");
                 name = (idNode as any).searchableText as string;
                 startScope = idNode.parent;
+                cacheKey = idNode.id; // Identifier-based caching
             }
         }
 
         if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
 
+        const context = (this as any).context as RegistryContext;
+        if (context && cacheKey !== null && context.definitionCache.has(cacheKey)) {
+            const cached = context.definitionCache.get(cacheKey);
+            if (cached) return cached;
+        }
+
         const findInScope = (scope: SourceNode<CNodeTypes>) => {
-            return scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier').filter((idNode: SourceNode<CNodeTypes>) => {
+            if (context && context.scopeCache.has(scope.id)) {
+                return context.scopeCache.get(scope.id)!;
+            }
+            const allIds = scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier');
+            const filtered = allIds.filter((idNode: SourceNode<CNodeTypes>) => {
                 return this.getEnclosingScope(idNode) === scope;
             });
+            if (context) context.scopeCache.set(scope.id, filtered);
+            return filtered;
         };
 
         let current: SourceNode<CNodeTypes> | null = startScope;
@@ -419,13 +437,17 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                         }
                         if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
                             if (finalOptions.tag && p.child(1) && p.child(1)!.id === idNode.id) {
+                                if (context && cacheKey !== null) context.definitionCache.set(cacheKey, p);
                                 return p as SourceNode<CNodeTypes>;
                             }
                             break;
                         }
                         if (p.type === 'parameter_declaration' || p.type === 'declaration' || p.type === 'type_definition' || p.type === 'field_declaration' || p.type === 'function_definition') {
                             if (isDeclarator || (idNode.parent === p && idNode.fieldName !== 'type')) {
-                                if (finalOptions.variable) return p as SourceNode<CNodeTypes>;
+                                if (finalOptions.variable) {
+                                    if (context && cacheKey !== null) context.definitionCache.set(cacheKey, p);
+                                    return p as SourceNode<CNodeTypes>;
+                                }
                             }
                             break;
                         }

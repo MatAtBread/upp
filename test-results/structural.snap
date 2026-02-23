@@ -1,0 +1,32 @@
+==== examples/structural.c ===
+
+
+
+
+/* S: NAME
+y: undefined
+s: ST2
+x: undefined */
+struct NAME {
+    char c;
+    char d;
+    signed int ST;
+    int ST2;
+    long l;
+}
+;
+void fn(int c) {}
+int main() {
+    int b;
+    int a = 0;
+    a = /* l: b
+r: 2 */
+b + 2;
+    b = /* l: a
+r: 9 */
+a - 9;
+    return 0;
+}
+
+==== RUN OUTPUT ===
+

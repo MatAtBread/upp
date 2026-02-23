@@ -375,18 +375,23 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {string} pattern - The source fragment pattern.
     * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
     */
-    withMatch(scope: AnySourceNode, pattern: string, callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
+    withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
+        const patterns = Array.isArray(pattern) ? pattern : [pattern];
         this.registry.registerPendingRule({
             contextNode: scope as SourceNode<any>,
             matcher: (n, h) => {
                 // Must be a descendant of the scope to match
                 if (!h.isDescendant(scope as SourceNode<any>, n)) return false;
-                // Live structural match
-                return !!h.match(n, pattern);
+                // Live structural match - check any of the patterns
+                return patterns.some(p => !!h.match(n, p));
             },
             callback: (n, h) => {
-                const m = h.match(n, pattern);
-                return callback(m, h as UppHelpersBase<LanguageNodeTypes>, n);
+                // Find which pattern matched
+                for (const p of patterns) {
+                    const m = h.match(n, p);
+                    if (m) return callback(m, h as UppHelpersBase<LanguageNodeTypes>, n);
+                }
+                return undefined;
             }
         });
     }
@@ -567,7 +572,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     isDescendant(parent: SourceNode<any> | null, node: SourceNode<any>): boolean {
         let current: any = node;
         const rawParent: any = parent ? (parent as any).__internal_raw_node || parent : null;
+        const visited = new Set<any>();
         while (current) {
+            if (visited.has(current)) break;
+            visited.add(current);
             const rawCurrent = current.__internal_raw_node || current;
             if (rawCurrent === rawParent) return true;
             // Support traversal through detached parent if real parent is null
@@ -613,8 +621,12 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null {
         if (!root) return null;
 
+        const visitedSibling = new Set<SourceNode<any>>();
         const findNextSibling = (node: SourceNode<any>): SourceNode<any> | null => {
             if (!node || !node.parent || node === root) return null;
+            if (visitedSibling.has(node)) return null;
+            visitedSibling.add(node);
+
             const idx = node.parent.children.indexOf(node);
             if (idx === -1) return null;
             for (let i = idx + 1; i < node.parent.children.length; i++) {
@@ -625,8 +637,11 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         };
 
         let current: SourceNode<any> | null = root.descendantForIndex(index, index);
+        const visitedWrap = new Set<SourceNode<any>>();
 
         while (current && current.startIndex < index && current.endIndex > index && current.children.length > 0) {
+            if (visitedWrap.has(current)) break;
+            visitedWrap.add(current);
             let nextChild: SourceNode<any> | null = null;
             for (const child of current.children) {
                 if (child.endIndex > index) {
@@ -638,13 +653,25 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
             else break;
         }
 
+        let loopLimit = 0;
         while (current && current.endIndex <= index) {
+            loopLimit++;
+            if (loopLimit > 1000) {
+                console.warn("[upp] findNextNodeAfter: primary sibling loop limit reached!");
+                break;
+            }
             current = findNextSibling(current);
         }
 
         if (!current || current === root) return null;
 
+        const visitedDeep = new Set<SourceNode<any>>();
+        loopLimit = 0;
         while (current.children.length > 0) {
+            loopLimit++;
+            if (loopLimit > 1000) break;
+            if (visitedDeep.has(current)) break;
+            visitedDeep.add(current);
             if (current.startIndex >= index && (current as any).isNamed) break;
 
             let found = false;
@@ -666,7 +693,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         if (isSafe) {
             let p = current.parent;
             let ok = false;
+            const visitedParent = new Set<SourceNode<any>>();
             while (p) {
+                if (visitedParent.has(p)) break;
+                visitedParent.add(p);
                 if (p === root) { ok = true; break; }
                 p = p.parent;
             }
