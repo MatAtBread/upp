@@ -9,7 +9,6 @@ import { SourceTree, SourceNode } from './source_tree.ts';
 import type { Tree, SyntaxNode } from 'tree-sitter';
 import type { DependencyCache } from './dependency_cache.ts';
 
-export const RECURSION_LIMITER_ENABLED = false;
 
 export interface Macro {
     name: string;
@@ -345,10 +344,6 @@ class Registry {
                 }
             }
         }
-    }
-
-    generateRuleId(): string {
-        return `rule_${++this.ruleIdCounter}`;
     }
 
 
@@ -935,7 +930,7 @@ class Registry {
         });
 
         while ((match = regex.exec(source)) !== null) {
-            if (this.isInsideInvocation(match.index, match.index + match[0].length)) continue;
+
 
             const node = currentTree.rootNode.descendantForIndex(match.index);
             let shouldSkip = false;
@@ -971,10 +966,6 @@ class Registry {
             };
         }
         return null;
-    }
-
-    isInsideInvocation(_start: number, _end: number): boolean {
-        return false;
     }
 }
 
