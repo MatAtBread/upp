@@ -1,0 +1,12 @@
+@define pkg_greet() {
+    return "printf(\"Hello from pkg_test.hup!\\n\");";
+}
+
+@define global_transform_test() {
+    // Verify that upp.root sees the main translation unit
+    const mainFunc = upp.root.find(n => n.type === 'function_definition' && n.text.includes("main"))[0];
+    if (mainFunc) {
+        return `"SUCCESS:Found main via upp.root"`;
+    }
+    return `"ERROR: main NOT found in upp.root"`;
+}

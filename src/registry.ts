@@ -50,6 +50,7 @@ export interface RegistryConfig {
     onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
     filePath?: string;
     stdPath?: string;
+    includePaths?: string[];
     cache?: DependencyCache;
     diagnostics?: DiagnosticsManager;
     suppress?: string[];
@@ -94,6 +95,7 @@ class Registry {
     public parser: Parser;
     public idCounter: number;
     public stdPath: string | null;
+    public includePaths: string[];
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
     public transformRules: TransformRule<any>[];
@@ -157,6 +159,7 @@ class Registry {
 
         this.idCounter = 0;
         this.stdPath = config.stdPath || null;
+        this.includePaths = config.includePaths || [];
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
         this.transformRules = [];
@@ -260,12 +263,24 @@ class Registry {
         if (isDiscoveryOnly && previousPass === 'discovery') return;
 
         if (!fs.existsSync(targetPath)) {
-            const stdDir = this.stdPath || path.resolve(process.cwd(), 'std');
-            const stdPath = path.resolve(stdDir, file);
-            if (fs.existsSync(stdPath)) {
-                targetPath = stdPath;
-            } else {
-                throw new Error(`Dependency not found: ${file} (tried ${targetPath} and ${stdPath})`);
+            // Search include paths (from -I flags)
+            let found = false;
+            for (const inc of this.includePaths) {
+                const candidate = path.resolve(inc, file);
+                if (fs.existsSync(candidate)) {
+                    targetPath = candidate;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                const stdDir = this.stdPath || path.resolve(process.cwd(), 'std');
+                const stdPath = path.resolve(stdDir, file);
+                if (fs.existsSync(stdPath)) {
+                    targetPath = stdPath;
+                } else {
+                    throw new Error(`Dependency not found: ${file} (tried ${targetPath} and ${stdPath})`);
+                }
             }
         }
 

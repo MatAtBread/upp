@@ -1,0 +1,8 @@
+@include(pkg_test.hup)
+#include "io-lite.h"
+
+int main() {
+    @pkg_greet();
+    printf(@global_transform_test);
+    return 0;
+}

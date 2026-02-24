@@ -24,7 +24,8 @@
           const eqIndex = parent.children.findIndex(c => c.type === '=');
           const rhsNodes = parent.children.slice(eqIndex + 1).filter(c => c && c.text && c.text.trim().length > 0);
           const rhs = rhsNodes.length === 1 ? rhsNodes[0] : rhsNodes;
-          upp.replace(parent, upp.code`_Managed_set(&${nameText}, ${rhs})`);
+          const op = rhs.type === 'call_expression' ? "move":"set";
+          upp.replace(parent, upp.code`_Managed_${op}(&${nameText}, ${rhs})`);
           return undefined;
       }
       if (ref && ref.parent && ref.parent.type === 'return_statement') {
@@ -82,7 +83,7 @@ static inline void *_Managed_allocate(int size) {
 static inline void *_Managed_retain(void *data) {
   struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
   p->ref_count++;
-  printf("{%d} Retain\\n", p->ref_count);
+  //printf("{%d} Retain\\n", p->ref_count);
   return data;
 }
 static inline void _Managed_release(void *__p) {
@@ -90,9 +91,8 @@ static inline void _Managed_release(void *__p) {
   void *data = *_p;
   if (data) {
     struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
-    p->ref_count--;
-    printf("{%d} Release\\n", p->ref_count);
-    if (p->ref_count <= 0) {
+    if (--p->ref_count <= 0) {
+      printf("{%d} Free\\n", p->ref_count);
       free(p);
       *_p = ((void *)0);
     }
@@ -102,10 +102,18 @@ static inline void *_Managed_set(void *_dest, void *_src) {
   void **dest = _dest;
   if (*dest) { 
     struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
-    printf("{%d} Set\\n", p->ref_count);
+    //printf("{%d} Set\\n", p->ref_count);
     _Managed_release(dest);
   }
   return *dest = (_src ? _Managed_retain(_src) : ((void *)0));
+}
+static inline void *_Managed_move(void *_dest, void *_src) {
+  void **dest = _dest;
+  if (*dest) { 
+    struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
+    _Managed_release(dest);
+  }
+  return *dest = _src;
 }
 static inline int _Managed_ref_count(void *data) {
     if (!data) return -1;
