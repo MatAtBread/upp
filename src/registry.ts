@@ -88,12 +88,10 @@ class Registry {
     public language: TreeSitterLang; // Tree-sitter Language
     public helpers: UppHelpersBase<any> | null;
     public parentHelpers: UppHelpersBase<any> | null;
-    public parentTree: SourceTree<any> | null;
-    public materializedFiles: Set<string>;
     public isAuthoritative: boolean;
     public macros: Map<string, Macro>;
     public parser: Parser;
-    public idCounter: number;
+
     public stdPath: string | null;
     public includePaths: string[];
     public loadedDependencies: Map<string, string>;
@@ -101,8 +99,7 @@ class Registry {
     public transformRules: TransformRule<any>[];
     public pendingRules: PendingRule<any>[];
     public ruleIdCounter: number;
-    public isExecutingDeferred: boolean;
-    public onMaterialize: ((outputPath: string, content: string, options: { isAuthoritative: boolean }) => void) | null;
+
     public mainContext: RegistryContext | null;
     public UppHelpersC: typeof UppHelpersC;
     public source?: string;
@@ -115,7 +112,6 @@ class Registry {
     constructor(config: RegistryConfig = {}, parentRegistry: Registry | null = null) {
         this.config = config;
         this.parentRegistry = parentRegistry;
-        this.onMaterialize = config.onMaterialize || (parentRegistry ? parentRegistry.onMaterialize : null);
         this.depth = parentRegistry ? parentRegistry.depth + 1 : 0;
         if (this.depth > 100) {
             throw new Error(`Maximum macro nesting depth exceeded (${this.depth})`);
@@ -130,9 +126,6 @@ class Registry {
 
         this.helpers = null;
         this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
-        this.parentTree = parentRegistry ? parentRegistry.tree! : null;
-
-        this.materializedFiles = new Set();
         this.isAuthoritative = true;
 
         this.macros = new Map();
@@ -158,7 +151,7 @@ class Registry {
         this.parser = new Parser();
         this.parser.setLanguage(this.language);
 
-        this.idCounter = 0;
+
         this.stdPath = config.stdPath || null;
         this.includePaths = config.includePaths || [];
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
@@ -166,8 +159,7 @@ class Registry {
         this.transformRules = [];
         this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
         this.ruleIdCounter = 0;
-        this.isExecutingDeferred = false;
-        this.onMaterialize = config.onMaterialize || null;
+
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.UppHelpersC = UppHelpersC; // Ensure this is available
         this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
@@ -418,7 +410,6 @@ class Registry {
 
         if (parentHelpers) {
             helpers.parentHelpers = parentHelpers;
-            helpers.parentTree = parentHelpers.root;
             helpers.parentRegistry = {
                 invocations: parentHelpers.context?.invocations || [],
                 sourceCode: parentHelpers.context?.tree?.source || parentHelpers.context?.source || "",
