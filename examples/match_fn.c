@@ -1,0 +1,26 @@
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+int my_fn(int x,int y) {
+        puts("Running 'my_fn', returns int");
+        int g = 1;for (int i = 1; i < x; i++) {
+        g = g * i;
+    }return g + y;
+    } 
+int main() {
+    int res = my_fn(5, 6);
+    printf("Result %d: %s\n", res, res == 30 ? "PASS" : "FAIL");
+    return 0;
+}
