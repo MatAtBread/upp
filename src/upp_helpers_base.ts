@@ -22,7 +22,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     public currentInvocations: Invocation[];
     public consumedIds: Set<number | string>;
     public context: RegistryContext | null;
-    public parentTree: SourceNode<any> | null;
+
     public stdPath: string | null;
     public lastConsumedIndex?: number;
     public parentRegistry?: {
@@ -49,7 +49,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         this.currentInvocations = [];
         this.consumedIds = new Set();
         this.context = null; // Back-reference to the local transform context
-        this.parentTree = (registry && registry.parentRegistry && registry.parentRegistry.tree) ? registry.parentRegistry.tree.root : null;
+
         this.stdPath = registry ? registry.stdPath : null;
 
         // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
