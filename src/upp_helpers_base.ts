@@ -389,8 +389,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         this.registry.registerPendingRule({
             contextNode: scope as SourceNode<any>,
             matcher: (n, h) => {
-                // Must be a descendant of the scope to match
-                if (!h.isDescendant(scope as SourceNode<any>, n)) return false;
+                // If scope is a root node (translation_unit), match globally
+                // This allows header-registered rules to apply to the main file
+                const isRootScope = (scope as SourceNode<any>).type === 'translation_unit';
+                if (!isRootScope && !h.isDescendant(scope as SourceNode<any>, n)) return false;
                 // Live structural match - check any of the patterns
                 return patterns.some(p => !!h.match(n, p));
             },

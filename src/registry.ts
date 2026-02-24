@@ -107,6 +107,7 @@ class Registry {
     public UppHelpersC: typeof UppHelpersC;
     public source?: string;
     public tree?: SourceTree<any>;
+    public dependencyHelpers: UppHelpersBase<any>[];
 
     public activeTransformNode?: SourceNode<any> | null;
     public originPath?: string;
@@ -169,6 +170,7 @@ class Registry {
         this.onMaterialize = config.onMaterialize || null;
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.UppHelpersC = UppHelpersC; // Ensure this is available
+        this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
     }
 
     /**
@@ -320,6 +322,11 @@ class Registry {
             depRegistry.prepareSource(source, targetPath);
         } else {
             const output = depRegistry.transform(source, targetPath, parentHelpers);
+
+            // Track dependency helpers for cross-tree type resolution
+            if (depRegistry.helpers) {
+                this.dependencyHelpers.push(depRegistry.helpers);
+            }
 
             // Store in cache
             if (this.config.cache && !isDiscoveryOnly) {
@@ -677,6 +684,10 @@ class Registry {
                         const result = rule.callback(node, helpers);
                         if (result !== undefined) {
                             const newNodes = helpers.replace(node, result);
+                            // Clear caches after replacement to prevent stale lookups
+                            context.definitionCache.clear();
+                            context.scopeCache.clear();
+                            context.enclosingScopeCache.clear();
                             if (newNodes) {
                                 const list = Array.isArray(newNodes) ? newNodes : [newNodes];
                                 for (const newNode of list) {

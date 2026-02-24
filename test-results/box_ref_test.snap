@@ -17,17 +17,29 @@ extern void *_stderr;
 int main() {
     printf("--- BoxRef Test ---\n");
     BoxRef b = create_box(42);
+
+
     BoxRef c = create_box(100);
-    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(&c));
-    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(&b));
+
+
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c)
+);
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b)
+);
     printf("--- Assignment b = c ---\n");
-    b = c;
-    if (b->value == 100 && _BoxRef_method_managed_reference_count(&b) == 2) {
+    _Managed_set(&b, c);
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c)
+);
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b)
+);
+    if (b->value == 100 && _BoxRef_method_managed_reference_count(b)
+ == 2) {
         printf("SUCCESS\n");
     } else {
-        printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(&b));
+        printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(b)
+);
     }
-    return 0;
+    _Managed_release(&b);_Managed_release(&c);return 0;
 }
 
 ==== examples/box_ref_test.h ===
@@ -122,8 +134,12 @@ BoxRef create_box(int val) {
 --- BoxRef Test ---
 {1} Allocate 4 bytes
 {1} Allocate 4 bytes
-Box c value: 100, refs: -1
+Box c value: 100, refs: 1
 Box b value: 42, refs: 1
 --- Assignment b = c ---
-FAILURE: b->value=100, refs=1
+{0} Free
+Box c value: 100, refs: 2
+Box b value: 100, refs: 2
+SUCCESS
+{0} Free
 

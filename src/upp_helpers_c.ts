@@ -215,7 +215,16 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         }
 
         if (options.resolve && typeNode && typeNode.type === 'type_identifier') {
-            const def = this.findDefinitionOrNull(typeNode.text, { variable: true, tag: true });
+            let def = this.findDefinitionOrNull(typeNode.text, { variable: true, tag: true });
+
+            // Cross-tree fallback: search loaded dependency trees for type definitions
+            if (!def) {
+                for (const depHelpers of this.registry.dependencyHelpers) {
+                    def = (depHelpers as UppHelpersC).findDefinitionOrNull(typeNode.text, { variable: true, tag: true });
+                    if (def) break;
+                }
+            }
+
             if (def && (def.type === 'type_definition' || def.type === 'struct_specifier' || def.type === 'union_specifier' || def.type === 'enum_specifier')) {
                 // Ensure we don't resolve to the same node or a node we already visited
                 if (def.id !== target.id && !_visited.has(String(def.id))) {
