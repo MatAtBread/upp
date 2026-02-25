@@ -8,9 +8,12 @@ The `upp` object provides a rich set of utilities for inspecting and modifying s
 Tagged template literal for generating source fragments. Crucially, it **moves** interpolated nodes rather than converting them to strings, maintaining their referential identity for other macros.
 
 - **Signature**: `upp.code`strings: TemplateStringsArray, ...values: InterpolationValue[]` -> `SourceNode`
+- **Alias**: `$` — available as a shorthand in all macro bodies (e.g., `$`int ${x} = 0;``)
 - **Example**:
   ```javascript
   const newNode = upp.code`int ${name}_v2 = ${value};`;
+  // Equivalent using the shorthand:
+  const newNode = $`int ${name}_v2 = ${value};`;
   ```
 
 ### `upp.replace`
