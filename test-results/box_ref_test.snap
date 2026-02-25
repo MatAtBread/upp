@@ -22,22 +22,16 @@ int main() {
     BoxRef c = create_box(100);
 
 
-    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c)
-);
-    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b)
-);
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c));
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b));
     printf("--- Assignment b = c ---\n");
     _Managed_set(&b, c);
-    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c)
-);
-    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b)
-);
-    if (b->value == 100 && _BoxRef_method_managed_reference_count(b)
- == 2) {
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c));
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b));
+    if (b->value == 100 && _BoxRef_method_managed_reference_count(b) == 2) {
         printf("SUCCESS\n");
     } else {
-        printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(b)
-);
+        printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(b));
     }
     _Managed_release(&b);_Managed_release(&c);return 0;
 }

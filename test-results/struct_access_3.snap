@@ -29,8 +29,7 @@ int main() {
     int r = _Point_method_distance(&p);
     printf("distance: %d\n", r);
     Point * q = &p;
-    int r2 = _Point_method_distance(q)
-;
+    int r2 = _Point_method_distance(q);
     printf("distance: %d\n", r2);
     return 0;
 }

@@ -87,23 +87,17 @@ int main() {
 
     printf("--- Assignment from call ---\n");
     _Managed_move(&f1, CreateFoo(42)); // Should use _Managed_move
-    printf("f1 val: %d, refcount: %d\n", f1->x, _Foo_method_managed_reference_count(f1)
-);
+    printf("f1 val: %d, refcount: %d\n", f1->x, _Foo_method_managed_reference_count(f1));
     Foo f2 = _Managed_allocate(sizeof(*f2));
 
 
     printf("--- Assignment from variable ---\n");
     _Managed_set(&f2, f1); // Should use _Managed_set
-    printf("f2 val: %d, refcount: %d\n", f2->x, _Foo_method_managed_reference_count(f2)
-);
-    if (_Foo_method_managed_reference_count(f1)
- == 2 && _Foo_method_managed_reference_count(f2)
- == 2) {
+    printf("f2 val: %d, refcount: %d\n", f2->x, _Foo_method_managed_reference_count(f2));
+    if (_Foo_method_managed_reference_count(f1) == 2 && _Foo_method_managed_reference_count(f2) == 2) {
         printf("SUCCESS\n");
     } else {
-        printf("FAILURE: refcounts are %d and %d\n", _Foo_method_managed_reference_count(f1)
-, _Foo_method_managed_reference_count(f2)
-);
+        printf("FAILURE: refcounts are %d and %d\n", _Foo_method_managed_reference_count(f1), _Foo_method_managed_reference_count(f2));
     }
     _Managed_release(&f1);_Managed_release(&f2);return 0;
 }

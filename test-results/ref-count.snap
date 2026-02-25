@@ -80,8 +80,7 @@ int _PointRef_method_managed_reference_count(PointRef p) {
  void _PointRef_method_print(PointRef p, const char *s) {
           _Managed_retain(p); 
             
-          printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p)
-, p->x, p->y);
+          printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p), p->x, p->y);
           _Managed_release(&p);}
 void fn(PointRef p) {
           _Managed_retain(p); 
