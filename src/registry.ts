@@ -67,9 +67,6 @@ export interface RegistryContext {
     transformed: Set<SourceNode<any>>;
     transformStack: Set<SourceNode<any>>;
     appliedRules: WeakMap<SourceNode<any>, Set<number>>;
-    definitionCache: Map<string | number, SourceNode<any> | null>;
-    scopeCache: Map<string | number, SourceNode<any>[]>;
-    enclosingScopeCache: Map<string | number, SourceNode<any> | null>;
     mutated?: boolean;
 }
 
@@ -382,13 +379,10 @@ class Registry {
             tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
-            helpers: helpers, // Now helpers is defined
+            helpers: helpers,
             transformed: new Set<SourceNode<any>>(),
             transformStack: new Set<SourceNode<any>>(),
-            appliedRules: new WeakMap(),
-            definitionCache: new Map(),
-            scopeCache: new Map(),
-            enclosingScopeCache: new Map()
+            appliedRules: new WeakMap()
         };
 
         if (!sourceTree) throw new Error("Could not create source tree for transformation.");
@@ -429,8 +423,7 @@ class Registry {
         if (this.mainContext) {
             this.mainContext.mutated = true;
             // Clear semantic caches when tree mutates
-            this.mainContext.definitionCache.clear();
-            this.mainContext.scopeCache.clear();
+            this.mainContext.helpers?.clearSemanticCaches?.();
         }
     }
 
@@ -451,9 +444,7 @@ class Registry {
         while (currentNodes.length > 0 && iterations < MAX_ITERATIONS) {
             iterations++;
             context.mutated = false;
-            context.definitionCache.clear();
-            context.scopeCache.clear();
-            context.enclosingScopeCache.clear();
+            helpers.clearSemanticCaches?.();
 
             let sweepMutated = false;
             const nextNodes: SourceNode<any>[] = [];
@@ -658,9 +649,7 @@ class Registry {
                         if (result !== undefined) {
                             const newNodes = helpers.replace(node, result);
                             // Clear caches after replacement to prevent stale lookups
-                            context.definitionCache.clear();
-                            context.scopeCache.clear();
-                            context.enclosingScopeCache.clear();
+                            helpers.clearSemanticCaches?.();
                             if (newNodes) {
                                 const list = Array.isArray(newNodes) ? newNodes : [newNodes];
                                 for (const newNode of list) {

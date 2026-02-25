@@ -703,6 +703,9 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
+    /** Clears language-level semantic caches. Overridden in UppHelpersC. */
+    clearSemanticCaches(): void { /* base no-op; overridden in UppHelpersC */ }
+
     abstract findScope(): SourceNode<LanguageNodeTypes> | null;
 
     /**
