@@ -484,13 +484,6 @@ class Registry {
                         if (applied.has(rule.id)) continue;
 
                         if (rule.matcher(descendant, helpers)) {
-                            let applied = context.appliedRules.get(descendant);
-                            if (!applied) {
-                                applied = new Set();
-                                context.appliedRules.set(descendant, applied);
-                            }
-                            if (applied.has(rule.id)) continue;
-
                             applied.add(rule.id);
 
                             helpers.contextNode = descendant;
