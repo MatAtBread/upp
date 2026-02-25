@@ -123,7 +123,7 @@ class Registry {
         this.language = lang;
 
         this.helpers = null;
-        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(null as any, parentRegistry, null)) : null;
         this.isAuthoritative = true;
 
         this.macros = new Map();

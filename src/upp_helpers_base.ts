@@ -10,7 +10,7 @@ let uniqueIdCounter = 1;
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
-class UppHelpersBase<LanguageNodeTypes extends string> {
+abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     public root: SourceNode<LanguageNodeTypes> | null;
     public registry: Registry;
     public matcher: PatternMatcher;
@@ -703,14 +703,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
-    /**
-     * Finds the nearest enclosing scope for the current macro.
-     * @returns {SourceNode<LanguageNodeTypes> | null} The scope node or null.
-     * @throws {Error} If not implemented in the base class.
-     */
-    findScope(): SourceNode<LanguageNodeTypes> | null {
-        throw new Error("helpers.findScope(): Method not implemented. This is a language-specific feature (e.g. C).");
-    }
+    abstract findScope(): SourceNode<LanguageNodeTypes> | null;
 
     /**
      * Finds the nearest enclosing node of a given type.
