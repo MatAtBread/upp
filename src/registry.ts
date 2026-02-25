@@ -550,10 +550,6 @@ class Registry {
      */
     transformNode(node: SourceNode<any>, helpers: UppHelpersBase<any>, context: RegistryContext, force: boolean = false): void {
         if (!node || node.startIndex === -1) return;
-        if (!node || node.startIndex === -1) return;
-
-        // Skip invalidated nodes
-        if (node.startIndex === -1) return;
 
         // PHYSICAL CYCLE CHECK (Absolute Bail)
         if (context.transformStack.has(node)) return;
@@ -647,8 +643,8 @@ class Registry {
                             }
                             if (node.startIndex === -1) return;
                         }
-                    } catch (e) {
-                        // rule failed
+                    } catch (e: any) {
+                        console.warn(`[upp] transformRule failed on ${node.type}: ${e.message}`);
                     }
                 }
             }
@@ -694,15 +690,13 @@ class Registry {
                         }
                         if (node.startIndex === -1) return;
                     }
-                } catch (e) {
-                    // symbol rule check failed
+                } catch (e: any) {
+                    console.warn(`[upp] pendingRule failed on ${node.type}: ${e.message}`);
                 }
             }
 
             // 4. Recursive Stable Walk
-            // NOTE: We snapshot children because transformations might add/remove nodes
-            const originalChildren = [...node.children];
-            for (const child of Array.from(node.children)) {
+            for (const child of [...node.children]) {
                 this.transformNode(child, helpers, context);
             }
         } finally {
