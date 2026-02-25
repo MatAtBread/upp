@@ -1,5 +1,5 @@
 import { SourceNode, SourceTree } from './source_tree.ts';
-import type { Invocation, Registry, RegistryContext, TransformRule } from './registry.ts';
+import type { Invocation, Registry, RegistryContext } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import Parser from 'tree-sitter';
 import type { MacroResult, AnySourceNode, AnySourceTree, InterpolationValue } from './types.ts';
@@ -417,28 +417,13 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): MacroResult} callback - Deferred transformation callback.
     */
     withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
-        const rule: TransformRule<LanguageNodeTypes> = {
-            active: true,
+        this.registry.registerPendingRule({
+            contextNode: this.findRoot()!,
             matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers as UppHelpersBase<LanguageNodeTypes>);
             },
             callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersBase<LanguageNodeTypes>)
-        };
-
-        this.registry.registerTransformRule(rule);
-
-        this.withRoot((root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => {
-            helpers.walk(root, (node: SourceNode<any>) => {
-                if (node.type === nodeType) {
-                    if (matcher(node as SourceNode<LanguageNodeTypes>, helpers)) {
-                        const replacement = callback(node as SourceNode<LanguageNodeTypes>, helpers);
-                        if (replacement !== undefined) {
-                            helpers.replace(node as SourceNode<LanguageNodeTypes>, replacement === null ? '' : replacement);
-                        }
-                    }
-                }
-            });
         });
     }
 

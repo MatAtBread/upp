@@ -1,8 +1,8 @@
-import type { Macro, TransformRule } from './registry.ts';
+import type { Macro, PendingRule } from './registry.ts';
 
 export interface CacheData {
     macros: Macro[];
-    transformRules: TransformRule[];
+    pendingRules: PendingRule[];
     output: string;
     shouldMaterialize: boolean;
     isAuthoritative: boolean;

@@ -151,33 +151,7 @@ export class Transformer {
                 }
             }
 
-            // 2. Persistent transform rules
-            for (const rule of this.registry.transformRules) {
-                if (rule.active) {
-                    try {
-                        if (rule.matcher(node, helpers)) {
-                            const result = rule.callback(node, helpers);
-                            if (result !== undefined) {
-                                const newNodes = helpers.replace(node, result);
-                                if (newNodes) {
-                                    const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                                    for (const newNode of list) {
-                                        const wasInStack = context.transformStack.has(newNode);
-                                        if (wasInStack && newNode === node) context.transformStack.delete(newNode);
-                                        this.transformNode(newNode, helpers, context, true);
-                                        if (wasInStack && newNode === node) context.transformStack.add(newNode);
-                                    }
-                                }
-                            }
-                            if (node.startIndex === -1) return;
-                        }
-                    } catch (e: any) {
-                        console.warn(`[upp] transformRule failed on ${node.type}: ${e.message}`);
-                    }
-                }
-            }
-
-            // 3. Pending rules (eager pass during walk)
+            // 2. Pending rules (eager pass during walk)
             for (const rule of [...context.pendingRules]) {
                 try {
                     if (rule.matcher(node, helpers)) {

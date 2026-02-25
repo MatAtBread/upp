@@ -20,12 +20,6 @@ export interface Macro {
     startIndex: number;
 }
 
-export interface TransformRule<T extends string = string> {
-    active: boolean;
-    matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
-    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
-}
-
 export interface PendingRule<T extends string = string> {
     id: number;
     contextNode: SourceNode<any>;
@@ -94,7 +88,7 @@ class Registry {
     public includePaths: string[];
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
-    public transformRules: TransformRule<any>[];
+
     public pendingRules: PendingRule<any>[];
     public ruleIdCounter: number;
 
@@ -153,7 +147,7 @@ class Registry {
         this.includePaths = config.includePaths || [];
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
-        this.transformRules = [];
+
         this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
         this.ruleIdCounter = 0;
 
@@ -220,23 +214,6 @@ class Registry {
         return undefined;
     }
 
-    /**
-     * Registers a global transformation rule.
-     * @param {TransformRule<any> | function(SourceNode<any>, any): any} rule - The rule object or callback.
-     */
-    registerTransformRule(rule: TransformRule<any> | ((node: SourceNode<any>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined)): void {
-        if (typeof rule === 'function') {
-            rule = {
-                active: true,
-                matcher: () => true,
-                callback: rule
-            };
-        }
-        this.transformRules.push(rule);
-        if (this.parentRegistry) {
-            this.parentRegistry.registerTransformRule(rule);
-        }
-    }
 
     loadDependency(file: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): void {
         let targetPath: string;
@@ -283,9 +260,9 @@ class Registry {
                 for (const macro of cached.macros) {
                     this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
                 }
-                // Replay transforms
-                for (const rule of cached.transformRules) {
-                    this.registerTransformRule(rule);
+                // Replay pending rules from dependency
+                for (const rule of cached.pendingRules) {
+                    this.registerPendingRule(rule);
                 }
                 // Re-emit materialization if needed
                 if (cached.shouldMaterialize && this.config.onMaterialize) {
@@ -323,7 +300,7 @@ class Registry {
                 if (!existing || depRegistry.isAuthoritative || !existing.isAuthoritative) {
                     this.config.cache.set(targetPath, {
                         macros: Array.from(depRegistry.macros.values()),
-                        transformRules: depRegistry.transformRules,
+                        pendingRules: depRegistry.pendingRules,
                         output: output,
                         shouldMaterialize: depRegistry.shouldMaterializeDependency,
                         isAuthoritative: depRegistry.isAuthoritative

@@ -1,5 +1,5 @@
 import { UppHelpersBase } from './upp_helpers_base.ts';
-import type { Registry, TransformRule, RegistryContext } from './registry.ts';
+import type { Registry, RegistryContext } from './registry.ts';
 import { SourceNode } from './source_tree.ts';
 import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts';
 
