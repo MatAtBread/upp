@@ -591,7 +591,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         let counter = 0;
         while (stack.length > 0) {
             counter++;
-            if (counter > 100000) {
+            if (counter > 50000) {
                 console.error(`Infinite loop in walk() detected! Node type: ${stack[stack.length - 1]?.type}, text: ${stack[stack.length - 1]?.text}`);
                 throw new Error("Infinite loop in walk()");
             }
