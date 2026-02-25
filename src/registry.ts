@@ -786,7 +786,13 @@ class Registry {
      * @param {string} originPath - Path for diagnostics.
      * @returns {{ cleanSource: string, invocations: Invocation[] }} Masked source and invocations.
      */
+    /**
+     * Prepares source for transformation:
+     * Phase 1 (pure): parse @define blocks, strip them from source, find macro invocations.
+     * Phase 2 (side effects): register macros, load @include dependencies.
+     */
     prepareSource(source: string, originPath: string): { cleanSource: string; invocations: Invocation[] } {
+        // --- Phase 1: Pure source analysis ---
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
         const tree = this.parser.parse((index: number) => {
@@ -794,7 +800,7 @@ class Registry {
             return source.slice(index, index + 4096);
         });
 
-        const defines: Array<{ index: number; length: number; original: string }> = [];
+        const defines: Array<{ index: number; length: number; original: string; name: string; params: string[]; body: string }> = [];
         let match;
         while ((match = definerRegex.exec(source)) !== null) {
             const node = tree.rootNode.descendantForIndex(match.index);
@@ -811,10 +817,9 @@ class Registry {
             const params = match[2].split(',').map(s => s.trim()).filter(Boolean);
             const bodyStart = match.index + match[0].length;
             const body = this.extractBody(source, bodyStart);
-            this.registerMacro(name, params, body, 'js', originPath, match.index);
 
             const fullMatchLength = match[0].length + body.length + 1;
-            defines.push({ index: match.index, length: fullMatchLength, original: source.slice(match.index, match.index + fullMatchLength) });
+            defines.push({ index: match.index, length: fullMatchLength, original: source.slice(match.index, match.index + fullMatchLength), name, params, body });
         }
 
         for (let i = defines.length - 1; i >= 0; i--) {
@@ -835,7 +840,14 @@ class Registry {
         for (let i = invocations.length - 1; i >= 0; i--) {
             const inv = invocations[i];
             const original = cleanSource.slice(inv.startIndex, inv.endIndex);
+            cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
+        }
 
+        // --- Phase 2: Side effects — register macros and load dependencies ---
+        for (const def of defines) {
+            this.registerMacro(def.name, def.params, def.body, 'js', originPath, def.index);
+        }
+        for (const inv of invocations) {
             if (inv.name === 'include') {
                 const file = inv.args[0];
                 if (file) {
@@ -846,7 +858,6 @@ class Registry {
                     this.loadDependency(filename, originPath);
                 }
             }
-            cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
         }
 
         return { cleanSource, invocations };
