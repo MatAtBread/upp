@@ -449,23 +449,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @returns {Invocation[]} List of invocations found.
      */
     findInvocations(macroName: string, node: SourceNode<LanguageNodeTypes> | null = null): Invocation[] {
-        let target = node || this.root;
-        if (!target && this.registry) {
-            target = this.registry.tree ? this.registry.tree.root : null as any;
-        }
-
-        if (!target) {
-            const source = (this.registry as any).source || (this.context && this.context.tree && this.context.tree.source);
-            if (!source) return [];
-
-            const invs = (this.registry as any).findInvocations(source);
-            return invs.filter((i: Invocation) => i.name === macroName).map((i: Invocation) => ({
-                ...i,
-                text: `@${i.name}(${i.args.join(',')})`,
-                // Mock includes for package.hup
-                includes: (str: string) => i.args.some((arg: string) => arg.includes(str))
-            }));
-        }
+        const target = node || this.root || (this.registry?.tree?.root ?? null);
+        if (!target) return [];
 
         const pattern = new RegExp(`@${macroName}\\s*\\(`);
         const results = target.find((n: SourceNode) => {
@@ -606,7 +591,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         let counter = 0;
         while (stack.length > 0) {
             counter++;
-            if (counter > 5000) {
+            if (counter > 100000) {
                 console.error(`Infinite loop in walk() detected! Node type: ${stack[stack.length - 1]?.type}, text: ${stack[stack.length - 1]?.text}`);
                 throw new Error("Infinite loop in walk()");
             }
