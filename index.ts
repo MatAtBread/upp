@@ -43,11 +43,9 @@ function preprocess(filePath: string, extraFlags: string[] = [], includePaths: s
     }
 }
 
-// Helper for core transpilation of a single file
-function transpileOne(sourceFile: string, outputCFile: string | null = null): string {
-    const absSource = path.resolve(sourceFile);
+// Shared: resolve the final include path list for a given source file.
+function resolveFinalIncludePaths(absSource: string): { finalIncludePaths: string[]; loadedConfig: ReturnType<typeof resolveConfig> } {
     const loadedConfig = resolveConfig(absSource);
-
     const resolvedConfigIncludes = loadedConfig.includePaths || [];
     const finalIncludePaths = [
         path.dirname(absSource),
@@ -56,17 +54,23 @@ function transpileOne(sourceFile: string, outputCFile: string | null = null): st
         stdPath,
         projectRoot
     ];
+    return { finalIncludePaths, loadedConfig };
+}
 
-    const preProcessed = preprocess(absSource, command.depFlags || [], finalIncludePaths);
-
+// Shared: build a configured Registry for a source file and load its core dependencies.
+function buildRegistry(
+    finalIncludePaths: string[],
+    loadedConfig: ReturnType<typeof resolveConfig>,
+    onMaterialize: ((p: string, content: string, opts: MaterializeOptions) => void) | undefined,
+    preprocessFn: (file: string) => string
+): Registry {
     const config = {
         cache,
         includePaths: finalIncludePaths,
-        stdPath: path.join(path.dirname(new URL(import.meta.url).pathname), 'std'),
+        stdPath,
         diagnostics: new DiagnosticsManager({}),
-        preprocess: (file: string) => {
-            return preprocess(file, [], config.includePaths);
-        }
+        onMaterialize,
+        preprocess: preprocessFn
     };
     const registry = new Registry(config);
     const coreFiles = loadedConfig.core || [];
@@ -76,28 +80,45 @@ function transpileOne(sourceFile: string, outputCFile: string | null = null): st
             const p = path.join(inc, coreFile);
             if (fs.existsSync(p)) { foundPath = p; break; }
         }
-        if (foundPath) registry.loadDependency(foundPath);
-    }
-
-    const output = registry.transform(preProcessed, absSource);
-
-    // Support materialization for the root file if requested by a macro (like @package)
-    if (registry.shouldMaterializeDependency) {
-        let outputPath: string | null = null;
-        if (absSource.endsWith('.cup')) outputPath = absSource.slice(0, -4) + '.c';
-        else if (absSource.endsWith('.hup')) outputPath = absSource.slice(0, -4) + '.h';
-
-        if (outputPath) {
-            fs.writeFileSync(outputPath, output);
+        if (foundPath) {
+            registry.loadDependency(foundPath);
+        } else {
+            console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
         }
     }
+    return registry;
+}
 
-    if (outputCFile) {
-        fs.writeFileSync(outputCFile, output);
-        return output;
-    } else {
-        return output;
-    }
+// Shared: create an onMaterialize handler that merges results into the given maps.
+function makeMaterializationHandler(
+    materializations: Map<string, string>,
+    authoritativeMaterials: Set<string>,
+    writeThrough: boolean = false
+): (p: string, content: string, opts: MaterializeOptions) => void {
+    return (p: string, content: string, options: MaterializeOptions) => {
+        if (materializations.has(p)) {
+            const existing = materializations.get(p);
+            if (existing === content) return;
+
+            // Authoritative Win Logic:
+            if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
+                materializations.set(p, content);
+                authoritativeMaterials.add(p);
+                if (writeThrough) fs.writeFileSync(p, content);
+                return;
+            }
+
+            if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
+                // Ignored: a consumer pass trying to overwrite an already-established authoritative version
+                return;
+            }
+
+            throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
+        }
+        materializations.set(p, content);
+        if (options.isAuthoritative) authoritativeMaterials.add(p);
+        if (writeThrough) fs.writeFileSync(p, content);
+    };
 }
 
 if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === 'test') {
@@ -133,60 +154,15 @@ if (command.mode === 'transpile' || command.mode === 'ast' || command.mode === '
         let mainOutput = "";
 
         for (const absSource of expandedFiles) {
-            const loadedConfig = resolveConfig(absSource);
-            const resolvedConfigIncludes = loadedConfig.includePaths || [];
-            const finalIncludePaths = [
-                path.dirname(absSource),
-                ...resolvedConfigIncludes,
-                ...(command.includePaths || []),
-                stdPath,
-                projectRoot // So #include "std/package.h" works
-            ];
-
+            const { finalIncludePaths, loadedConfig } = resolveFinalIncludePaths(absSource);
             const preProcessed = preprocess(absSource, command.depFlags || [], finalIncludePaths);
-
-            const config = {
-                cache,
-                includePaths: finalIncludePaths,
-                stdPath,
-                diagnostics: new DiagnosticsManager({}),
-                onMaterialize: (p: string, content: string, options: MaterializeOptions) => {
-                    if (materializations.has(p)) {
-                        const existing = materializations.get(p);
-                        if (existing === content) return;
-
-                        // Authoritative Win Logic:
-                        // If the new content is authoritative, it can overwrite non-authoritative content.
-                        // We need to keep track of WHICH files are authoritative.
-                        if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
-                            materializations.set(p, content);
-                            authoritativeMaterials.add(p);
-                            return;
-                        }
-
-                        if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
-                            // Ignored: a consumer pass trying to overwrite an already-established authoritative version
-                            return;
-                        }
-
-                        throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
-                    }
-                    materializations.set(p, content);
-                    if (options.isAuthoritative) authoritativeMaterials.add(p);
-                },
-                preprocess: (file: string) => preprocess(file, [], finalIncludePaths)
-            };
-
-            const registry = new Registry(config);
-            const coreFiles = loadedConfig.core || [];
-            for (const coreFile of coreFiles) {
-                let foundPath: string | null = null;
-                for (const inc of finalIncludePaths) {
-                    const p = path.join(inc, coreFile);
-                    if (fs.existsSync(p)) { foundPath = p; break; }
-                }
-                if (foundPath) registry.loadDependency(foundPath);
-            }
+            const onMaterialize = makeMaterializationHandler(materializations, authoritativeMaterials);
+            const registry = buildRegistry(
+                finalIncludePaths,
+                loadedConfig,
+                onMaterialize,
+                (file) => preprocess(file, [], finalIncludePaths)
+            );
 
             const output = registry.transform(preProcessed, absSource);
 
@@ -280,104 +256,46 @@ if (command.sources) {
         extraDeps = []; // Reset for each source
         if (fs.existsSync(source.absCupFile)) {
             try {
-                // Resolve config (Search up tree for upp.json, supports extends and UPP fallback)
-                const loadedConfig = resolveConfig(source.absCupFile);
+                const { finalIncludePaths, loadedConfig } = resolveFinalIncludePaths(source.absCupFile);
 
-                // Include Paths: source dir + config (already resolved) + CLI
-                const resolvedConfigIncludes = loadedConfig.includePaths || [];
-                if (loadedConfig.includePaths) resolvedConfigIncludes.push(...loadedConfig.includePaths);
-
-                // Final Include Paths (prioritize config)
-                const finalIncludePaths = [
-                    path.dirname(source.absCupFile), // Implicit sibling lookup
-                    ...resolvedConfigIncludes,
-                    ...(command.includePaths || []),
-                    stdPath,
-                    projectRoot
-                ];
-
-                // Run Pre-processor on main input with Main Dep Flags
-                const preProcessed = preprocess(source.cupFile, command.depFlags, finalIncludePaths);
-
-                const config = {
-                    cache,
-                    includePaths: finalIncludePaths,
-                    stdPath,
-                    diagnostics: new DiagnosticsManager({}),
-                    onMaterialize: (p: string, content: string, options: MaterializeOptions) => {
-                        if (materializations.has(p)) {
-                            const existing = materializations.get(p);
-                            if (existing === content) return;
-
-                            if (options.isAuthoritative && !authoritativeMaterials.has(p)) {
-                                materializations.set(p, content);
-                                authoritativeMaterials.add(p);
-                                fs.writeFileSync(p, content);
-                                return;
-                            }
-
-                            if (authoritativeMaterials.has(p) && !options.isAuthoritative) {
-                                return;
-                            }
-
-                            throw new Error(`Conflicting materialization detected for ${p}. Different results produced for the same file in different parts of the project.`);
-                        }
-                        materializations.set(p, content);
-                        if (options.isAuthoritative) authoritativeMaterials.add(p);
-                        fs.writeFileSync(p, content);
-                    },
-                    preprocess: (file: string) => {
-                        // Same preprocess logic as before...
-                        if (command.depFlags && command.depFlags.length > 0) {
-                            const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
-                            const flags = ['-MD', '-MF', tempD];
-                            try {
-                                const out = preprocess(file, flags);
-                                if (fs.existsSync(tempD)) {
-                                    const content = fs.readFileSync(tempD, 'utf8');
-                                    const match = content.match(/^[^:]+:(.*)/s);
-                                    if (match) { extraDeps.push(match[1]); }
-                                    fs.unlinkSync(tempD);
-                                }
-                                return out;
-                            } catch (e) {
-                                if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
-                                throw e;
-                            }
-                        }
-                        return preprocess(file, [], finalIncludePaths);
-                    }
-                };
-                const registry = new Registry(config);
-
-                // Core Loading (from config.core)
-                const coreFiles = loadedConfig.core || [];
-
-                for (const coreFile of coreFiles) {
-                    // Find file in include paths
-                    let foundPath: string | null = null;
-                    for (const inc of finalIncludePaths) {
-                        const p = path.join(inc, coreFile);
-                        if (fs.existsSync(p)) {
-                            foundPath = p;
-                            break;
-                        }
-                    }
-
-                    if (foundPath) {
-                        registry.loadDependency(foundPath);
-                    } else {
-                        console.warn(`[upp] Warning: Core file '${coreFile}' not found in include paths.`);
-                    }
+                // Add resolved include paths for the compiler
+                if (!command.additionalIncludes) command.additionalIncludes = [];
+                for (const inc of (loadedConfig.includePaths || [])) {
+                    command.additionalIncludes.push(inc);
                 }
 
-                // Process
+                // Build the preprocess function: with dep-tracking if -M flags are present
+                const preprocessFn = (file: string): string => {
+                    if (command.depFlags && command.depFlags.length > 0) {
+                        const tempD = path.join(path.dirname(source.absCFile), `.upp_temp_${Math.random().toString(36).slice(2)}.d`);
+                        const flags = ['-MD', '-MF', tempD];
+                        try {
+                            const out = preprocess(file, flags);
+                            if (fs.existsSync(tempD)) {
+                                const content = fs.readFileSync(tempD, 'utf8');
+                                const match = content.match(/^[^:]+:(.*)/s);
+                                if (match) { extraDeps.push(match[1]); }
+                                fs.unlinkSync(tempD);
+                            }
+                            return out;
+                        } catch (e) {
+                            if (fs.existsSync(tempD)) fs.unlinkSync(tempD);
+                            throw e;
+                        }
+                    }
+                    return preprocess(file, [], finalIncludePaths);
+                };
+
+                const preProcessed = preprocess(source.cupFile, command.depFlags, finalIncludePaths);
+                const onMaterialize = makeMaterializationHandler(materializations, authoritativeMaterials, /* writeThrough */ true);
+                const registry = buildRegistry(finalIncludePaths, loadedConfig, onMaterialize, preprocessFn);
+
                 const output = registry.transform(preProcessed, source.absCupFile);
 
                 // Write output to the .c file
                 fs.writeFileSync(source.absCFile, output);
 
-                // Dependency Tracking Logic
+                // Dependency Tracking
                 if (command.depFlags && command.depFlags.length > 0) {
                     let dFile = command.depOutputFile;
                     if (!dFile) {
@@ -396,12 +314,6 @@ if (command.sources) {
                             fs.appendFileSync(dFile, `\n${target}:${loadedHups}${transitive}\n`);
                         }
                     }
-                }
-
-                // Add resolved include paths to the FINAL compiler command so it can find generated headers
-                if (!command.additionalIncludes) command.additionalIncludes = [];
-                for (const inc of resolvedConfigIncludes) {
-                    command.additionalIncludes.push(inc);
                 }
 
             } catch (e: any) {
