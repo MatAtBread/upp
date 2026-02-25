@@ -100,7 +100,6 @@ class Registry {
     public ruleIdCounter: number;
 
     public mainContext: RegistryContext | null;
-    public UppHelpersC: typeof UppHelpersC;
     public source?: string;
     public tree?: SourceTree<any>;
     public dependencyHelpers: UppHelpersBase<any>[];
@@ -160,7 +159,6 @@ class Registry {
         this.ruleIdCounter = 0;
 
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
-        this.UppHelpersC = UppHelpersC; // Ensure this is available
         this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
     }
 
@@ -361,7 +359,7 @@ class Registry {
         // Initialize tree as early as possible so dependencies can see us
         this.tree = new SourceTree<any>(source, this.language as any);
         this.tree.onMutation = () => this.markMutated();
-        this.helpers = new (this.UppHelpersC as any)(this.tree.root, this, parentHelpers);
+        this.helpers = new UppHelpersC(this.tree.root as any, this, parentHelpers) as any;
 
         const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
 
@@ -377,10 +375,10 @@ class Registry {
         const sourceTree = this.tree!;
 
         // Define helpers first, then context
-        const helpers = new this.UppHelpersC(sourceTree.root as any, this, parentHelpers) as any;
+        const helpers = new UppHelpersC(sourceTree.root as any, this, parentHelpers) as any;
 
         const context: RegistryContext = {
-            source: cleanSource, // This will be stale, should use sourceTree.source
+            source: sourceTree.source,
             tree: sourceTree,
             originPath: originPath,
             invocations: foundInvs,
