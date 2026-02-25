@@ -67,6 +67,7 @@ export interface RegistryContext {
     transformed: Set<SourceNode<any>>;
     transformStack: Set<SourceNode<any>>;
     appliedRules: WeakMap<SourceNode<any>, Set<number>>;
+    pendingRules: PendingRule<any>[];
     mutated?: boolean;
 }
 
@@ -382,7 +383,8 @@ class Registry {
             helpers: helpers,
             transformed: new Set<SourceNode<any>>(),
             transformStack: new Set<SourceNode<any>>(),
-            appliedRules: new WeakMap()
+            appliedRules: new WeakMap(),
+            pendingRules: this.pendingRules
         };
 
         if (!sourceTree) throw new Error("Could not create source tree for transformation.");
@@ -434,7 +436,7 @@ class Registry {
      */
     private evaluatePendingRules(nodes: SourceNode<any>[], helpers: UppHelpersBase<any>, context: RegistryContext): void {
         if (!nodes || nodes.length === 0) return;
-        if (this.pendingRules.length === 0) return;
+        if (context.pendingRules.length === 0) return;
 
         let iterations = 0;
         const MAX_ITERATIONS = 5;
@@ -463,7 +465,7 @@ class Registry {
                 for (const descendant of descendants) {
                     if (descendant.startIndex === -1) continue;
 
-                    for (const rule of this.pendingRules) {
+                    for (const rule of context.pendingRules) {
                         if (!rule.matcher) continue; // Ensure matcher exists
 
                         let applied = context.appliedRules.get(descendant);
@@ -632,7 +634,7 @@ class Registry {
             }
 
             // --- Evaluate Pending Rules (Symbol Tracking) ---
-            for (const rule of [...this.pendingRules]) {
+            for (const rule of [...context.pendingRules]) {
                 try {
                     if (rule.matcher(node, helpers)) {
                         // Guard: only apply a rule once per node (identity preservation across re-parses)
