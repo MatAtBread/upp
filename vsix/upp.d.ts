@@ -297,7 +297,7 @@ export class DiagnosticsManager {
 }
 export interface CacheData {
 	macros: Macro[];
-	transformRules: TransformRule[];
+	pendingRules: PendingRule[];
 	output: string;
 	shouldMaterialize: boolean;
 	isAuthoritative: boolean;
@@ -332,11 +332,6 @@ export interface Macro {
 	origin: string;
 	startIndex: number;
 }
-export interface TransformRule<T extends string = string> {
-	active: boolean;
-	matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
-	callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
-}
 export interface PendingRule<T extends string = string> {
 	id: number;
 	contextNode: SourceNode<any>;
@@ -356,6 +351,7 @@ export interface RegistryConfig {
 	onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
 	filePath?: string;
 	stdPath?: string;
+	includePaths?: string[];
 	cache?: DependencyCache;
 	diagnostics?: DiagnosticsManager;
 	suppress?: string[];
@@ -370,9 +366,7 @@ export interface RegistryContext {
 	transformed: Set<SourceNode<any>>;
 	transformStack: Set<SourceNode<any>>;
 	appliedRules: WeakMap<SourceNode<any>, Set<number>>;
-	definitionCache: Map<string | number, SourceNode<any> | null>;
-	scopeCache: Map<string | number, SourceNode<any>[]>;
-	enclosingScopeCache: Map<string | number, SourceNode<any> | null>;
+	pendingRules: PendingRule<any>[];
 	mutated?: boolean;
 }
 export type TreeSitterLang = Language;
@@ -385,26 +379,19 @@ export class Registry {
 	language: TreeSitterLang;
 	helpers: UppHelpersBase<any> | null;
 	parentHelpers: UppHelpersBase<any> | null;
-	parentTree: SourceTree<any> | null;
-	materializedFiles: Set<string>;
 	isAuthoritative: boolean;
 	macros: Map<string, Macro>;
 	parser: any;
-	idCounter: number;
 	stdPath: string | null;
+	includePaths: string[];
 	loadedDependencies: Map<string, string>;
 	shouldMaterializeDependency: boolean;
-	transformRules: TransformRule<any>[];
 	pendingRules: PendingRule<any>[];
 	ruleIdCounter: number;
-	isExecutingDeferred: boolean;
-	onMaterialize: ((outputPath: string, content: string, options: {
-		isAuthoritative: boolean;
-	}) => void) | null;
 	mainContext: RegistryContext | null;
-	UppHelpersC: typeof UppHelpersC;
 	source?: string;
 	tree?: SourceTree<any>;
+	dependencyHelpers: UppHelpersBase<any>[];
 	activeTransformNode?: SourceNode<any> | null;
 	originPath?: string;
 	constructor(config?: RegistryConfig, parentRegistry?: Registry | null);
@@ -429,19 +416,15 @@ export class Registry {
 	 * @returns {Macro | undefined} The macro definition or undefined.
 	 */
 	getMacro(name: string): Macro | undefined;
-	/**
-	 * Registers a global transformation rule.
-	 * @param {TransformRule<any> | function(SourceNode<any>, any): any} rule - The rule object or callback.
-	 */
-	registerTransformRule(rule: TransformRule<any> | ((node: SourceNode<any>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined)): void;
 	loadDependency(file: string, originPath?: string, parentHelpers?: UppHelpersC | null): void;
-	generateRuleId(): string;
 	/**
-	 * Transforms a source string by evaluating macros and applying rules.
-	 * @param {string} source - The UPP source code.
-	 * @param {string} [originPath='unknown'] - Path for diagnostic reporting.
-	 * @param {UppHelpersC | null} [parentHelpers=null] - Parent helper context.
-	 * @returns {string} The transformed C code.
+	 * Compiles a macro body into a callable function.
+	 * Also called by Transformer for macro invocations.
+	 */
+	createMacroFunction(macro: Macro): Function;
+	/**
+	 * Transforms preprocessed source, expanding macros and applying rules.
+	 * Delegates the actual pipeline to the Transformer class.
 	 */
 	transform(source: string, originPath?: string, parentHelpers?: UppHelpersC | null): string;
 	/**
@@ -449,34 +432,15 @@ export class Registry {
 	 */
 	markMutated(): void;
 	/**
-	 * Recursively evaluates pending rules (fixed-point iteration).
-	 * This is used for cross-cutting transformations after the initial macro walk.
-	 * @private
-	 */
-	private evaluatePendingRules;
-	/**
-	 * Recursively transforms an AST node by evaluating macros and markers.
-	 * @param {SourceNode<any>} node - The node to transform.
-	 * @param {UppHelpersBase<any>} helpers - Helper class instance.
-	 * @param {RegistryContext} context - Current transformation context.
-	 * @param {boolean} [force=false] - Whether to bypass the 'transformed' optimization check.
-	 */
-	transformNode(node: SourceNode<any>, helpers: UppHelpersBase<any>, context: RegistryContext, force?: boolean): void;
-	/**
-	 * Evaluates a macro invocation and returns the resulting content.
-	 * @param {Invocation} invocation - The macro invocation details.
-	 * @param {string} source - The context source.
-	 * @param {any} helpers - Helper class instance.
-	 * @param {string} filePath - Current file path.
-	 * @returns {SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined}
-	 */
-	evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersBase<any>, filePath: string): MacroResult;
-	createMacroFunction(macro: Macro): Function;
-	/**
 	 * Prepares source code by identifying macro invocations and masking them.
 	 * @param {string} source - The raw source code.
 	 * @param {string} originPath - Path for diagnostics.
 	 * @returns {{ cleanSource: string, invocations: Invocation[] }} Masked source and invocations.
+	 */
+	/**
+	 * Prepares source for transformation:
+	 * Phase 1 (pure): parse @define blocks, strip them from source, find macro invocations.
+	 * Phase 2 (side effects): register macros, load @include dependencies.
 	 */
 	prepareSource(source: string, originPath: string): {
 		cleanSource: string;
@@ -488,7 +452,6 @@ export class Registry {
 		name: string;
 		args: string[];
 	} | null;
-	isInsideInvocation(_start: number, _end: number): boolean;
 }
 export interface ConstraintSpec {
 	type: string;
@@ -572,7 +535,6 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	currentInvocations: Invocation[];
 	consumedIds: Set<number | string>;
 	context: RegistryContext | null;
-	parentTree: SourceNode<any> | null;
 	stdPath: string | null;
 	lastConsumedIndex?: number;
 	parentRegistry?: {
@@ -745,11 +707,8 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * @returns {SourceNode<LanguageNodeTypes> | null} The next node or null.
 	 */
 	findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null;
-	/**
-	 * Finds the nearest enclosing scope for the current macro.
-	 * @returns {SourceNode<LanguageNodeTypes> | null} The scope node or null.
-	 * @throws {Error} If not implemented in the base class.
-	 */
+	/** Clears language-level semantic caches. Overridden in UppHelpersC. */
+	clearSemanticCaches(): void;
 	findScope(): SourceNode<LanguageNodeTypes> | null;
 	/**
 	 * Finds the nearest enclosing node of a given type.
@@ -788,6 +747,11 @@ export type CNodeTypes = "translation_unit" | "preproc_include" | "preproc_def" 
  * @extends UppHelpersBase
  */
 export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
+	/** Semantic caches: keyed by node id, cleared on any tree mutation. */
+	definitionCache: Map<string | number, SourceNode<CNodeTypes> | null>;
+	scopeCache: Map<string | number, SourceNode<CNodeTypes>[]>;
+	enclosingScopeCache: Map<string | number, SourceNode<CNodeTypes> | null>;
+	clearSemanticCaches(): void;
 	constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers?: UppHelpersBase<any> | null);
 	/**
 	 * Finds the nearest enclosing C scope (compound_statement or translation_unit).

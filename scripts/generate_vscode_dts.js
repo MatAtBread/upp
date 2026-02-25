@@ -50,7 +50,9 @@ declare var upp: upp_types.UppHelpersC & {
 
     // 3. Post-process the content
     // Strip imports
+    content = content.replace(/abstract /gm, '');
     content = content.replace(/^import.*;?\r?\n/gm, '');
+
 
     // Strip 'export declare class' -> 'export class'
     content = content.replace(/export declare class/g, 'export class');
