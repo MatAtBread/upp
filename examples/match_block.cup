@@ -1,37 +1,10 @@
 @define transform_if() {
-    upp.withRoot((root, helpers) => {
-        // Find: if ($cond) $then;
-        // Replace with: if ($cond) { $then } (enforce braces)
-
-        // Loop deep match
-        // Note: upp.match deep search returns first match.
-        // We need to iterate or match repeatedly?
-        // Let's use loop.
-
-        // Just match context node? Or look for specific node?
-        // Let's iterate function definitions.
-
-        const funcs = root.find('function_definition');
-        for (const func of funcs) {
-            // Search inside function body for if statements
-            const ifs = func.find('if_statement');
-            for (const ifNode of ifs) {
-
-                helpers.match(ifNode, "if ($cond) $then;", (captures) => {
-                    // Check if it already has braces?
-                    // If $then is compound_statement, captures.then.type === compound_statement.
-                    // We only want to wrap single statements.
-                    // But placeholders match EVERYTHING.
-                    // So we check type manually or use constraint?
-                    if (captures.then.type !== 'compound_statement') {
-                        helpers.replace(captures.node,
-                            helpers.code`if (${captures.cond}) { ${captures.then} }`
-                        );
-                    }
-                });
-            }
-        }
-    });
+    // Find: if ($cond) $then; (brace-less)
+    // Replace with: if ($cond) { $then }
+    upp.withMatch(upp.root, "if ($cond) $then__NOT_compound_statement;",
+        ({ cond, then }) => {
+            return upp.code`if (${cond}) { ${then} }`;
+        });
 }
 
 @transform_if()

@@ -1,19 +1,11 @@
 @define transform_int() {
-    upp.withRoot((root, helpers) => {
-        // Find: int $x = $val;
-        // Replace with: long $x_long = $val;
-
-        // Loop through all children of root to find top-level declarations
-        // In the future, we might want a 'findAll' API or 'query' that supports match.
-        // For now, manual iteration or deep match on specific nodes.
-        for (let i = 0; i < root.childCount; i++) {
-            const child = root.child(i);
-            helpers.match(child, "int $x = $val;", (captures) => {
-                 const name = captures.x.text;
-                 const val = captures.val.text;
-                 helpers.replace(captures.node, `long ${name}_long = ${val};`);
-            });
-        }
+    // Find: int $x = $val;  Replace with: long $x_long = $val;
+    // Comment was: "In the future, we might want a 'findAll' API or 'query' that supports match."
+    // withMatch IS that API.
+    upp.withMatch(upp.root, "int $x = $val;", ({ x, val }) => {
+        const name = x.text;
+        const v = val.text;
+        return upp.code`long ${name}_long = ${val};`;
     });
 }
 
