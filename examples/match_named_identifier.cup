@@ -1,9 +1,6 @@
 @define retype() {
-    upp.withRoot((root, helpers) => {
-        helpers.matchReplace(root, `$type $x__identifier = $val__number_literal;`, ({ type, x, val }) => {
-            return upp.code`${type} ${x} = (${type.text})${val};`;
-        }, { deep: true });
-    });
+    upp.withMatch(upp.root, `$type $x__identifier = $val__number_literal;`,
+        ({ type, x, val }) => upp.code`${type} ${x} = (${type.text})${val};`);
 }
 
 @retype;

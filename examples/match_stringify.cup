@@ -7,9 +7,8 @@
 }
 
 @define longify(name) {
-    upp.matchReplace(upp.root, `int ${name} = $val__number_literal;`, ({ val }) => {
-        return upp.code`char *${name} = "${val}";`;
-    }, { deep: true });
+    upp.withMatch(upp.root, `int ${name} = $val__number_literal;`,
+        ({ val }) => upp.code`char *${name} = "${val}";`);
 }
 
 @longify(bar)
