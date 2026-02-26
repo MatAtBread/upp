@@ -1,41 +1,4 @@
-#include "io-lite.h"
-
-@define trace() {
-    const fnNode = upp.consume('function_definition'); // Read the next item in the AST and remove it from the tree
-    const { returnType, name, params } = upp.match(fnNode, "$returnType $name($params__until) {$body__until}");
-    const originalName = name.text;
-
-    const printFormats = {
-        'int': '%d',
-        'char *': '%s',
-        'double': '%f',
-        'float': '%f',
-        'long': '%ld',
-        'unsigned long': '%lu',
-        'long long': '%lld',
-        'unsigned long long': '%llu',
-        'void *': '%p'
-    };
-    const paramFormat = params.filter(p => p.type === 'parameter_declaration')
-        .map(p => p.find('identifier')[0].text + " = " + printFormats[upp.getType(p)])
-        .join(", ");
-    const paramList = params.filter(p => p.type === 'parameter_declaration')
-        .map(p => p.find('identifier')[0].text)
-        .join(", ");
-    
-    name.text = "_trace_"+upp.createUniqueIdentifier(name.text);
-    return upp.code`
-
-static ${fnNode}
-
-${returnType.text} ${originalName}(${params}) {
-    printf(">> ${originalName} (${paramFormat})\\n", ${paramList});
-    ${returnType.text} r = ${name.text}(${paramList});
-    printf("<< ${originalName} = ${printFormats[returnType.text]}\\n", r);
-    return r;
-}
-`;
-}
+@include(trace.hup)
 
 @trace int my_function(int x, char *y) {
     int g = 1;

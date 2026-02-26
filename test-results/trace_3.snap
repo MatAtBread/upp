@@ -1,19 +1,5 @@
 ==== examples/trace_3.c ===
-/* A minimal C stdio/stdlib/string for upp to make it easy to
-   see the output of the examples but permit compilation
-*/
-extern int puts(const char *s);
-extern int printf(const char *format, ...);
-extern int fputs(const char *s, void *stream);
-extern void *malloc(unsigned long n);
-extern void free(void *p);
-extern char *strcpy(char *dest, const char *src);
-extern char *strncat(char *dest, const char *src, unsigned long n);
-extern int snprintf(char *str, unsigned long size, const char *format, ...);
-extern unsigned long strlen(const char *s);
-extern void *stderr;
-extern void *_stderr;
-
+#include "trace.h"
 static int _trace_my_function_1(int x, char *y) {
     int g = 1;
     for (int i = 1; i < x; i++) {
@@ -21,6 +7,7 @@ static int _trace_my_function_1(int x, char *y) {
     }
     return g;
 }
+
 int my_function(int x,char *y) {
     printf(">> my_function (x = %d, y = %s)\n", x, y);
     int r = _trace_my_function_1(x, y);
@@ -31,6 +18,10 @@ int main() {
     printf("magic number %d\n", my_function(10,"Foo"));
     return 0;
 }
+
+==== std/trace.h ===
+extern int printf(const char *format, ...);
+
 
 ==== RUN OUTPUT ===
 >> my_function (x = 10, y = Foo)
