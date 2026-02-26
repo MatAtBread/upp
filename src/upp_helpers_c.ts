@@ -597,9 +597,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                     }
                 } else {
                     // Fallback for detached definitions (e.g. during macro transformation)
-                    const refScope = (helpers as UppHelpersC).getEnclosingScope(node);
-                    if (refScope && definitionScopeId && refScope.id === definitionScopeId) {
-                        return true;
+                    // If findDefinition returns null, check if the reference is lexically within the definition's scope.
+                    // We only need to check if one of the enclosing scopes of the reference matches the definitionScopeId.
+                    let walkScope: SourceNode<any> | null = (helpers as UppHelpersC).getEnclosingScope(node);
+                    while (walkScope) {
+                        if (definitionScopeId && walkScope.id === definitionScopeId) {
+                            return true;
+                        }
+                        const p: SourceNode<any> | null = walkScope.parent || (walkScope as any)._detachedParent;
+                        walkScope = p ? (helpers as UppHelpersC).getEnclosingScope(p) : null;
                     }
                 }
                 return false;
