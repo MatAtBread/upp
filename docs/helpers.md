@@ -8,9 +8,12 @@ The `upp` object provides a rich set of utilities for inspecting and modifying s
 Tagged template literal for generating source fragments. Crucially, it **moves** interpolated nodes rather than converting them to strings, maintaining their referential identity for other macros.
 
 - **Signature**: `upp.code`strings: TemplateStringsArray, ...values: InterpolationValue[]` -> `SourceNode`
+- **Alias**: `$` — available as a shorthand in all macro bodies (e.g., `$`int ${x} = 0;``)
 - **Example**:
   ```javascript
   const newNode = upp.code`int ${name}_v2 = ${value};`;
+  // Equivalent using the shorthand:
+  const newNode = $`int ${name}_v2 = ${value};`;
   ```
 
 ### `upp.replace`
@@ -64,32 +67,53 @@ Finds all structural matches of a pattern within a scope.
 ### `upp.matchReplace`
 Synchronously replaces all matches of a pattern within a scope during macro execution.
 
+> **Deprecated**: Prefer `upp.withMatch(scope, pattern, cb)` which defers the transformation and integrates correctly with the pending rule system.
+
 - **Signature**: `upp.matchReplace(scope: SourceNode, pattern: string, callback)` -> `void`
 
 ---
 
 ## 3. Deferred Transformations (The `withX` Pattern)
 
-These methods register "markers" or "rules". Transformations are deferred and managed by the UPP engine to ensure they happen in the correct order, especially when moving nodes.
+All deferred transformation APIs register a `PendingRule` in the unified rule system. Rules are evaluated both during the depth-first walk and during the final fixed-point sweep.
 
 ### `upp.withMatch`
-Registers a deferred transformation for nodes matching a pattern within a scope.
+Registers a deferred transformation for nodes matching a structural pattern within a scope. This is the **recommended** approach for pattern-based global transforms.
 
 - **Signature**: `upp.withMatch(scope: SourceNode, pattern: string, callback)` -> `void`
 - **Example**:
   ```javascript
-  upp.withMatch(upp.root, "$x + 0", ({ x }, upp2) => x);
+  // Transform all brace-less if statements:
+  upp.withMatch(upp.root, "if ($cond) $then__NOT_compound_statement;",
+      ({ cond, then }) => upp.code`if (${cond}) { ${then} }`);
   ```
 
 ### `upp.withPattern`
-Registers a transformation for a specific node type, filtered by an optional matcher function.
+Registers a transformation for a specific AST node type (e.g., `call_expression`, `return_statement`), filtered by a custom matcher function. Use when you need lower-level control than `withMatch` provides.
 
 - **Signature**: `upp.withPattern(type: string, matcher, callback)` -> `void`
+- **Example**:
+  ```javascript
+  // Transform method-style calls: obj.method(args) -> _Type_method(&obj, args)
+  upp.withPattern('call_expression',
+      (node, h) => node.named['function']?.type === 'field_expression',
+      (node, h) => { /* transform logic */ });
+  ```
 
 ### `upp.withNode`
 Attaches a one-off deferred transformation to a specific node.
 
 - **Signature**: `upp.withNode(node: SourceNode, callback)` -> `void`
+
+### `upp.withRoot`
+Registers a callback to be invoked on the root node during the final sweep. Useful for imperative operations like hoisting code.
+
+- **Signature**: `upp.withRoot(callback)` -> `void`
+
+### `upp.withScope`
+Registers a callback to be invoked on a specific scope node.
+
+- **Signature**: `upp.withScope(scope: SourceNode, callback)` -> `void`
 
 ---
 

@@ -1,0 +1,33 @@
+#include "io-lite.h"
+@include(managed-struct.hup)
+
+@ManagedStruct(struct Foo_s) Foo;
+struct Foo_s {
+    int x;
+};
+
+Foo CreateFoo(int val) {
+    Foo f;
+    f->x = val;
+    return f;
+}
+
+int main() {
+    Foo f1;
+    printf("--- Assignment from call ---\n");
+    f1 = CreateFoo(42); // Should use _Managed_move
+    printf("f1 val: %d, refcount: %d\n", f1->x, f1->managed_reference_count());
+    
+    Foo f2;
+    printf("--- Assignment from variable ---\n");
+    f2 = f1; // Should use _Managed_set
+    printf("f2 val: %d, refcount: %d\n", f2->x, f2->managed_reference_count());
+    
+    if (f1->managed_reference_count() == 2 && f2->managed_reference_count() == 2) {
+        printf("SUCCESS\n");
+    } else {
+        printf("FAILURE: refcounts are %d and %d\n", f1->managed_reference_count(), f2->managed_reference_count());
+    }
+    
+    return 0;
+}

@@ -1,12 +1,6 @@
 @define transform_if() {
-    upp.withRoot((root, helpers) => {
-        // Find: if ($cond) $then;
-        // Replace with: if ($cond) { $then } (enforce braces)
-        // Loop deep match
-        helpers.matchReplace(root, "if ($cond) $then__NOT_compound_statement;",
-            ({ cond, then }) => helpers.code`if (${cond}) { ${then} }`,
-            { deep: true });
-    });
+    upp.withMatch(upp.root, "if ($cond) $then__NOT_compound_statement;",
+        ({ cond, then }) => upp.code`if (${cond}) { ${then} }`);
 }
 
 @transform_if;

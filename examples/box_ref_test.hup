@@ -1,0 +1,12 @@
+@include(managed-struct.hup)
+
+@ManagedStruct(struct Box) BoxRef;
+struct Box {
+    int value;
+};
+
+BoxRef create_box(int val) {
+    BoxRef b;
+    b->value = val;
+    return b;
+}

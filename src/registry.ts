@@ -6,10 +6,10 @@ import { UppHelpersC } from './upp_helpers_c.ts';
 import { UppHelpersBase } from './upp_helpers_base.ts';
 import { DiagnosticsManager } from './diagnostics.ts';
 import { SourceTree, SourceNode } from './source_tree.ts';
+import { Transformer } from './transformer.ts';
 import type { Tree, SyntaxNode } from 'tree-sitter';
 import type { DependencyCache } from './dependency_cache.ts';
 
-export const RECURSION_LIMITER_ENABLED = false;
 
 export interface Macro {
     name: string;
@@ -18,12 +18,6 @@ export interface Macro {
     language: string;
     origin: string;
     startIndex: number;
-}
-
-export interface TransformRule<T extends string = string> {
-    active: boolean;
-    matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
-    callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
 }
 
 export interface PendingRule<T extends string = string> {
@@ -50,6 +44,7 @@ export interface RegistryConfig {
     onMaterialize?: (outputPath: string, content: string, options: MaterializeOptions) => void;
     filePath?: string;
     stdPath?: string;
+    includePaths?: string[];
     cache?: DependencyCache;
     diagnostics?: DiagnosticsManager;
     suppress?: string[];
@@ -67,9 +62,7 @@ export interface RegistryContext {
     transformed: Set<SourceNode<any>>;
     transformStack: Set<SourceNode<any>>;
     appliedRules: WeakMap<SourceNode<any>, Set<number>>;
-    definitionCache: Map<string | number, SourceNode<any> | null>;
-    scopeCache: Map<string | number, SourceNode<any>[]>;
-    enclosingScopeCache: Map<string | number, SourceNode<any> | null>;
+    pendingRules: PendingRule<any>[];
     mutated?: boolean;
 }
 
@@ -87,24 +80,22 @@ class Registry {
     public language: TreeSitterLang; // Tree-sitter Language
     public helpers: UppHelpersBase<any> | null;
     public parentHelpers: UppHelpersBase<any> | null;
-    public parentTree: SourceTree<any> | null;
-    public materializedFiles: Set<string>;
     public isAuthoritative: boolean;
     public macros: Map<string, Macro>;
     public parser: Parser;
-    public idCounter: number;
+
     public stdPath: string | null;
+    public includePaths: string[];
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
-    public transformRules: TransformRule<any>[];
+
     public pendingRules: PendingRule<any>[];
     public ruleIdCounter: number;
-    public isExecutingDeferred: boolean;
-    public onMaterialize: ((outputPath: string, content: string, options: { isAuthoritative: boolean }) => void) | null;
+
     public mainContext: RegistryContext | null;
-    public UppHelpersC: typeof UppHelpersC;
     public source?: string;
     public tree?: SourceTree<any>;
+    public dependencyHelpers: UppHelpersBase<any>[];
 
     public activeTransformNode?: SourceNode<any> | null;
     public originPath?: string;
@@ -112,7 +103,6 @@ class Registry {
     constructor(config: RegistryConfig = {}, parentRegistry: Registry | null = null) {
         this.config = config;
         this.parentRegistry = parentRegistry;
-        this.onMaterialize = config.onMaterialize || (parentRegistry ? parentRegistry.onMaterialize : null);
         this.depth = parentRegistry ? parentRegistry.depth + 1 : 0;
         if (this.depth > 100) {
             throw new Error(`Maximum macro nesting depth exceeded (${this.depth})`);
@@ -126,10 +116,7 @@ class Registry {
         this.language = lang;
 
         this.helpers = null;
-        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersBase(null, parentRegistry, null)) : null;
-        this.parentTree = parentRegistry ? parentRegistry.tree! : null;
-
-        this.materializedFiles = new Set();
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(null as any, parentRegistry, null)) : null;
         this.isAuthoritative = true;
 
         this.macros = new Map();
@@ -155,17 +142,17 @@ class Registry {
         this.parser = new Parser();
         this.parser.setLanguage(this.language);
 
-        this.idCounter = 0;
+
         this.stdPath = config.stdPath || null;
+        this.includePaths = config.includePaths || [];
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
-        this.transformRules = [];
+
         this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
         this.ruleIdCounter = 0;
-        this.isExecutingDeferred = false;
-        this.onMaterialize = config.onMaterialize || null;
+
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
-        this.UppHelpersC = UppHelpersC; // Ensure this is available
+        this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
     }
 
     /**
@@ -227,23 +214,6 @@ class Registry {
         return undefined;
     }
 
-    /**
-     * Registers a global transformation rule.
-     * @param {TransformRule<any> | function(SourceNode<any>, any): any} rule - The rule object or callback.
-     */
-    registerTransformRule(rule: TransformRule<any> | ((node: SourceNode<any>, helpers: any) => SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined)): void {
-        if (typeof rule === 'function') {
-            rule = {
-                active: true,
-                matcher: () => true,
-                callback: rule
-            };
-        }
-        this.transformRules.push(rule);
-        if (this.parentRegistry) {
-            this.parentRegistry.registerTransformRule(rule);
-        }
-    }
 
     loadDependency(file: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): void {
         let targetPath: string;
@@ -260,12 +230,24 @@ class Registry {
         if (isDiscoveryOnly && previousPass === 'discovery') return;
 
         if (!fs.existsSync(targetPath)) {
-            const stdDir = this.stdPath || path.resolve(process.cwd(), 'std');
-            const stdPath = path.resolve(stdDir, file);
-            if (fs.existsSync(stdPath)) {
-                targetPath = stdPath;
-            } else {
-                throw new Error(`Dependency not found: ${file} (tried ${targetPath} and ${stdPath})`);
+            // Search include paths (from -I flags)
+            let found = false;
+            for (const inc of this.includePaths) {
+                const candidate = path.resolve(inc, file);
+                if (fs.existsSync(candidate)) {
+                    targetPath = candidate;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                const stdDir = this.stdPath || path.resolve(process.cwd(), 'std');
+                const stdPath = path.resolve(stdDir, file);
+                if (fs.existsSync(stdPath)) {
+                    targetPath = stdPath;
+                } else {
+                    throw new Error(`Dependency not found: ${file} (tried ${targetPath} and ${stdPath})`);
+                }
             }
         }
 
@@ -278,9 +260,9 @@ class Registry {
                 for (const macro of cached.macros) {
                     this.registerMacro(macro.name, macro.params, macro.body, macro.language, macro.origin, macro.startIndex);
                 }
-                // Replay transforms
-                for (const rule of cached.transformRules) {
-                    this.registerTransformRule(rule);
+                // Replay pending rules from dependency
+                for (const rule of cached.pendingRules) {
+                    this.registerPendingRule(rule);
                 }
                 // Re-emit materialization if needed
                 if (cached.shouldMaterialize && this.config.onMaterialize) {
@@ -306,6 +288,11 @@ class Registry {
         } else {
             const output = depRegistry.transform(source, targetPath, parentHelpers);
 
+            // Track dependency helpers for cross-tree type resolution
+            if (depRegistry.helpers) {
+                this.dependencyHelpers.push(depRegistry.helpers);
+            }
+
             // Store in cache
             if (this.config.cache && !isDiscoveryOnly) {
                 const existing = this.config.cache.get(targetPath);
@@ -313,7 +300,7 @@ class Registry {
                 if (!existing || depRegistry.isAuthoritative || !existing.isAuthoritative) {
                     this.config.cache.set(targetPath, {
                         macros: Array.from(depRegistry.macros.values()),
-                        transformRules: depRegistry.transformRules,
+                        pendingRules: depRegistry.pendingRules,
                         output: output,
                         shouldMaterialize: depRegistry.shouldMaterializeDependency,
                         isAuthoritative: depRegistry.isAuthoritative
@@ -333,446 +320,11 @@ class Registry {
         }
     }
 
-    generateRuleId(): string {
-        return `rule_${++this.ruleIdCounter}`;
-    }
-
 
     /**
-     * Transforms a source string by evaluating macros and applying rules.
-     * @param {string} source - The UPP source code.
-     * @param {string} [originPath='unknown'] - Path for diagnostic reporting.
-     * @param {UppHelpersC | null} [parentHelpers=null] - Parent helper context.
-     * @returns {string} The transformed C code.
+     * Compiles a macro body into a callable function.
+     * Also called by Transformer for macro invocations.
      */
-    transform(source: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): string {
-        this.source = source;
-        if (!source) return "";
-
-        // Initialize tree as early as possible so dependencies can see us
-        this.tree = new SourceTree<any>(source, this.language as any);
-        this.tree.onMutation = () => this.markMutated();
-        this.helpers = new (this.UppHelpersC as any)(this.tree.root, this, parentHelpers);
-
-        const { cleanSource, invocations: foundInvs } = this.prepareSource(source, originPath);
-
-        // Update tree with clean source if it changed
-        if (cleanSource !== source) {
-            if (!cleanSource) {
-                this.tree = new SourceTree<any>("", this.language as any);
-            } else {
-                this.tree = new SourceTree<any>(cleanSource, this.language as any);
-            }
-            if (this.helpers) this.helpers.root = this.tree.root; // Update helpers root
-        }
-        const sourceTree = this.tree!;
-
-        // Define helpers first, then context
-        const helpers = new this.UppHelpersC(sourceTree.root as any, this, parentHelpers) as any;
-
-        const context: RegistryContext = {
-            source: cleanSource, // This will be stale, should use sourceTree.source
-            tree: sourceTree,
-            originPath: originPath,
-            invocations: foundInvs,
-            helpers: helpers, // Now helpers is defined
-            transformed: new Set<SourceNode<any>>(),
-            transformStack: new Set<SourceNode<any>>(),
-            appliedRules: new WeakMap(),
-            definitionCache: new Map(),
-            scopeCache: new Map(),
-            enclosingScopeCache: new Map()
-        };
-
-        if (!sourceTree) throw new Error("Could not create source tree for transformation.");
-        context.helpers = helpers;
-        helpers.context = context;
-        helpers.root = sourceTree.root;
-
-        const isMain = !this.mainContext;
-        if (isMain) {
-            this.mainContext = context;
-        }
-
-        if (parentHelpers) {
-            helpers.parentHelpers = parentHelpers;
-            helpers.parentTree = parentHelpers.root;
-            helpers.parentRegistry = {
-                invocations: parentHelpers.context?.invocations || [],
-                sourceCode: parentHelpers.context?.tree?.source || parentHelpers.context?.source || "",
-                helpers: parentHelpers
-            };
-            helpers.topLevelInvocation = (parentHelpers as any).topLevelInvocation || (parentHelpers as any).invocation;
-            helpers.currentInvocations = foundInvs.length > 0 ? foundInvs : ((parentHelpers as any).currentInvocations || []);
-        } else {
-            helpers.currentInvocations = foundInvs;
-        }
-
-        this.transformNode(sourceTree.root, helpers, context);
-
-        // Final pass for pending rules registered during the walk
-        this.evaluatePendingRules([sourceTree.root], helpers, context);
-
-        return sourceTree.source;
-    }
-
-    /**
-     * Internal helper to mark the current transformation context as mutated.
-     */
-    public markMutated(): void {
-        if (this.mainContext) {
-            this.mainContext.mutated = true;
-            // Clear semantic caches when tree mutates
-            this.mainContext.definitionCache.clear();
-            this.mainContext.scopeCache.clear();
-        }
-    }
-
-    /**
-     * Recursively evaluates pending rules (fixed-point iteration).
-     * This is used for cross-cutting transformations after the initial macro walk.
-     * @private
-     */
-    private evaluatePendingRules(nodes: SourceNode<any>[], helpers: UppHelpersBase<any>, context: RegistryContext): void {
-        if (!nodes || nodes.length === 0) return;
-        if (this.pendingRules.length === 0) return;
-
-        let iterations = 0;
-        const MAX_ITERATIONS = 5;
-        let currentNodes = [...nodes];
-
-
-        while (currentNodes.length > 0 && iterations < MAX_ITERATIONS) {
-            iterations++;
-            context.mutated = false;
-            context.definitionCache.clear();
-            context.scopeCache.clear();
-            context.enclosingScopeCache.clear();
-
-            let sweepMutated = false;
-            const nextNodes: SourceNode<any>[] = [];
-
-            for (const node of currentNodes) {
-                if (node.startIndex === -1) continue;
-
-                const descendants: SourceNode<any>[] = [];
-                helpers.walk(node, (d) => descendants.push(d));
-
-                descendants.sort((a, b) => {
-                    if (b.startIndex !== a.startIndex) return b.startIndex - a.startIndex;
-                    return b.endIndex - a.endIndex;
-                });
-
-                for (const descendant of descendants) {
-                    if (descendant.startIndex === -1) continue;
-
-                    for (const rule of this.pendingRules) {
-                        if (!rule.matcher) continue; // Ensure matcher exists
-
-                        let applied = context.appliedRules.get(descendant);
-                        if (!applied) {
-                            applied = new Set();
-                            context.appliedRules.set(descendant, applied);
-                        }
-
-                        if (applied.has(rule.id)) continue;
-
-                        if (rule.matcher(descendant, helpers)) {
-                            let applied = context.appliedRules.get(descendant);
-                            if (!applied) {
-                                applied = new Set();
-                                context.appliedRules.set(descendant, applied);
-                            }
-                            if (applied.has(rule.id)) continue;
-
-                            applied.add(rule.id);
-
-                            helpers.contextNode = descendant;
-                            helpers.lastConsumedNode = null;
-                            const result = rule.callback(descendant, helpers);
-
-                            if (result !== undefined) {
-                                const replacementNodes = helpers.replace(descendant, result);
-                                sweepMutated = true;
-                                if (replacementNodes) {
-                                    const list = Array.isArray(replacementNodes) ? replacementNodes : [replacementNodes];
-                                    for (const newNode of list) {
-                                        if (newNode instanceof SourceNode) {
-                                            helpers.walk(newNode, (child) => {
-                                                let app = context.appliedRules.get(child);
-                                                if (!app) { app = new Set(); context.appliedRules.set(child, app); }
-                                                app.add(rule.id);
-                                            });
-                                            nextNodes.push(newNode);
-                                            // Process the new subtree for other rules immediately to avoid massive fixed-point iterations
-                                            this.transformNode(newNode, helpers, context, true);
-                                        }
-                                    }
-                                }
-                                break; // Node replaced, move to next descendant
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (nextNodes.length > 0) {
-                currentNodes = nextNodes;
-            } else if (sweepMutated || context.mutated) {
-                // If mutations happened elsewhere but no specific new nodes, re-evaluate initial set once
-                currentNodes = [...nodes];
-                // But only if we haven't already done it many times
-                if (iterations > 5) break;
-            } else {
-                currentNodes = [];
-            }
-        }
-
-        if (iterations >= MAX_ITERATIONS) {
-            console.warn("MAX_ITERATIONS reached in evaluatePendingRules (possible infinite rule loop)");
-        }
-    }
-
-    /**
-     * Recursively transforms an AST node by evaluating macros and markers.
-     * @param {SourceNode<any>} node - The node to transform.
-     * @param {UppHelpersBase<any>} helpers - Helper class instance.
-     * @param {RegistryContext} context - Current transformation context.
-     * @param {boolean} [force=false] - Whether to bypass the 'transformed' optimization check.
-     */
-    transformNode(node: SourceNode<any>, helpers: UppHelpersBase<any>, context: RegistryContext, force: boolean = false): void {
-        if (!node || node.startIndex === -1) return;
-        if (!node || node.startIndex === -1) return;
-
-        // Skip invalidated nodes
-        if (node.startIndex === -1) return;
-
-        // PHYSICAL CYCLE CHECK (Absolute Bail)
-        if (context.transformStack.has(node)) return;
-
-        // OPTIMIZATION CHECK (Skip if already worked on, unless forced)
-        if (!force && context.transformed.has(node)) return;
-
-        context.transformStack.add(node);
-        try {
-            helpers.contextNode = node;
-            helpers.lastConsumedNode = null;
-
-            // 1. Check for Macro Invocation (wrapped in comments by prepareSource)
-            if (node.type === 'comment') {
-                const nodeText = node.text;
-                if (nodeText.startsWith('/*@') && nodeText.endsWith('*/')) {
-                    const commentText = nodeText.slice(2, -2);
-                    const inv = this.absorbInvocation(commentText, 0);
-                    if (inv) {
-                        const result = this.evaluateMacro({
-                            ...inv,
-                            startIndex: node.startIndex,
-                            endIndex: node.endIndex,
-                            invocationNode: node
-                        }, (context.tree as any).source, helpers, context.originPath);
-
-                        if (result !== undefined) {
-                            const isNode = result instanceof SourceNode;
-                            const isArray = Array.isArray(result);
-
-                            let finalResult = result;
-
-                            if (!isNode && !isArray) {
-                                finalResult = (result === null) ? "" : String(result);
-
-                                // Pre-process string results to wrap nested macros in comments
-                                if (typeof finalResult === 'string' && finalResult.includes('@')) {
-                                    const prepared = this.prepareSource(finalResult, context.originPath);
-                                    finalResult = prepared.cleanSource;
-                                }
-                            }
-
-                            const newNodes = helpers.replace(node, finalResult);
-
-                            // Evaluate fixed-point rules against the newly injected AST geometry
-                            if (newNodes) {
-                                const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                                this.evaluatePendingRules(list, helpers, context);
-                            }
-
-                            // Recursively transform any new nodes in the current context.
-                            // If the node was morphed (identity preserved), we must temporarily
-                            // remove it from the stack to allow the recursive call to proceed.
-                            if (Array.isArray(newNodes)) {
-                                for (const newNode of newNodes) {
-                                    if (newNode instanceof SourceNode) {
-                                        const wasInStack = context.transformStack.has(newNode);
-                                        if (wasInStack && newNode === node) context.transformStack.delete(newNode);
-                                        this.transformNode(newNode, helpers, context, true);
-                                        if (wasInStack && newNode === node) context.transformStack.add(newNode);
-                                    }
-                                }
-                            } else if (newNodes instanceof SourceNode) {
-                                const wasInStack = context.transformStack.has(newNodes);
-                                if (wasInStack && newNodes === node) context.transformStack.delete(newNodes);
-                                this.transformNode(newNodes, helpers, context, true);
-                                if (wasInStack && newNodes === node) context.transformStack.add(newNodes);
-                            }
-                        }
-                        return; // Macro handles its own text/children
-                    }
-                }
-            }
-
-            for (const rule of this.transformRules) {
-                if (rule.active) {
-                    try {
-                        if (rule.matcher(node, helpers)) {
-                            const result = rule.callback(node, helpers);
-                            if (result !== undefined) {
-                                const newNodes = helpers.replace(node, result);
-                                if (newNodes) {
-                                    const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                                    for (const newNode of list) {
-                                        const wasInStack = context.transformStack.has(newNode);
-                                        if (wasInStack && newNode === node) context.transformStack.delete(newNode);
-                                        this.transformNode(newNode, helpers, context, true);
-                                        if (wasInStack && newNode === node) context.transformStack.add(newNode);
-                                    }
-                                }
-                            }
-                            if (node.startIndex === -1) return;
-                        }
-                    } catch (e) {
-                        // rule failed
-                    }
-                }
-            }
-
-            // --- Evaluate Pending Rules (Symbol Tracking) ---
-            for (const rule of [...this.pendingRules]) {
-                try {
-                    if (rule.matcher(node, helpers)) {
-                        // Guard: only apply a rule once per node (identity preservation across re-parses)
-                        let applied = context.appliedRules.get(node);
-                        if (!applied) {
-                            applied = new Set();
-                            context.appliedRules.set(node, applied);
-                        }
-                        if (applied.has(rule.id)) continue;
-
-                        applied.add(rule.id);
-
-                        const result = rule.callback(node, helpers);
-                        if (result !== undefined) {
-                            const newNodes = helpers.replace(node, result);
-                            if (newNodes) {
-                                const list = Array.isArray(newNodes) ? newNodes : [newNodes];
-                                for (const newNode of list) {
-                                    if (newNode instanceof SourceNode) {
-                                        helpers.walk(newNode, (child) => {
-                                            let app = context.appliedRules.get(child);
-                                            if (!app) { app = new Set(); context.appliedRules.set(child, app); }
-                                            app.add(rule.id);
-                                        });
-
-                                        const wasInStack = context.transformStack.has(newNode);
-                                        if (wasInStack && newNode === node) context.transformStack.delete(newNode);
-                                        this.transformNode(newNode, helpers, context, true);
-                                        if (wasInStack && newNode === node) context.transformStack.add(newNode);
-                                    }
-                                }
-                            }
-                        }
-                        if (node.startIndex === -1) return;
-                    }
-                } catch (e) {
-                    // symbol rule check failed
-                }
-            }
-
-            // 4. Recursive Stable Walk
-            // NOTE: We snapshot children because transformations might add/remove nodes
-            const originalChildren = [...node.children];
-            for (const child of Array.from(node.children)) {
-                this.transformNode(child, helpers, context);
-            }
-        } finally {
-            context.transformStack.delete(node);
-            context.transformed.add(node);
-        }
-
-        // Post-walk check for newly inserted siblings
-        let hasNewSiblings = true;
-        while (hasNewSiblings) {
-            hasNewSiblings = false;
-            for (const child of node.children) {
-                if (child.startIndex !== -1 && !context.transformed.has(child) && !context.transformStack.has(child)) {
-                    this.transformNode(child, helpers, context);
-                    hasNewSiblings = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    /**
-     * Evaluates a macro invocation and returns the resulting content.
-     * @param {Invocation} invocation - The macro invocation details.
-     * @param {string} source - The context source.
-     * @param {any} helpers - Helper class instance.
-     * @param {string} filePath - Current file path.
-     * @returns {SourceNode<any> | SourceNode<any>[] | SourceTree<any> | string | null | undefined}
-     */
-    evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersBase<any>, filePath: string): MacroResult {
-        const macro = this.getMacro(invocation.name);
-
-        const oldInvocation = helpers.invocation;
-        const oldContext = helpers.contextNode;
-        const oldConsumed = helpers.lastConsumedNode;
-        const oldActiveNode = this.activeTransformNode;
-
-        try {
-            if (!macro) throw new Error(`Macro @${invocation.name} not found`);
-
-            const invocationNode = invocation.invocationNode!;
-            const contextNode = helpers.contextNode || invocationNode;
-
-            helpers.invocation = { ...invocation, invocationNode };
-            helpers.contextNode = contextNode;
-            helpers.lastConsumedNode = null;
-            this.activeTransformNode = invocationNode;
-
-            const upp = Object.create(helpers);
-            upp.registry = this;
-            upp.parentHelpers = this.parentHelpers;
-            upp.path = path;
-            upp.invocation = { ...invocation, invocationNode };
-
-            const macroFn = this.createMacroFunction(macro);
-            const args: (string | SourceNode)[] = [...invocation.args];
-            let isTransformer = false;
-            if (macro.params.length > 0 && macro.params[0] === 'node') {
-                args.unshift(contextNode);
-                isTransformer = true;
-            }
-
-            const hasRest = macro.params.length > 0 && macro.params[macro.params.length - 1].startsWith('...');
-            if (!hasRest && args.length !== macro.params.length) {
-                throw new Error(`@${invocation.name} expected ${isTransformer ? macro.params.length - 1 : macro.params.length} arguments, found ${invocation.args.length}`);
-            }
-            if (hasRest && args.length < macro.params.length - 1) {
-                throw new Error(`@${invocation.name} expected at least ${macro.params.length - 1} arguments, found ${invocation.args.length}`);
-            }
-
-            return macroFn(upp, console, upp.code.bind(upp), ...args);
-        } catch (err: any) {
-            this.diagnostics.reportError(0, `Macro @${invocation.name} failed: ${err.message}`, filePath, invocation.line || 1, invocation.col || 1, source);
-            return undefined;
-        } finally {
-            helpers.invocation = oldInvocation;
-            helpers.contextNode = oldContext;
-            helpers.lastConsumedNode = oldConsumed;
-            this.activeTransformNode = oldActiveNode;
-        }
-    }
-
     createMacroFunction(macro: Macro): Function {
         const body = macro.body.trim();
         const shouldWrap = macro.language === 'js' &&
@@ -793,12 +345,38 @@ class Registry {
     }
 
     /**
+     * Transforms preprocessed source, expanding macros and applying rules.
+     * Delegates the actual pipeline to the Transformer class.
+     */
+    transform(source: string, originPath: string = 'unknown', parentHelpers: UppHelpersC | null = null): string {
+        return new Transformer(this).run(source, originPath, parentHelpers);
+    }
+
+    /**
+     * Internal helper to mark the current transformation context as mutated.
+     */
+    public markMutated(): void {
+        if (this.mainContext) {
+            this.mainContext.mutated = true;
+            // Clear semantic caches when tree mutates
+            this.mainContext.helpers?.clearSemanticCaches?.();
+        }
+    }
+
+
+    /**
      * Prepares source code by identifying macro invocations and masking them.
      * @param {string} source - The raw source code.
      * @param {string} originPath - Path for diagnostics.
      * @returns {{ cleanSource: string, invocations: Invocation[] }} Masked source and invocations.
      */
+    /**
+     * Prepares source for transformation:
+     * Phase 1 (pure): parse @define blocks, strip them from source, find macro invocations.
+     * Phase 2 (side effects): register macros, load @include dependencies.
+     */
     prepareSource(source: string, originPath: string): { cleanSource: string; invocations: Invocation[] } {
+        // --- Phase 1: Pure source analysis ---
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
         const tree = this.parser.parse((index: number) => {
@@ -806,7 +384,7 @@ class Registry {
             return source.slice(index, index + 4096);
         });
 
-        const defines: Array<{ index: number; length: number; original: string }> = [];
+        const defines: Array<{ index: number; length: number; original: string; name: string; params: string[]; body: string }> = [];
         let match;
         while ((match = definerRegex.exec(source)) !== null) {
             const node = tree.rootNode.descendantForIndex(match.index);
@@ -823,10 +401,9 @@ class Registry {
             const params = match[2].split(',').map(s => s.trim()).filter(Boolean);
             const bodyStart = match.index + match[0].length;
             const body = this.extractBody(source, bodyStart);
-            this.registerMacro(name, params, body, 'js', originPath, match.index);
 
             const fullMatchLength = match[0].length + body.length + 1;
-            defines.push({ index: match.index, length: fullMatchLength, original: source.slice(match.index, match.index + fullMatchLength) });
+            defines.push({ index: match.index, length: fullMatchLength, original: source.slice(match.index, match.index + fullMatchLength), name, params, body });
         }
 
         for (let i = defines.length - 1; i >= 0; i--) {
@@ -847,7 +424,14 @@ class Registry {
         for (let i = invocations.length - 1; i >= 0; i--) {
             const inv = invocations[i];
             const original = cleanSource.slice(inv.startIndex, inv.endIndex);
+            cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
+        }
 
+        // --- Phase 2: Side effects — register macros and load dependencies ---
+        for (const def of defines) {
+            this.registerMacro(def.name, def.params, def.body, 'js', originPath, def.index);
+        }
+        for (const inv of invocations) {
             if (inv.name === 'include') {
                 const file = inv.args[0];
                 if (file) {
@@ -858,7 +442,6 @@ class Registry {
                     this.loadDependency(filename, originPath);
                 }
             }
-            cleanSource = cleanSource.slice(0, inv.startIndex) + `/*${original}*/` + cleanSource.slice(inv.endIndex);
         }
 
         return { cleanSource, invocations };
@@ -918,7 +501,7 @@ class Registry {
         });
 
         while ((match = regex.exec(source)) !== null) {
-            if (this.isInsideInvocation(match.index, match.index + match[0].length)) continue;
+
 
             const node = currentTree.rootNode.descendantForIndex(match.index);
             let shouldSkip = false;
@@ -954,10 +537,6 @@ class Registry {
             };
         }
         return null;
-    }
-
-    isInsideInvocation(_start: number, _end: number): boolean {
-        return false;
     }
 }
 

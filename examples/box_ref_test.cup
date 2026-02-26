@@ -1,0 +1,24 @@
+#include "io-lite.h"
+@include(box_ref_test.hup)
+
+int main() {
+    printf("--- BoxRef Test ---\n");
+    BoxRef b = create_box(42);
+    BoxRef c = create_box(100);
+
+    printf("Box c value: %d, refs: %d\n", c->value, c.managed_reference_count());
+    printf("Box b value: %d, refs: %d\n", b->value, b.managed_reference_count());
+    
+    printf("--- Assignment b = c ---\n");
+    b = c;
+    printf("Box c value: %d, refs: %d\n", c->value, c.managed_reference_count());
+    printf("Box b value: %d, refs: %d\n", b->value, b.managed_reference_count());
+        
+    if (b->value == 100 && b.managed_reference_count() == 2) {
+        printf("SUCCESS\n");
+    } else {
+        printf("FAILURE: b->value=%d, refs=%d\n", b->value, b.managed_reference_count());
+    }
+    
+    return 0;
+}

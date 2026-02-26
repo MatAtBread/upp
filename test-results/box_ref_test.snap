@@ -1,4 +1,4 @@
-==== examples/ref-count.c ===
+==== examples/box_ref_test.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -13,13 +13,32 @@ extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
+#include "box_ref_test.h"
+int main() {
+    printf("--- BoxRef Test ---\n");
+    BoxRef b = create_box(42);
 
-#include "method.h"
+
+    BoxRef c = create_box(100);
+
+
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c));
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b));
+    printf("--- Assignment b = c ---\n");
+    _Managed_set(&b, c);
+    printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c));
+    printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b));
+    if (b->value == 100 && _BoxRef_method_managed_reference_count(b) == 2) {
+        printf("SUCCESS\n");
+    } else {
+        printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(b));
+    }
+    _Managed_release(&b);_Managed_release(&c);return 0;
+}
+
+==== examples/box_ref_test.h ===
 #include "managed-struct.h"
-typedef struct Point_s {
-    int x;
-    int y;
-} Point;
+
 struct _ReferenceCount {
   int ref_count;
 }
@@ -69,69 +88,24 @@ static inline int _Managed_ref_count(void *data) {
     if (!data) return -1;
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
-typedef Point* PointRef;
+typedef struct Box* BoxRef;
 
-int _PointRef_method_managed_reference_count(PointRef p) {
+int _BoxRef_method_managed_reference_count(BoxRef p) {
     if (!p) return -1;
     return ((struct _ReferenceCount *)p - 1)->ref_count;
 }
 
  
- void _PointRef_method_print(PointRef p, const char *s) {
-          _Managed_retain(p); 
-            
-          printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p), p->x, p->y);
-          _Managed_release(&p);}
-void fn(PointRef p) {
-          _Managed_retain(p); 
-            
-          _PointRef_method_print(p, "fn");
-          _Managed_release(&p);}
-PointRef origin() {
-    PointRef p = _Managed_allocate(sizeof(*p));
+struct Box {
+    int value;
+};
+
+BoxRef create_box(int val) {
+    BoxRef b = _Managed_allocate(sizeof(*b));
 
 
-    p->x = 0;
-    p->y = 0;
-    _Managed_retain(p);_Managed_release(&p);return p;
-}
-PointRef point(int x, int y) {
-    PointRef p = _Managed_allocate(sizeof(*p));
-
-
-    p->x = x;
-    p->y = y;
-    _Managed_retain(p);_Managed_release(&p);return p;
-}
-int main() {
-    PointRef p = _Managed_allocate(sizeof(*p));
-
-
-    PointRef q = origin();
-
-
-    _Managed_set(&q, ((void *)0));
-    printf("q %p\n", q);
-    p->x = 10;
-    p->y = 20;
-    fn(p);
-    p->x = 100;
-    _PointRef_method_print(p, "p");
-    _Managed_move(&q, origin());
-    _Managed_set(&p, q);
-    PointRef r = point(1, 2);
-
-
-    _PointRef_method_print(r, "r");
-    _PointRef_method_print(p, "p");
-    PointRef s = ((void *)0);
-
-
-    _Managed_set(&s, r);
-    _PointRef_method_print(s, "s");
-    _Managed_set(&s, p);
-    _PointRef_method_print(s, "s");
-    _Managed_release(&p);_Managed_release(&q);_Managed_release(&r);_Managed_release(&s);return 0;
+    b->value = val;
+    _Managed_retain(b);_Managed_release(&b);return b;
 }
 
 ==== std/defer.h ===
@@ -151,19 +125,15 @@ int main() {
 
 
 ==== RUN OUTPUT ===
-{1} Allocate 8 bytes
-{1} Allocate 8 bytes
+--- BoxRef Test ---
+{1} Allocate 4 bytes
+{1} Allocate 4 bytes
+Box c value: 100, refs: 1
+Box b value: 42, refs: 1
+--- Assignment b = c ---
 {0} Free
-q 0x0
-fn {3} (10, 20)
-p {2} (100, 20)
-{1} Allocate 8 bytes
-{0} Free
-{1} Allocate 8 bytes
-r {2} (1, 2)
-p {3} (0, 0)
-s {3} (1, 2)
-s {4} (0, 0)
-{0} Free
+Box c value: 100, refs: 2
+Box b value: 100, refs: 2
+SUCCESS
 {0} Free
 

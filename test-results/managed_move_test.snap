@@ -1,4 +1,4 @@
-==== examples/ref-count.c ===
+==== examples/managed_move_test.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -13,13 +13,7 @@ extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
-
-#include "method.h"
 #include "managed-struct.h"
-typedef struct Point_s {
-    int x;
-    int y;
-} Point;
 struct _ReferenceCount {
   int ref_count;
 }
@@ -69,69 +63,43 @@ static inline int _Managed_ref_count(void *data) {
     if (!data) return -1;
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
-typedef Point* PointRef;
+typedef struct Foo_s* Foo;
 
-int _PointRef_method_managed_reference_count(PointRef p) {
+int _Foo_method_managed_reference_count(Foo p) {
     if (!p) return -1;
     return ((struct _ReferenceCount *)p - 1)->ref_count;
 }
 
  
- void _PointRef_method_print(PointRef p, const char *s) {
-          _Managed_retain(p); 
-            
-          printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p), p->x, p->y);
-          _Managed_release(&p);}
-void fn(PointRef p) {
-          _Managed_retain(p); 
-            
-          _PointRef_method_print(p, "fn");
-          _Managed_release(&p);}
-PointRef origin() {
-    PointRef p = _Managed_allocate(sizeof(*p));
+struct Foo_s {
+    int x;
+};
+Foo CreateFoo(int val) {
+    Foo f = _Managed_allocate(sizeof(*f));
 
 
-    p->x = 0;
-    p->y = 0;
-    _Managed_retain(p);_Managed_release(&p);return p;
-}
-PointRef point(int x, int y) {
-    PointRef p = _Managed_allocate(sizeof(*p));
-
-
-    p->x = x;
-    p->y = y;
-    _Managed_retain(p);_Managed_release(&p);return p;
+    f->x = val;
+    _Managed_retain(f);_Managed_release(&f);return f;
 }
 int main() {
-    PointRef p = _Managed_allocate(sizeof(*p));
+    Foo f1 = _Managed_allocate(sizeof(*f1));
 
 
-    PointRef q = origin();
+    printf("--- Assignment from call ---\n");
+    _Managed_move(&f1, CreateFoo(42)); // Should use _Managed_move
+    printf("f1 val: %d, refcount: %d\n", f1->x, _Foo_method_managed_reference_count(f1));
+    Foo f2 = _Managed_allocate(sizeof(*f2));
 
 
-    _Managed_set(&q, ((void *)0));
-    printf("q %p\n", q);
-    p->x = 10;
-    p->y = 20;
-    fn(p);
-    p->x = 100;
-    _PointRef_method_print(p, "p");
-    _Managed_move(&q, origin());
-    _Managed_set(&p, q);
-    PointRef r = point(1, 2);
-
-
-    _PointRef_method_print(r, "r");
-    _PointRef_method_print(p, "p");
-    PointRef s = ((void *)0);
-
-
-    _Managed_set(&s, r);
-    _PointRef_method_print(s, "s");
-    _Managed_set(&s, p);
-    _PointRef_method_print(s, "s");
-    _Managed_release(&p);_Managed_release(&q);_Managed_release(&r);_Managed_release(&s);return 0;
+    printf("--- Assignment from variable ---\n");
+    _Managed_set(&f2, f1); // Should use _Managed_set
+    printf("f2 val: %d, refcount: %d\n", f2->x, _Foo_method_managed_reference_count(f2));
+    if (_Foo_method_managed_reference_count(f1) == 2 && _Foo_method_managed_reference_count(f2) == 2) {
+        printf("SUCCESS\n");
+    } else {
+        printf("FAILURE: refcounts are %d and %d\n", _Foo_method_managed_reference_count(f1), _Foo_method_managed_reference_count(f2));
+    }
+    _Managed_release(&f1);_Managed_release(&f2);return 0;
 }
 
 ==== std/defer.h ===
@@ -151,19 +119,15 @@ int main() {
 
 
 ==== RUN OUTPUT ===
-{1} Allocate 8 bytes
-{1} Allocate 8 bytes
+{1} Allocate 4 bytes
+--- Assignment from call ---
+{1} Allocate 4 bytes
 {0} Free
-q 0x0
-fn {3} (10, 20)
-p {2} (100, 20)
-{1} Allocate 8 bytes
+f1 val: 42, refcount: 1
+{1} Allocate 4 bytes
+--- Assignment from variable ---
 {0} Free
-{1} Allocate 8 bytes
-r {2} (1, 2)
-p {3} (0, 0)
-s {3} (1, 2)
-s {4} (0, 0)
-{0} Free
+f2 val: 42, refcount: 2
+SUCCESS
 {0} Free
 

@@ -58,9 +58,7 @@
             const argsNode = callNode.named['arguments'];
 
             // Transform f.print() into _Foo_method_print(&f)
-            let argsText = argsNode ? argsNode.text : "()";
-            const separator = (argsText === "()") ? "" : ", ";
-            const innerArgs = (argsText === "()") ? "" : argsText.slice(1, -1);
+            const innerArgNodes = argsNode ? argsNode.children.slice(1, -1) : [];
             
             const objDef = helpers.findDefinitionOrNull(targetNode);
             const objType = objDef ? helpers.getType(objDef, { resolve: true }) : "";
@@ -71,7 +69,9 @@
             const isPointer = cleanType.includes('*');
             const prefix = isPointer ? "" : "&";
 
-            return `${newName}(${prefix}${targetNode.text}${separator}${innerArgs})`;
+            const hasArgs = innerArgNodes.length > 0;
+            const sep = hasArgs ? ", " : "";
+            return helpers.code`${newName}(${prefix}${targetNode}${sep}${innerArgNodes})`;
         }
     );
 

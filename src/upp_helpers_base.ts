@@ -1,5 +1,5 @@
 import { SourceNode, SourceTree } from './source_tree.ts';
-import type { Invocation, Registry, RegistryContext, TransformRule } from './registry.ts';
+import type { Invocation, Registry, RegistryContext } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import Parser from 'tree-sitter';
 import type { MacroResult, AnySourceNode, AnySourceTree, InterpolationValue } from './types.ts';
@@ -10,7 +10,7 @@ let uniqueIdCounter = 1;
  * Base helper class providing general-purpose macro utilities.
  * @class
  */
-class UppHelpersBase<LanguageNodeTypes extends string> {
+abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     public root: SourceNode<LanguageNodeTypes> | null;
     public registry: Registry;
     public matcher: PatternMatcher;
@@ -22,7 +22,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     public currentInvocations: Invocation[];
     public consumedIds: Set<number | string>;
     public context: RegistryContext | null;
-    public parentTree: SourceNode<any> | null;
+
     public stdPath: string | null;
     public lastConsumedIndex?: number;
     public parentRegistry?: {
@@ -49,7 +49,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         this.currentInvocations = [];
         this.consumedIds = new Set();
         this.context = null; // Back-reference to the local transform context
-        this.parentTree = (registry && registry.parentRegistry && registry.parentRegistry.tree) ? registry.parentRegistry.tree.root : null;
+
         this.stdPath = registry ? registry.stdPath : null;
 
         // Use a dedicated parser for patterns to avoid invalidating the main registry parser/tree
@@ -389,8 +389,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         this.registry.registerPendingRule({
             contextNode: scope as SourceNode<any>,
             matcher: (n, h) => {
-                // Must be a descendant of the scope to match
-                if (!h.isDescendant(scope as SourceNode<any>, n)) return false;
+                // If scope is a root node (translation_unit), match globally
+                // This allows header-registered rules to apply to the main file
+                const isRootScope = (scope as SourceNode<any>).type === 'translation_unit';
+                if (!isRootScope && !h.isDescendant(scope as SourceNode<any>, n)) return false;
                 // Live structural match - check any of the patterns
                 return patterns.some(p => !!h.match(n, p));
             },
@@ -415,28 +417,13 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): MacroResult} callback - Deferred transformation callback.
     */
     withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
-        const rule: TransformRule<LanguageNodeTypes> = {
-            active: true,
+        this.registry.registerPendingRule({
+            contextNode: this.findRoot()!,
             matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers as UppHelpersBase<LanguageNodeTypes>);
             },
             callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => callback(node, helpers as UppHelpersBase<LanguageNodeTypes>)
-        };
-
-        this.registry.registerTransformRule(rule);
-
-        this.withRoot((root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => {
-            helpers.walk(root, (node: SourceNode<any>) => {
-                if (node.type === nodeType) {
-                    if (matcher(node as SourceNode<LanguageNodeTypes>, helpers)) {
-                        const replacement = callback(node as SourceNode<LanguageNodeTypes>, helpers);
-                        if (replacement !== undefined) {
-                            helpers.replace(node as SourceNode<LanguageNodeTypes>, replacement === null ? '' : replacement);
-                        }
-                    }
-                }
-            });
         });
     }
 
@@ -447,23 +434,8 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
      * @returns {Invocation[]} List of invocations found.
      */
     findInvocations(macroName: string, node: SourceNode<LanguageNodeTypes> | null = null): Invocation[] {
-        let target = node || this.root;
-        if (!target && this.registry) {
-            target = this.registry.tree ? this.registry.tree.root : null as any;
-        }
-
-        if (!target) {
-            const source = (this.registry as any).source || (this.context && this.context.tree && this.context.tree.source);
-            if (!source) return [];
-
-            const invs = (this.registry as any).findInvocations(source);
-            return invs.filter((i: Invocation) => i.name === macroName).map((i: Invocation) => ({
-                ...i,
-                text: `@${i.name}(${i.args.join(',')})`,
-                // Mock includes for package.hup
-                includes: (str: string) => i.args.some((arg: string) => arg.includes(str))
-            }));
-        }
+        const target = node || this.root || (this.registry?.tree?.root ?? null);
+        if (!target) return [];
 
         const pattern = new RegExp(`@${macroName}\\s*\\(`);
         const results = target.find((n: SourceNode) => {
@@ -604,7 +576,7 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
         let counter = 0;
         while (stack.length > 0) {
             counter++;
-            if (counter > 5000) {
+            if (counter > 50000) {
                 console.error(`Infinite loop in walk() detected! Node type: ${stack[stack.length - 1]?.type}, text: ${stack[stack.length - 1]?.text}`);
                 throw new Error("Infinite loop in walk()");
             }
@@ -716,14 +688,10 @@ class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
 
-    /**
-     * Finds the nearest enclosing scope for the current macro.
-     * @returns {SourceNode<LanguageNodeTypes> | null} The scope node or null.
-     * @throws {Error} If not implemented in the base class.
-     */
-    findScope(): SourceNode<LanguageNodeTypes> | null {
-        throw new Error("helpers.findScope(): Method not implemented. This is a language-specific feature (e.g. C).");
-    }
+    /** Clears language-level semantic caches. Overridden in UppHelpersC. */
+    clearSemanticCaches(): void { /* base no-op; overridden in UppHelpersC */ }
+
+    abstract findScope(): SourceNode<LanguageNodeTypes> | null;
 
     /**
      * Finds the nearest enclosing node of a given type.

@@ -21,13 +21,17 @@ fn
 MyType
  ;
 int main() {
-    /*@DefRef("x")*/ MyType /* Declare "x" */
+    /*@DefRef("x")*/ /* Ref "MyType" */
+MyType
+ /* Declare "x" */
 x
  = 10;
     /* Ref "x" */
 x
  = 5;
-    fn(/* Ref "x" */
+    /* Ref "fn" */
+fn
+(/* Ref "x" */
 x
 );
     return 0;

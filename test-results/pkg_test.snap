@@ -1,4 +1,5 @@
-==== examples/struct_access_3.c ===
+==== examples/pkg_test.c ===
+#include "pkg_test.h"
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -14,30 +15,16 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-#include "method.h"
-typedef struct {
-    int x;
-    int y;
-} Point;
- int _Point_method_distance(Point * p) {
-    return p->x * p->x + p->y * p->y;
-}
 int main() {
-    Point p;
-    p.x = 10;
-    p.y = 20;
-    int r = _Point_method_distance(&p);
-    printf("distance: %d\n", r);
-    Point * q = &p;
-    int r2 = _Point_method_distance(q);
-    printf("distance: %d\n", r2);
+    printf("Hello from pkg_test.hup!\n");;
+    printf("SUCCESS:Found main via upp.root");
     return 0;
 }
 
-==== std/method.h ===
+==== examples/pkg_test.h ===
+
 
 
 ==== RUN OUTPUT ===
-distance: 500
-distance: 500
-
+Hello from pkg_test.hup!
+SUCCESS:Found main via upp.root

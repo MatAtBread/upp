@@ -1,4 +1,4 @@
-==== examples/struct_access_3.c ===
+==== examples/hello.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -13,31 +13,8 @@ extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
-
-#include "method.h"
-typedef struct {
-    int x;
-    int y;
-} Point;
- int _Point_method_distance(Point * p) {
-    return p->x * p->x + p->y * p->y;
-}
-int main() {
-    Point p;
-    p.x = 10;
-    p.y = 20;
-    int r = _Point_method_distance(&p);
-    printf("distance: %d\n", r);
-    Point * q = &p;
-    int r2 = _Point_method_distance(q);
-    printf("distance: %d\n", r2);
-    return 0;
-}
-
-==== std/method.h ===
-
+int main() { printf("Hello\n"); return 0; }
 
 ==== RUN OUTPUT ===
-distance: 500
-distance: 500
+Hello
 

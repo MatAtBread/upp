@@ -30,14 +30,10 @@ export class SourceTree<NodeTypes extends string = string> {
         this.parser.setLanguage(language);
 
         // Initial parse
-        try {
-            this.tree = this.parser.parse((index: number) => {
-                if (index >= source.length) return null;
-                return source.slice(index, index + 4096);
-            });
-        } catch (e) {
-            throw e;
-        }
+        this.tree = this.parser.parse((index: number) => {
+            if (index >= source.length) return null;
+            return source.slice(index, index + 4096);
+        });
 
         /** @type {Map<string, SourceNode>} Map of TreeSitterNode.id -> SourceNode */
         this.nodeCache = new Map();
@@ -553,9 +549,8 @@ export class SourceNode<T extends string = string> {
             content = content.filter(x => x !== null && x !== undefined);
         }
 
-        const isWrapper = content instanceof SourceNode && (content === this || (content as any).find((child: SourceNode<any>) => child === this).length > 0);
         const isNewObject = (content instanceof SourceNode || content instanceof SourceTree) &&
-            (isWrapper || content.type !== this.type);
+            content.type !== this.type;
         let newNode = content;
         const originalText = this.text;
         const oldCaptured = this._capturedText;
@@ -568,11 +563,6 @@ export class SourceNode<T extends string = string> {
             }
         };
         snapshotIdentity(oldChildren);
-
-        if (Array.isArray(newNode)) {
-            // ... (rest of array logic)
-            // No changes here for now as Array replacement usually implies identity loss unless we add more checks
-        }
 
         if (typeof newNode === 'string') {
             newNode = SourceTree.fragment<any>(newNode, this.tree.language);
