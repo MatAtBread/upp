@@ -40,6 +40,29 @@
             applyDeferToNode(node);
         }
 
+        // Find all break/continue statements that occur AFTER this defer statement
+        const jumps = [...scope.find('break_statement'), ...scope.find('continue_statement')]
+            .filter(n => n.startIndex > deferIndex);
+        
+        for (const jump of jumps) {
+            let exitsScope = true;
+            let current = jump.parent;
+            while (current && current !== scope) {
+                if (['for_statement', 'while_statement', 'do_statement'].includes(current.type)) {
+                    exitsScope = false;
+                    break;
+                }
+                if (jump.type === 'break_statement' && current.type === 'switch_statement') {
+                    exitsScope = false;
+                    break;
+                }
+                current = current.parent;
+            }
+            if (exitsScope && current === scope) {
+                applyDeferToNode(jump);
+            }
+        }
+
         // Also add before the closing brace of the scope
         const last = scope.children[scope.children.length - 1];
         if (last && (last.type === '}' || (last.type === 'compound_statement' && last.text === '}'))) {
