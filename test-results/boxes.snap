@@ -51,6 +51,8 @@ static inline int _Managed_ref_count(void *data) {
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
 typedef struct Box* BoxRef;
+#define _Managed_Sizeof_BoxRef(n) (sizeof(*(BoxRef)0) * (n))
+
 
 int _BoxRef_method_managed_reference_count(BoxRef p) {
     if (!p) return -1;
@@ -63,7 +65,7 @@ struct Box {
 };
 
 BoxRef create_box(int val) {
-    BoxRef b = _Managed_allocate(sizeof(*b));
+    BoxRef b = _Managed_allocate(_Managed_Sizeof_BoxRef(1));
 
 
     b->value = val;
@@ -81,6 +83,7 @@ extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
 extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
@@ -88,7 +91,7 @@ extern void *_stderr;
 
 #include "box_ref_test.h"
 BoxRef create_boxes(int n) {
-    BoxRef b = _Managed_allocate(sizeof(*b) * (n));
+    BoxRef b = _Managed_allocate(_Managed_Sizeof_BoxRef(n));
 
 
     int i = n;

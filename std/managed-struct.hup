@@ -75,13 +75,13 @@
       const sizeNode = node.named.declarator.named.size;
       const sizeStr = sizeNode ? sizeNode.text : '1';
       return upp.code`
-      ${name} ${nameText} = _Managed_allocate(sizeof(*${nameText}) * (${sizeStr}));
+      ${name} ${nameText} = _Managed_allocate(_Managed_Sizeof_${name}(${sizeStr}));
       @defer _Managed_release(&${nameText});
       `;
     }
 
     return upp.code`
-    ${name} ${nameText} = _Managed_allocate(sizeof(*${nameText}));
+    ${name} ${nameText} = _Managed_allocate(_Managed_Sizeof_${name}(1));
     @defer _Managed_release(&${nameText});
     `;
   });
@@ -90,6 +90,42 @@
 
 @define ManagedStruct(T) {
     const name = upp.consume().text.replace(/;$/, '');
+    
+    let flexibleMember = null;
+    const defs = upp.root.find('struct_specifier');
+    for (const def of defs) {
+        let isMatch = false;
+        if (def.named && def.named.name && `struct ${def.named.name.text}` === T.trim()) {
+             isMatch = true;
+        } else if (def.text.replace(/\s+/g, ' ') === T.trim().replace(/\s+/g, ' ')) {
+             isMatch = true;
+        }
+
+        if (isMatch && def.named && def.named.body) {
+            const fields = def.named.body.find('field_declaration');
+            if (fields.length > 0) {
+                const lastField = fields[fields.length - 1];
+                const arrayDecl = lastField.children && lastField.children.find(c => c.type === 'array_declarator');
+                if (arrayDecl) {
+                    const sizeChild = arrayDecl.named && arrayDecl.named.size;
+                    if (!sizeChild) {
+                        const idNode = arrayDecl.named && arrayDecl.named.declarator;
+                        if (idNode && idNode.type === 'identifier') {
+                            flexibleMember = idNode.text;
+                        } else {
+                            flexibleMember = arrayDecl.find(c => c.type === 'identifier')[0]?.text;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let sizeofBody = `(sizeof(*(${name})0) * (n))`;
+    if (flexibleMember) {
+        sizeofBody = `(sizeof(*(${name})0) + sizeof(((${name})0)->${flexibleMember}[0]) * (n))`;
+    }
+
     let boilerplate = "";
     if (!upp.root.find(n => n.text.includes("struct _ReferenceCount")).length) {
         boilerplate = `
@@ -146,6 +182,7 @@ static inline int _Managed_ref_count(void *data) {
     return $`
 ${boilerplate}
 typedef ${T}* ${name};
+#define _Managed_Sizeof_${name}(n) ${sizeofBody}
 @method(${name}) int managed_reference_count(${name} p) {
     if (!p) return -1;
     return ((struct _ReferenceCount *)p - 1)->ref_count;

@@ -9,6 +9,7 @@ extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
 extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
@@ -70,6 +71,8 @@ static inline int _Managed_ref_count(void *data) {
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
 typedef Point* PointRef;
+#define _Managed_Sizeof_PointRef(n) (sizeof(*(PointRef)0) * (n))
+
 
 int _PointRef_method_managed_reference_count(PointRef p) {
     if (!p) return -1;
@@ -88,7 +91,7 @@ void fn(PointRef p) {
           _PointRef_method_print(p, "fn");
           _Managed_release(&p);}
 PointRef origin() {
-    PointRef p = _Managed_allocate(sizeof(*p));
+    PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
 
 
     p->x = 0;
@@ -96,7 +99,7 @@ PointRef origin() {
     _Managed_retain(p);_Managed_release(&p);return p;
 }
 PointRef point(int x, int y) {
-    PointRef p = _Managed_allocate(sizeof(*p));
+    PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
 
 
     p->x = x;
@@ -104,7 +107,7 @@ PointRef point(int x, int y) {
     _Managed_retain(p);_Managed_release(&p);return p;
 }
 int main() {
-    PointRef p = _Managed_allocate(sizeof(*p));
+    PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
 
 
     PointRef q = origin();

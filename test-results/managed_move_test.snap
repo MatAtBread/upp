@@ -9,6 +9,7 @@ extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
 extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
@@ -64,6 +65,8 @@ static inline int _Managed_ref_count(void *data) {
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
 typedef struct Foo_s* Foo;
+#define _Managed_Sizeof_Foo(n) (sizeof(*(Foo)0) * (n))
+
 
 int _Foo_method_managed_reference_count(Foo p) {
     if (!p) return -1;
@@ -75,20 +78,20 @@ struct Foo_s {
     int x;
 };
 Foo CreateFoo(int val) {
-    Foo f = _Managed_allocate(sizeof(*f));
+    Foo f = _Managed_allocate(_Managed_Sizeof_Foo(1));
 
 
     f->x = val;
     _Managed_retain(f);_Managed_release(&f);return f;
 }
 int main() {
-    Foo f1 = _Managed_allocate(sizeof(*f1));
+    Foo f1 = _Managed_allocate(_Managed_Sizeof_Foo(1));
 
 
     printf("--- Assignment from call ---\n");
     _Managed_move(&f1, CreateFoo(42)); // Should use _Managed_move
     printf("f1 val: %d, refcount: %d\n", f1->x, _Foo_method_managed_reference_count(f1));
-    Foo f2 = _Managed_allocate(sizeof(*f2));
+    Foo f2 = _Managed_allocate(_Managed_Sizeof_Foo(1));
 
 
     printf("--- Assignment from variable ---\n");

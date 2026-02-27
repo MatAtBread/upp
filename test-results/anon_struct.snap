@@ -9,6 +9,7 @@ extern void *malloc(unsigned long n);
 extern void free(void *p);
 extern char *strcpy(char *dest, const char *src);
 extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
 extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
@@ -68,6 +69,8 @@ typedef struct {
     int id;
     float value;
 }* AnonBox;
+#define _Managed_Sizeof_AnonBox(n) (sizeof(*(AnonBox)0) * (n))
+
 
 int _AnonBox_method_managed_reference_count(AnonBox p) {
     if (!p) return -1;
@@ -76,7 +79,7 @@ int _AnonBox_method_managed_reference_count(AnonBox p) {
 
  
 AnonBox create_anon(int id, float value) {
-    AnonBox a = _Managed_allocate(sizeof(*a));
+    AnonBox a = _Managed_allocate(_Managed_Sizeof_AnonBox(1));
 
 
     a->id = id;
