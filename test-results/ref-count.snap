@@ -131,7 +131,13 @@ int main() {
     _PointRef_method_print(s, "s");
     _Managed_set(&s, p);
     _PointRef_method_print(s, "s");
-    _Managed_release(&p);_Managed_release(&q);_Managed_release(&r);_Managed_release(&s);return 0;
+    
+
+
+_Managed_release(&s);
+_Managed_release(&r);
+_Managed_release(&q);
+_Managed_release(&p);return 0;
 }
 
 ==== std/defer.h ===

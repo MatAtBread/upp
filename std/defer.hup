@@ -2,6 +2,10 @@
 #define __UPP_STDLIB_DEFER_H__
 
 @define defer() {
+    // Capture the exact location of the macro before consumption
+    // This allows us to know if return statements appear AFTER this defer
+    const deferIndex = upp.invocation.invocationNode.startIndex;
+    
     const stmt = upp.consume(['expression_statement', 'compound_statement']);
     if (!stmt) return upp.error("Expected expression_statement or compound_statement");
     
@@ -9,20 +13,37 @@
     const trimmed = code.trim();
     const codeText = (trimmed.endsWith('}') || trimmed.endsWith(';')) ? code : code + ";";
         
+    const applyDeferToNode = (node) => {
+        let defers = node.data._arrangedDefers || [];
+        defers.push({ code: codeText, index: deferIndex });
+        defers.sort((a, b) => b.index - a.index);
+        node.data._arrangedDefers = defers;
+        
+        let existingNodes = node.data._insertedDeferNodes || [];
+        const existingArr = Array.isArray(existingNodes) ? existingNodes : [existingNodes];
+        existingArr.forEach(n => { if (n.isValid) n.remove(); });
+        
+        const fullDeferCode = defers.map(d => d.code).join('');
+        node.data._insertedDeferNodes = node.insertBefore(upp.code`${fullDeferCode}`);
+    };
+
     upp.withScope((scope, helpers) => {
-        // Find all return statements
-        const returns = scope.find('return_statement');
+        // Enforce no goto statements after the defer in this scope
+        const gotos = scope.find('goto_statement').filter(n => n.startIndex > deferIndex);
+        if (gotos.length > 0) {
+            upp.error(gotos[0], "@defer does not yet support goto statements in its scope.");
+        }
+
+        // Find all return statements that occur AFTER this defer statement
+        const returns = scope.find('return_statement').filter(n => n.startIndex > deferIndex);
         for (const node of returns) {
-            node.insertBefore(codeText);
+            applyDeferToNode(node);
         }
 
         // Also add before the closing brace of the scope
         const last = scope.children[scope.children.length - 1];
         if (last && (last.type === '}' || (last.type === 'compound_statement' && last.text === '}'))) {
             // Check if we already handled a return at the very end.
-            // When we replace a return with 'code \n return', 
-            // the original return node's identity is preserved if we use insertBefore on the return,
-            // but here we are looking for the end of the block.
             let foundReturn = false;
             for (let i = scope.children.length - 1; i >= 0; i--) {
                 const child = scope.children[i];
@@ -36,7 +57,7 @@
             }
 
             if (!foundReturn) {
-                 last.insertBefore(codeText);
+                applyDeferToNode(last);
             }
         }
     });

@@ -30,11 +30,15 @@ int main() {
  
         if (some_condition) {
             // should defer here, str1
-            { free(nested); nested = ((void *)0); }{ free(str1); str1 = ((void *)0); }{ free(str2); str2 = ((void *)0); }return 1;
+            
+{ free(nested); nested = ((void *)0); }
+{ free(str2); str2 = ((void *)0); }
+{ free(str1); str1 = ((void *)0); }return 1;
         }
     { free(nested); nested = ((void *)0); }}
     // should defer here, str2 then str1
-    { free(str1); str1 = ((void *)0); }{ free(str2); str2 = ((void *)0); }return 0;
+    { free(str2); str2 = ((void *)0); }
+{ free(str1); str1 = ((void *)0); }return 0;
 }
 
 ==== std/defer.h ===

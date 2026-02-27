@@ -99,7 +99,8 @@ int main() {
     } else {
         printf("FAILURE: refcounts are %d and %d\n", _Foo_method_managed_reference_count(f1), _Foo_method_managed_reference_count(f2));
     }
-    _Managed_release(&f1);_Managed_release(&f2);return 0;
+    _Managed_release(&f2);
+_Managed_release(&f1);return 0;
 }
 
 ==== std/defer.h ===

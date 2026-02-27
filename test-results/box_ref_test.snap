@@ -33,7 +33,8 @@ int main() {
     } else {
         printf("FAILURE: b->value=%d, refs=%d\n", b->value, _BoxRef_method_managed_reference_count(b));
     }
-    _Managed_release(&b);_Managed_release(&c);return 0;
+    _Managed_release(&c);
+_Managed_release(&b);return 0;
 }
 
 ==== examples/box_ref_test.h ===
