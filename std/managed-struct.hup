@@ -58,6 +58,19 @@
       @defer _Managed_release(&${nameText});
       `;
     }
+    
+    if (node.named && node.named.declarator && node.named.declarator.type === 'array_declarator') {
+      // Tree-sitter 'array_declarator' structure:
+      //  declarator: identifier
+      //  size: expression (optional)
+      const sizeNode = node.named.declarator.named.size;
+      const sizeStr = sizeNode ? sizeNode.text : '1';
+      return upp.code`
+      ${name} ${nameText} = _Managed_allocate(sizeof(*${nameText}) * (${sizeStr}));
+      @defer _Managed_release(&${nameText});
+      `;
+    }
+
     return upp.code`
     ${name} ${nameText} = _Managed_allocate(sizeof(*${nameText}));
     @defer _Managed_release(&${nameText});

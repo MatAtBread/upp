@@ -1,5 +1,4 @@
 #include "io-lite.h"
-#include <assert.h>
 
 @include(box_ref_test.hup)
 
@@ -15,13 +14,14 @@ BoxRef create_boxes(int n) {
 int main() {
     BoxRef boxes = create_boxes(5);
     
-    assert(boxes[0].value == 0);
-    assert(boxes[1].value == 10);
-    assert(boxes[2].value == 20);
-    assert(boxes[3].value == 30);
-    assert(boxes[4].value == 40);
+    int ok = (boxes[0].value == 0)
+     && (boxes[1].value == 10)
+     && (boxes[2].value == 20)
+     && (boxes[3].value == 30)
+     && (boxes[4].value == 40);
 
     printf("boxes[4].value = %d\n", boxes[4].value);
+    printf("%s\n", ok ? "PASS":"FAIL");
 
     return 0;
 }

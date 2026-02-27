@@ -1,0 +1,135 @@
+==== examples/box_ref_test.h ===
+#include "managed-struct.h"
+
+struct _ReferenceCount {
+  int ref_count;
+}
+;
+static inline void *_Managed_allocate(int size) {
+  struct _ReferenceCount *p = malloc(size + sizeof(struct _ReferenceCount));
+  p->ref_count = 1;
+  printf("{%d} Allocate %d bytes\n", p->ref_count, size);
+  return (void *)(p + 1);
+}
+static inline void *_Managed_retain(void *data) {
+  struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+  p->ref_count++;
+  //printf("{%d} Retain\n", p->ref_count);
+  return data;
+}
+static inline void _Managed_release(void *__p) {
+  void **_p = (void **)__p;
+  void *data = *_p;
+  if (data) {
+    struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
+    if (--p->ref_count <= 0) {
+      printf("{%d} Free\n", p->ref_count);
+      free(p);
+      *_p = ((void *)0);
+    }
+  }
+}
+static inline void *_Managed_set(void *_dest, void *_src) {
+  void **dest = _dest;
+  if (*dest) { 
+    struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
+    //printf("{%d} Set\n", p->ref_count);
+    _Managed_release(dest);
+  }
+  return *dest = (_src ? _Managed_retain(_src) : ((void *)0));
+}
+static inline void *_Managed_move(void *_dest, void *_src) {
+  void **dest = _dest;
+  if (*dest) { 
+    struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
+    _Managed_release(dest);
+  }
+  return *dest = _src;
+}
+static inline int _Managed_ref_count(void *data) {
+    if (!data) return -1;
+    return ((struct _ReferenceCount *)data - 1)->ref_count;
+}
+typedef struct Box* BoxRef;
+
+int _BoxRef_method_managed_reference_count(BoxRef p) {
+    if (!p) return -1;
+    return ((struct _ReferenceCount *)p - 1)->ref_count;
+}
+
+ 
+struct Box {
+    int value;
+};
+
+BoxRef create_box(int val) {
+    BoxRef b = _Managed_allocate(sizeof(*b));
+
+
+    b->value = val;
+    _Managed_retain(b);_Managed_release(&b);return b;
+}
+
+==== examples/boxes.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+#include "box_ref_test.h"
+BoxRef create_boxes(int n) {
+    BoxRef b = _Managed_allocate(sizeof(*b) * (n));
+
+
+    int i = n;
+    while (i-- > 0) {
+        b[i].value = i * 10;
+    }
+    _Managed_retain(b);_Managed_release(&b);return b;
+}
+int main() {
+    BoxRef boxes = create_boxes(5);
+
+
+    int ok = (boxes[0].value == 0)
+     && (boxes[1].value == 10)
+     && (boxes[2].value == 20)
+     && (boxes[3].value == 30)
+     && (boxes[4].value == 40);
+    printf("boxes[4].value = %d\n", boxes[4].value);
+    printf("%s\n", ok ? "PASS":"FAIL");
+    _Managed_release(&boxes);return 0;
+}
+
+==== std/defer.h ===
+#ifndef __UPP_STDLIB_DEFER_H__
+#define __UPP_STDLIB_DEFER_H__
+
+
+#endif
+
+==== std/managed-struct.h ===
+#include "defer.h"
+#include "method.h"
+
+
+
+==== std/method.h ===
+
+
+==== RUN OUTPUT ===
+{1} Allocate 20 bytes
+boxes[4].value = 40
+PASS
+{0} Free
+
