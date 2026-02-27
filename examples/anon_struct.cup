@@ -1,0 +1,27 @@
+#include "io-lite.h"
+#include <assert.h>
+
+@include(managed-struct.hup)
+
+@ManagedStruct(struct {
+    int id;
+    float value;
+}) AnonBox;
+
+AnonBox create_anon(int id, float value) {
+    AnonBox a;
+    a->id = id;
+    a->value = value;
+    return a;
+}
+
+int main() {
+    AnonBox a1 = create_anon(1, 3.14);
+    assert(a1->id == 1);
+    
+    AnonBox a2 = a1; // Should retain
+    assert(_Managed_ref_count(a1) == 2);
+    
+    printf("AnonBox works! (refs=%d)\n", _Managed_ref_count(a1));
+    return 0;
+}

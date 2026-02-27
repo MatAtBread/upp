@@ -32,6 +32,15 @@
           ref.parent.insertBefore(upp.code`_Managed_retain(${nameText});`);
           return undefined;
       }
+      if (ref && ref.parent && ref.parent.type === 'init_declarator' && ref.parent.named.value?.id === ref.id) {
+          // Find the actual declaration statement block to insert before
+          let stmt = ref.parent;
+          while (stmt && stmt.type !== 'declaration') stmt = stmt.parent;
+          if (stmt) {
+              stmt.insertBefore(upp.code`_Managed_retain(${ref.text});`);
+          }
+          return undefined;
+      }
       return undefined;
     };
 
