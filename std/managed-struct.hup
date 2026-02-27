@@ -89,36 +89,56 @@
 }
 
 @define ManagedStruct(T) {
+  debugger;
     const name = upp.consume().text.replace(/;$/, '');
     
     let flexibleMember = null;
-    const defs = upp.root.find('struct_specifier');
-    for (const def of defs) {
-        let isMatch = false;
+    let structTree = null;
+    if (T.trim().match(/struct\s+\{/)) {
+        // This is an inline struct
+        structTree = upp.code(T.trim()).child(0);
+    } 
+    if (!structTree) {
+      const defs = upp.root.find('struct_specifier');
+      for (const def of defs) {
+        if (def.parent.type == 'type_definition') {
+          const typedefName = def.parent.named.declarator.text;
+          if (typedefName === T.trim()) {
+            structTree = def;
+            break;
+          }
+        }
         if (def.named && def.named.name && `struct ${def.named.name.text}` === T.trim()) {
-             isMatch = true;
+            structTree = def;
+            break;
         } else if (def.text.replace(/\s+/g, ' ') === T.trim().replace(/\s+/g, ' ')) {
-             isMatch = true;
+            structTree = def;
+            break;
         }
+      }
+    }
+    if (!structTree) {
+        upp.error(`Could not find '${T}'`);
+        return null;
+    }
 
-        if (isMatch && def.named && def.named.body) {
-            const fields = def.named.body.find('field_declaration');
-            if (fields.length > 0) {
-                const lastField = fields[fields.length - 1];
-                const arrayDecl = lastField.children && lastField.children.find(c => c.type === 'array_declarator');
-                if (arrayDecl) {
-                    const sizeChild = arrayDecl.named && arrayDecl.named.size;
-                    if (!sizeChild) {
-                        const idNode = arrayDecl.named && arrayDecl.named.declarator;
-                        if (idNode && idNode.type === 'identifier') {
-                            flexibleMember = idNode.text;
-                        } else {
-                            flexibleMember = arrayDecl.find(c => c.type === 'identifier')[0]?.text;
-                        }
-                    }
-                }
-            }
-        }
+    if (structTree.named.body) {
+      const fields = structTree.named.body.find('field_declaration');
+      if (fields.length > 0) {
+          const lastField = fields[fields.length - 1];
+          const arrayDecl = lastField.children && lastField.children.find(c => c.type === 'array_declarator');
+          if (arrayDecl) {
+              const sizeChild = arrayDecl.named && arrayDecl.named.size;
+              if (!sizeChild) {
+                  const idNode = arrayDecl.named && arrayDecl.named.declarator;
+                  if (idNode && idNode.type === 'field_identifier') {
+                      flexibleMember = idNode.text;
+                  } else {
+                      flexibleMember = arrayDecl.find(c => c.type === 'field_identifier')[0]?.text;
+                  }
+              }
+          }
+      }
     }
 
     let sizeofBody = `(sizeof(*(${name})0) * (n))`;
