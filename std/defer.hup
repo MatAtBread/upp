@@ -6,17 +6,14 @@
     if (!stmt) return upp.error("Expected expression_statement or compound_statement");
     
     const code = stmt.text;
-
-    upp.withScope((scope, helpers) => {
-        const trimmed = code.trim();
-        const codeText = (trimmed.endsWith('}') || trimmed.endsWith(';')) ? code : code + ";";
+    const trimmed = code.trim();
+    const codeText = (trimmed.endsWith('}') || trimmed.endsWith(';')) ? code : code + ";";
         
+    upp.withScope((scope, helpers) => {
         // Find all return statements
         const returns = scope.find('return_statement');
-        const returnOffsets = new Set();
         for (const node of returns) {
             node.insertBefore(codeText);
-            returnOffsets.add(node.startIndex);
         }
 
         // Also add before the closing brace of the scope
