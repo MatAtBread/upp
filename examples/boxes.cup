@@ -1,0 +1,27 @@
+#include "io-lite.h"
+#include <assert.h>
+
+@include(box_ref_test.hup)
+
+BoxRef create_boxes(int n) {
+    BoxRef b[n]; 
+    int i = n;
+    while (i-- > 0) {
+        b[i].value = i * 10;
+    }
+    return b;
+}
+
+int main() {
+    BoxRef boxes = create_boxes(5);
+    
+    assert(boxes[0].value == 0);
+    assert(boxes[1].value == 10);
+    assert(boxes[2].value == 20);
+    assert(boxes[3].value == 30);
+    assert(boxes[4].value == 40);
+
+    printf("boxes[4].value = %d\n", boxes[4].value);
+
+    return 0;
+}
