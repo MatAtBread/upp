@@ -89,10 +89,8 @@ AnonBox create_anon(int id, float value) {
 int main() {
     AnonBox a1 = create_anon(1, 3.14);
 
-
     int ok = (a1->id == 1);
     _Managed_retain(a1);AnonBox a2 = a1;
-
  // Should retain
     ok &= (_Managed_ref_count(a1) == 2);
     printf("%s (refs=%d)\n", ok ? "PASS":"FAIL", _Managed_ref_count(a1));

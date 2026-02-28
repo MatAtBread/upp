@@ -1,0 +1,38 @@
+#include "io-lite.h"
+
+@include(managed-struct.hup)
+
+@ManagedStruct(struct {
+    char data[];
+}) String;
+
+String create_string(const char *src) {
+    int _n = strlen(src);
+    String s[_n + 1]; // Size includes null terminator
+    strcpy(s->data, src);
+    return s;
+}
+
+@method(String) String copy(String s) {
+    String t = create_string(s->data);
+    return t;
+}
+
+@method(String) void test(String s) {
+}
+
+@method(String) int length(String s) {
+    return strlen(s->data);
+}
+
+int main() {
+    String s = create_string("Hello, UPP Flexible Array\n");
+    int l = s->length();
+    s->test();
+    String t = s->copy();
+    printf("[%d] %s", t->managed_reference_count(), t->data);
+    printf("[%d] %s", s->managed_reference_count(), s->data);
+    s = t;
+    printf("[%d] %s", s->managed_reference_count(), s->data);
+    return 0;
+}

@@ -103,7 +103,6 @@ BoxRef create_boxes(int n) {
 int main() {
     BoxRef boxes = create_boxes(5);
 
-
     int ok = (boxes[0].value == 0)
      && (boxes[1].value == 10)
      && (boxes[2].value == 20)

@@ -19,9 +19,7 @@ int main() {
     printf("--- BoxRef Test ---\n");
     BoxRef b = create_box(42);
 
-
     BoxRef c = create_box(100);
-
 
     printf("Box c value: %d, refs: %d\n", c->value, _BoxRef_method_managed_reference_count(c));
     printf("Box b value: %d, refs: %d\n", b->value, _BoxRef_method_managed_reference_count(b));

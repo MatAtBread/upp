@@ -61,11 +61,9 @@
     upp.withReferences(node, handleReference);
 
     if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
-      const val = node.named.declarator.named.value;
-      return upp.code`
-      ${name} ${nameText} = ${val};
-      @defer _Managed_release(&${nameText});
-      `;
+      node.insertAfter(upp.code`
+      @defer _Managed_release(&${nameText});`);
+      return undefined;
     }
     
     if (node.named && node.named.declarator && node.named.declarator.type === 'array_declarator') {

@@ -78,6 +78,11 @@ int _String_method_managed_reference_count(String p) {
 }
 
  
+ void _String_method_print(String s) {
+          _Managed_retain(s); 
+            
+          printf("%s", s->data);
+          _Managed_release(&s);}
 String create_string(const char *src) {
     int _n = strlen(src);
     String s = _Managed_allocate(_Managed_Sizeof_String(_n + 1));
@@ -88,13 +93,16 @@ String create_string(const char *src) {
     _Managed_retain(s);_Managed_release(&s);return s;
 }
 int main() {
-    String s = create_string("Hello, UPP Flexible Array!");
-
+    String s = create_string("Hello, UPP Flexible Array\n");
 
     int ok = (s->len == 26);
-    ok &= (strcmp(s->data, "Hello, UPP Flexible Array!") == 0);
+    ok &= (strcmp(s->data, "Hello, UPP Flexible Array\n") == 0);
+    _Managed_retain(s);String t = s;
+
+    _String_method_print(t);
     printf("%s: %s (refs=%d)\n", ok ? "PASS" : "FAIL", s->data, _Managed_ref_count(s));
-    _Managed_release(&s);return 0;
+    _Managed_release(&t);
+_Managed_release(&s);return 0;
 }
 
 ==== std/defer.h ===
@@ -115,6 +123,8 @@ int main() {
 
 ==== RUN OUTPUT ===
 {1} Allocate 31 bytes
-PASS: Hello, UPP Flexible Array! (refs=1)
+Hello, UPP Flexible Array
+PASS: Hello, UPP Flexible Array
+ (refs=2)
 {0} Free
 
