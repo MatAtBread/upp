@@ -61,8 +61,7 @@
     upp.withReferences(node, handleReference);
 
     if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
-      node.insertAfter(upp.code`
-      @defer _Managed_release(&${nameText});`);
+      node.insertAfter(upp.code`@defer _Managed_release(&${nameText});`);
       return undefined;
     }
     
@@ -87,7 +86,6 @@
 }
 
 @define ManagedStruct(T) {
-  debugger;
     const name = upp.consume().text.replace(/;$/, '');
     
     let flexibleMember = null;
