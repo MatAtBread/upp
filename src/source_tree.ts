@@ -246,6 +246,7 @@ export class SourceNode<T extends string = string> {
     public _snapshotSearchable?: string;
     public _detachedParent?: SourceNode<any> | null;
     public _detachedIndex?: number;
+    public isReadOnly: boolean = false;
 
     /**
      * @param {SourceTree<any>} tree The tree this node belongs to.
@@ -300,6 +301,30 @@ export class SourceNode<T extends string = string> {
             if (child.isNamed) return child;
         }
         return null;
+    }
+
+    /**
+     * Safely iterates through children, even if the array is mutated during the loop.
+     * Yields structurally valid nodes strictly in their current order.
+     */
+    *walkChildren(): Generator<SourceNode<any>> {
+        let i = 0;
+        while (i < this.children.length) {
+            const child = this.children[i];
+
+            // If the child was detached/invalidated during the loop, 
+            // the array has physically shifted. We re-eval at the same index.
+            if (!child || !child.isValid || child.parent !== this) {
+                // Do not increment i, let it fetch the new child shifted into this slot
+                if (i >= this.children.length) break;
+                continue;
+            }
+
+            yield child;
+
+            // Standard increment to next sibling
+            i++;
+        }
     }
 
     /** @returns {SourceNode<any>|null} */
@@ -426,12 +451,18 @@ export class SourceNode<T extends string = string> {
     }
 
     // --- DOM API ---
+    private assertMutable() {
+        if (this.isReadOnly) {
+            throw new Error(`[UPP] Cannot mutate node of type '${this.type}': marked as ReadOnly (usually indicating it is an ancestor of the currently executing rule context). Modification restricted to the current context node and its sub-tree.`);
+        }
+    }
 
     /**
      * Removes the node from the tree and returns the removed sub-tree.
      * @returns {SourceTree<any>}
      */
     remove(): SourceTree<any> {
+        this.assertMutable();
         this._detachedParent = this.parent;
         if (this.parent) {
             this._detachedIndex = this.parent.children.indexOf(this);
@@ -498,6 +529,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[] | null}
      */
     replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>, morphIdentity: boolean = true): SourceNode<any> | SourceNode<any>[] | null {
+        this.assertMutable();
         let tree = this.tree;
         let start = this.startIndex;
         let end = this.endIndex;
@@ -678,6 +710,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertAfter(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        if (this.parent) this.parent.assertMutable();
         const tree = this.tree;
         if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
             const checkNode = (n: any) => {
@@ -739,6 +772,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        if (this.parent) this.parent.assertMutable();
         if (!this.parent) return this.insertAt(-1, content);
         const siblings = this.parent.allChildren;
         return this.parent.insertAt(siblings.indexOf(this), content);
@@ -751,6 +785,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertAt(idx: number, content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        this.assertMutable();
         const tree = this.tree;
         let newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string> = content;
         if (typeof newNode === 'string') {
