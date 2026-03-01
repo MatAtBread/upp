@@ -8,8 +8,12 @@ extern void free(void *p);
   const nameNode = upp.consume();
   if (!nameNode) return null;
   const name = nameNode.text.replace(/;$/, '');
+
+  const handledIds = new Set();
+
   upp.withMatch(upp.root, [`${name} $id;`, `${name} $id`], ({ id }, upp, node) => {
     if (!id) return undefined;
+    if (node.type !== 'declaration' && node.type !== 'parameter_declaration') return undefined;
     
     // Robustly get the identifier from the declaration or parameter
     const getIdentifier = (n) => {
@@ -19,6 +23,11 @@ extern void free(void *p);
     };
     const idNode = getIdentifier(node);
     if (!idNode) return undefined;
+
+    const key = idNode.text + '_' + idNode.startIndex;
+    if (handledIds.has(key)) return undefined;
+    handledIds.add(key);
+
     const nameText = idNode.text;
 
     const handleReference = (ref, upp) => {
@@ -277,11 +286,22 @@ static inline int _Managed_ref_count(void *data) {
         }
     );
 
-    // Tidy up
-    upp.withMatch(upp.root, `_Managed_retain($a);_Managed_release(&$b);`, ({ a, b }, upp, node) => {
-      debugger;
-        return (a.text === b.text) ? null : undefined;
+    /* Tidy up: elide redundant retain/release pairs on the same local
+    upp.withMatch(upp.root, `_Managed_retain($a);`, ({ a }, upp, node) => {
+        if (!a) return undefined;
+        let stmt = node;
+        while (stmt && stmt.type !== 'expression_statement') stmt = stmt.parent;
+        if (!stmt || !stmt.nextNamedSibling) return undefined;
+        
+        let nextStmt = stmt.nextNamedSibling;
+        const releaseMatch = upp.match(nextStmt, `_Managed_release(&$b);`);
+        if (releaseMatch && releaseMatch.b && releaseMatch.b.text === a.text) {
+            stmt.remove();
+            nextStmt.remove();
+        }
+        return undefined;
     });
+    */
     return $`
 ${boilerplate}
 typedef ${T}* ${name};
