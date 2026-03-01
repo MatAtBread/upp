@@ -49,6 +49,7 @@ int main() {
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 Hello
 

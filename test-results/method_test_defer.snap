@@ -44,6 +44,7 @@ int main() {
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 Scope Start
 Inner scope

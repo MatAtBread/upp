@@ -14,8 +14,7 @@ String create_string(const char *src) {
 }
 
 @method(String) String copy(String s) {
-    String t = create_string(s->data);
-    return t;
+    return create_string(s->data);
 }
 
 @method(String) void test(String s) {

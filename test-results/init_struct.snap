@@ -40,6 +40,7 @@ _Point_method_Create(&q);
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 Point created(0, 0)
 Point created(5, 9)

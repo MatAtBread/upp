@@ -172,6 +172,10 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         let idNode: SourceNode<CNodeTypes> | undefined = (target.type === 'identifier' || target.type === 'type_identifier') ? target : undefined;
 
         if (!idNode) {
+            if ((target.type as string).endsWith('declarator') || target.type === 'init_declarator' || target.type === 'parameter_declaration') {
+                const ids = target.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier');
+                idNode = ids[0];
+            }
             while (declNode &&
                 !['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
                 declNode = declNode.parent || undefined;

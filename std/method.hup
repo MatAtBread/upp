@@ -1,3 +1,11 @@
+@define methodTargetName(targetType, originalName) {
+    let cleanTarget = targetType.trim();
+    if (cleanTarget.startsWith('struct ')) {
+        cleanTarget = cleanTarget.slice(7).trim();
+    }
+    return `_${cleanTarget}_method_${originalName}`;
+}
+
 @define method(targetType) {
     let node = upp.nextNode(['function_definition', 'declaration']);
     if (!node) {
@@ -9,13 +17,21 @@
     if (!sig.nameNode) return node.text;
 
     const originalName = sig.name;
-    let cleanTarget = targetType.trim();
-    if (cleanTarget.startsWith('struct ')) {
-        cleanTarget = cleanTarget.slice(7).trim();
+    const targetMacro = upp.registry.getMacro('methodTargetName');
+    let newName;
+    if (targetMacro) {
+        const macroFn = upp.registry.createMacroFunction(targetMacro);
+        // Execute the interface macro to get the correct mangled name.
+        // Parameters: (upp, console, $, targetType, originalName)
+        newName = macroFn(upp, console, upp.code, targetType, originalName);
+    } else {
+        // Fallback just in case
+        let cleanTarget = targetType.trim();
+        if (cleanTarget.startsWith('struct ')) {
+            cleanTarget = cleanTarget.slice(7).trim();
+        }
+        newName = `_${cleanTarget}_method_${originalName}`;
     }
-
-    // Generate new name: _Point_method_getX
-    const newName = `_${cleanTarget}_method_${originalName}`;
 
     // Rename the function identifier stable-y
     sig.nameNode.text = newName;
@@ -63,8 +79,8 @@
             const objDef = helpers.findDefinitionOrNull(targetNode);
             const objType = objDef ? helpers.getType(objDef, { resolve: true }) : "";
             
-            // Use RegExp constructor to avoid UPP parser brace-counting bugs with /\{...\}/
-            const bodyRegex = new RegExp('\\{[^}]*\\}', 'g');
+            // Use RegExp constructor to avoid UPP parser brace-counting bugs with /\\{[^}]*\\}/
+            const bodyRegex = new RegExp('\\\\{[^}]*\\\\}', 'g');
             const cleanType = objType.replace(bodyRegex, '');
             const isPointer = cleanType.includes('*');
             const prefix = isPointer ? "" : "&";

@@ -1,0 +1,8 @@
+@include(managed-struct.hup)
+@include(package.hup)
+
+@ManagedStruct(struct {
+    char data[];
+}) String;
+
+@package(String)

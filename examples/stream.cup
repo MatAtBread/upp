@@ -1,5 +1,3 @@
-@include (expressionType.hup)
-
 #include "io-lite.h"
 
 @define stream(name, len) {
