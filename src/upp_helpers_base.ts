@@ -246,15 +246,39 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
     /**
+     * Unmarks a node (and its visited ancestors) from the walker's done set,
+     * so the walker will re-descend and re-yield when it reaches a common ancestor.
+     * This is used by withXxx to handle already-visited targets.
+     */
+    revisit(node: SourceNode<any>): void {
+        const done = this.context?.walkerDone;
+        if (!done) return;
+
+        let current: SourceNode<any> | null = node;
+        while (current && done.has(current)) {
+            done.delete(current);
+            current = current.parent;
+        }
+    }
+
+    /**
      * Attaches a marker to a node for late-bound transformation.
+     * If the target has already been visited by the walker, unmarks it so
+     * the walker re-visits it and the new rule fires naturally.
      * @param {SourceNode<LanguageNodeTypes> | null} node - The target node.
      * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The transformation callback.
-     * @returns {string} Always empty string.
      */
     withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void {
         if (!node) return;
 
         const targetNode = node;
+
+        // If target is already visited, unmark so the walker re-descends to it
+        const done = this.context?.walkerDone;
+        if (done?.has(targetNode)) {
+            this.revisit(targetNode);
+        }
+
         this.registry.registerPendingRule({
             matcher: (n) => n === targetNode,
             callback: (n, h) => callback(n as SourceNode<LanguageNodeTypes>, h as UppHelpersBase<LanguageNodeTypes>)
@@ -360,6 +384,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     */
     withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
         const patterns = Array.isArray(pattern) ? pattern : [pattern];
+
         this.registry.registerPendingRule({
             matcher: (n, h) => {
                 // If scope is a root node (translation_unit), match globally
@@ -378,6 +403,17 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                 return undefined;
             }
         });
+
+        // Unmark already-visited descendants of scope that match the pattern,
+        // so the walker re-descends and fires the newly registered rule on them.
+        const done = this.context?.walkerDone;
+        if (done) {
+            this.walk(scope as SourceNode<any>, (n) => {
+                if (done.has(n) && patterns.some(p => !!this.match(n, p))) {
+                    this.revisit(n);
+                }
+            });
+        }
     }
 
     /**

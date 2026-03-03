@@ -60,6 +60,8 @@ export interface RegistryContext {
     helpers: UppHelpersBase<any> | null;
     pendingRules: PendingRule<any>[];
     mutated?: boolean;
+    /** The walker's visited-node set. Used by withXxx to unmark already-visited targets. */
+    walkerDone?: WeakSet<SourceNode<any>>;
 }
 
 type TreeSitterLang = Language;

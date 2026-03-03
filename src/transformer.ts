@@ -71,7 +71,10 @@ export class Transformer {
       helpers.currentInvocations = foundInvs;
     }
 
-    const it = this.walk(sourceTree.root);
+    const walkerDone = new WeakSet<SourceNode<any>>();
+    context.walkerDone = walkerDone;
+
+    const it = this.walk(sourceTree.root, walkerDone);
     let newSubTree: SourceNode<any> | undefined = undefined;
     for (let { value, done } = it.next(); value && !done; { value, done } = it.next(newSubTree)) {
       newSubTree = this.transformNode(value, helpers, context);
@@ -86,8 +89,7 @@ export class Transformer {
  * and attempts to walk all nodes in the tree
  * @param node 
  */
-  private *walk(start: SourceNode<any>): Generator<SourceNode<any>, SourceNode<any> | undefined, SourceNode<any> | undefined> {
-    const done = new WeakSet<SourceNode<any>>();
+  private *walk(start: SourceNode<any>, done: WeakSet<SourceNode<any>>): Generator<SourceNode<any>, SourceNode<any> | undefined, SourceNode<any> | undefined> {
     let node: SourceNode<any> | undefined | null = start;
 
     while (node) {
@@ -105,7 +107,7 @@ export class Transformer {
       const injectedTree = yield node;
       done.add(node);
       if (injectedTree) {
-        yield* this.walk(injectedTree);
+        yield* this.walk(injectedTree, done);
       }
 
       // If still attached, try next sibling
