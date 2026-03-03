@@ -194,7 +194,7 @@ class Registry {
             if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
                 return trimmed.slice(1, -1); // Unquote strings
             }
-            return a;
+            return trimmed;
         });
 
         const oldInvocation = helpers.invocation;
