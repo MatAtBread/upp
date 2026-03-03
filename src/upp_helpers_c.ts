@@ -552,32 +552,31 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         const definitionScope = this.getEnclosingScope(definitionNode);
         const definitionScopeId = definitionScope ? definitionScope.id : null;
 
+        const firedAt = new Set<number>();
+
         this.registry.registerPendingRule({
             matcher: (node, helpers) => {
                 if (node.type !== 'identifier' && node.type !== 'type_identifier' && node.type !== 'field_identifier') return false;
-
-                // CRITICAL: We only match if the current text matches the definition name.
-                // This avoids infinite loops for rename transformations.
                 if (node.text !== definitionName) return false;
+                if (firedAt.has(node.startIndex)) return false;
 
                 const def = (helpers as UppHelpersC).findDefinitionOrNull(node);
                 if (def) {
-                    if (def.id === definitionId) {
+                    // Compare by object reference — survives identity morphing
+                    if (def === definitionNode || def.id === definitionId) {
                         return true;
                     }
 
-                    // Fallback for morphed definitions: match by scope identity
+                    // Fallback for morphed definitions: match by scope reference
                     const defScope = (helpers as UppHelpersC).getEnclosingScope(def);
-                    if (defScope && definitionScopeId && defScope.id === definitionScopeId) {
+                    if (defScope && (defScope === definitionScope || (definitionScopeId && defScope.id === definitionScopeId))) {
                         return true;
                     }
                 } else {
-                    // Fallback for detached definitions (e.g. during macro transformation)
-                    // If findDefinition returns null, check if the reference is lexically within the definition's scope.
-                    // We only need to check if one of the enclosing scopes of the reference matches the definitionScopeId.
+                    // Definition not found (tree was mutated). Check by scope.
                     let walkScope: SourceNode<any> | null = (helpers as UppHelpersC).getEnclosingScope(node);
                     while (walkScope) {
-                        if (definitionScopeId && walkScope.id === definitionScopeId) {
+                        if (walkScope === definitionScope || (definitionScopeId && walkScope.id === definitionScopeId)) {
                             return true;
                         }
                         const p: SourceNode<any> | null = walkScope.parent || (walkScope as any)._detachedParent;
@@ -587,8 +586,9 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 return false;
             },
             callback: (node, helpers) => {
+                firedAt.add(node.startIndex);
                 const shadowHelpers = Object.create(helpers);
-                shadowHelpers.isDeclaration = () => node.id === declarationIdNode.id;
+                shadowHelpers.isDeclaration = () => node === declarationIdNode || node.id === declarationIdNode.id;
                 return callback(node as SourceNode<CNodeTypes>, shadowHelpers as UppHelpersC);
             }
         });
