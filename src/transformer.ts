@@ -155,7 +155,7 @@ export class Transformer {
             helpers.contextNode = oldContext;
 
             if (substitution === undefined || substitution === node)
-              return; // Nothing changed
+              continue; // No substitution — try remaining rules
 
             if (substitution === null) {
               node.remove();
