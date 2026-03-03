@@ -15,7 +15,7 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-int z = 100;
+/* modified sibling z */
 /* WOZ HERE */;
 int main() {
     return 0;

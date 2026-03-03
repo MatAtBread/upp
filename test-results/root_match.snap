@@ -15,14 +15,12 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-int z = 100;
-/*GlobalModifier()*/
+/* global root modified z */
+/* GlobalModifier()*/
 int main() {
     return 0;
 }
-int x = 100;
+/* global root modified x */
 
 ==== RUN OUTPUT ===
 
-Debugger attached.
-Waiting for the debugger to disconnect...
