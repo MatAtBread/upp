@@ -281,7 +281,8 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
 
         this.registry.registerPendingRule({
             matcher: (n) => n === targetNode,
-            callback: (n, h) => callback(n as SourceNode<LanguageNodeTypes>, h as UppHelpersBase<LanguageNodeTypes>)
+            callback: (n, h) => callback(n as SourceNode<LanguageNodeTypes>, h as UppHelpersBase<LanguageNodeTypes>),
+            oneShot: true
         });
     }
 

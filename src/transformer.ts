@@ -154,8 +154,14 @@ export class Transformer {
             const substitution = rule.callback(node, helpers);
             helpers.contextNode = oldContext;
 
-            if (substitution === undefined || substitution === node)
+            if (substitution === undefined || substitution === node) {
+              // Consume one-shot rules after they fire
+              if (rule.oneShot) {
+                const idx = context.pendingRules.indexOf(rule);
+                if (idx >= 0) context.pendingRules.splice(idx, 1);
+              }
               continue; // No substitution — try remaining rules
+            }
 
             if (substitution === null) {
               node.remove();

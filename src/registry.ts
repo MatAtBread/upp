@@ -24,6 +24,7 @@ export interface PendingRule<T extends string = string> {
     id: number;
     matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
+    oneShot?: boolean;
 }
 
 export interface Invocation {
