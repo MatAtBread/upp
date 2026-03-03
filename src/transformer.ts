@@ -163,19 +163,15 @@ export class Transformer {
             } else {
               const result = helpers.replace(node, substitution);
 
-              // Requirement 4: Macro Re-expansion
-              const list = Array.isArray(result) ? result : [result];
-              for (const newNode of list) {
-                if (newNode?.isValid && newNode.text.includes('/*@')) {
-                  // TODO: Don't recurse, pass back to the generator
-                  this.transformNode(newNode, helpers, context);
-                }
+              // If result is a different node, the walker will detect the
+              // replacement at the same index and visit the new subtree.
+              // If result IS the same node (identity morph from replaceWith),
+              // the walker won't detect it, so return it as an injectedTree
+              // for the walker to re-descend and discover new children.
+              if (result === node) {
+                return node; // Morphed in place — walker re-walks new children
               }
-
-              // If result is a different node (or list), we consider it substituted
-              if (result !== node) {
-                break;
-              }
+              break; // Structurally replaced — walker detects at same index
 
             }
           }
