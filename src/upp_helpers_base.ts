@@ -2,7 +2,7 @@ import { SourceNode, SourceTree } from './source_tree.ts';
 import type { Invocation, Registry, RegistryContext } from './registry.ts';
 import { PatternMatcher } from './pattern_matcher.ts';
 import Parser from 'tree-sitter';
-import type { MacroResult, AnySourceNode, AnySourceTree, InterpolationValue } from './types.ts';
+import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts';
 
 let uniqueIdCounter = 1;
 
@@ -227,19 +227,14 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      */
     replace(n: SourceNode<LanguageNodeTypes>, newContent: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null {
         let finalContent = newContent;
-        if (typeof finalContent === 'string' && finalContent.includes('@') && this.registry && (this.registry as any).prepareSource) {
-            const prepared = (this.registry as any).prepareSource(finalContent, (this.registry as any).originPath);
+        if (typeof finalContent === 'string' && finalContent.includes('@')) {
+            const prepared = this.registry.prepareSource(finalContent, this.registry.originPath);
             finalContent = prepared.cleanSource;
         }
 
-
-        if (n.replaceWith) {
-            const result = n.replaceWith(finalContent as any);
-            if (this.contextNode === n) this.contextNode = result as any;
-            return result as any;
-        }
-
-        throw new Error(`Illegal call to helpers.replace(node, content).`);
+        const result = n.replaceWith(finalContent as any);
+        if (this.contextNode === n) this.contextNode = result as any;
+        return result as any;
     }
 
     /**
@@ -261,7 +256,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
 
         const targetNode = node;
         this.registry.registerPendingRule({
-            contextNode: this.findRoot()!,
             matcher: (n) => n === targetNode,
             callback: (n, h) => callback(n as SourceNode<LanguageNodeTypes>, h as UppHelpersBase<LanguageNodeTypes>)
         });
@@ -278,7 +272,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {{ deep?: boolean }} [options] - Match options (e.g., deep search).
     * @returns {any} Result of callback, captures object, or null.
     */
-    match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options: { deep?: boolean } = {}): any {
+    protected match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options: { deep?: boolean } = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -306,7 +300,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
     /**
-     * Finds all structural matches of a pattern within a scope.
+     * Finds all structural matches of a pattern within a subtree.
      * Unlike find(), this matches against complex code templates rather than just node types.
      * 
      * @param {AnySourceNode} node - Search scope.
@@ -314,13 +308,13 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      * @param {{ deep?: boolean }} [options] - Options (deep search is often enabled by default).
      * @returns {{ node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[]} List of matches (node + captures).
      */
-    matchAll(node: AnySourceNode, src: string | string[], options: { deep?: boolean } = {}): { node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[] {
+    protected matchAll(node: AnySourceNode, src: string | string[], options: { deep?: boolean } = {}): { node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[] {
         if (!(node instanceof SourceNode)) throw new Error("upp.matchAll: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
         const deep = options.deep === true || (options.deep !== false && (node.type as string) === 'translation_unit');
 
-        const allMatches: any[] = [];
+        const allMatches: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[] = [];
         const seenIds = new Set<number | string>();
 
         for (const s of srcs) {
@@ -355,26 +349,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     }
 
     /**
-    * Synchronously replaces all matches of a pattern within a scope.
-    * Replacements happen immediately during macro execution. 
-    * Contrast with withMatch(), which defers transformations until later.
-    * 
-    * @param {SourceNode<LanguageNodeTypes>} node - Search scope.
-    * @param {string} src - Pattern to match.
-    * @param {function(match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }): string | null | undefined} callback - Returns replacement text or node.
-    * @param {{ deep?: boolean }} [options] - Options.
-    */
-    matchReplace(node: SourceNode<LanguageNodeTypes>, src: string, callback: (match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }) => string | null | undefined, options: { deep?: boolean } = {}): void {
-        const matches = this.matchAll(node, src, { ...options, deep: true });
-        for (const m of matches) {
-            const result = callback({ ...m.captures, node: m.node } as any);
-            if (result !== undefined) {
-                this.replace(m.node, result === null ? "" : result);
-            }
-        }
-    }
-
-    /**
     * Registers a marker for deferred transformation of nodes matching a pattern.
     * The callback is executed later by the registry, ensuring the node is in its
     * final state after other macros have executed. This is the safest way to
@@ -387,7 +361,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
         const patterns = Array.isArray(pattern) ? pattern : [pattern];
         this.registry.registerPendingRule({
-            contextNode: scope as SourceNode<any>,
             matcher: (n, h) => {
                 // If scope is a root node (translation_unit), match globally
                 // This allows header-registered rules to apply to the main file
@@ -418,7 +391,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     */
     withPattern(nodeType: LanguageNodeTypes, matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => boolean, callback: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => MacroResult): void {
         this.registry.registerPendingRule({
-            contextNode: this.findRoot()!,
             matcher: (node: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<any>) => {
                 if (node.type !== nodeType) return false;
                 return matcher(node, helpers as UppHelpersBase<LanguageNodeTypes>);
@@ -686,10 +658,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
 
         return isSafe ? current as SourceNode<LanguageNodeTypes> : null;
     }
-
-
-    /** Clears language-level semantic caches. Overridden in UppHelpersC. */
-    clearSemanticCaches(): void { /* base no-op; overridden in UppHelpersC */ }
 
     abstract findScope(): SourceNode<LanguageNodeTypes> | null;
 

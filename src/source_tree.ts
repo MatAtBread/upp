@@ -168,6 +168,11 @@ export class SourceTree<NodeTypes extends string = string> {
         const wrappedCode = `void __frag() { ${code} }`;
         const wrappedTree = new SourceTree(wrappedCode, language);
 
+        // Guarantee no ERROR nodes in the wrapped fragment
+        if (wrappedTree.root.toString().includes("ERROR")) {
+            throw new Error(`[UPP] Failed to parse code fragment. The following code resulted in a syntax error: \n\n${code}\n\nPlease ensure the fragment is valid C or UPP macro syntax.`);
+        }
+
         const funcDef = wrappedTree.root.children.find(c => c.type === 'function_definition');
         if (!funcDef) throw new Error("Failed to parse wrapped fragment.");
 
@@ -301,30 +306,6 @@ export class SourceNode<T extends string = string> {
             if (child.isNamed) return child;
         }
         return null;
-    }
-
-    /**
-     * Safely iterates through children, even if the array is mutated during the loop.
-     * Yields structurally valid nodes strictly in their current order.
-     */
-    *walkChildren(): Generator<SourceNode<any>> {
-        let i = 0;
-        while (i < this.children.length) {
-            const child = this.children[i];
-
-            // If the child was detached/invalidated during the loop, 
-            // the array has physically shifted. We re-eval at the same index.
-            if (!child || !child.isValid || child.parent !== this) {
-                // Do not increment i, let it fetch the new child shifted into this slot
-                if (i >= this.children.length) break;
-                continue;
-            }
-
-            yield child;
-
-            // Standard increment to next sibling
-            i++;
-        }
     }
 
     /** @returns {SourceNode<any>|null} */
