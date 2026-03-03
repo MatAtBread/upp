@@ -15,26 +15,22 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-/*@DefRef("fn")*/ void /* Declare "fn" */
+/* DefRef("fn")*/ void /* Declare fn */
 fn
 (int i){}
-/*@DefRef("MyType")*/ typedef int/* Declare "MyType" */
+/* DefRef("MyType")*/ typedef int/* Declare MyType */
 MyType
  ;
 int main() {
-    /*@DefRef("x")*/ /* Ref "MyType" */
+    /* DefRef("x")*/ /* Ref MyType */
 MyType
- /* Declare "x" */
-x
- = 10;
-    /* Ref "x" */
+ x = 10;
+    /* Ref x */
 x
  = 5;
-    /* Ref "fn" */
+    /* Ref fn */
 fn
-(/* Ref "x" */
-x
-);
+(x);
     return 0;
 }
 
