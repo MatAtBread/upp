@@ -18,3 +18,47 @@ int main() {
 
 ==== RUN OUTPUT ===
 
+[UPP] Error evaluating macro 'myMacro' at ./examples/error_arity.cup: Error: @myMacro expected 2 arguments, found 1
+    at Registry.evaluateMacro (file://./src/registry.ts:232:23)
+    at Object.callback (file://./src/registry.ts:286:29)
+    at Transformer.transformNode (file://./src/transformer.ts:154:39)
+    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Registry.transform (file://./src/registry.ts:445:38)
+    at file://./index.ts:168:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[upp] rule failed on comment: @myMacro expected 2 arguments, found 1
+[UPP] Error evaluating macro 'myMacro' at ./examples/error_arity.cup: Error: @myMacro expected 2 arguments, found 3
+    at Registry.evaluateMacro (file://./src/registry.ts:232:23)
+    at Object.callback (file://./src/registry.ts:286:29)
+    at Transformer.transformNode (file://./src/transformer.ts:154:39)
+    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Registry.transform (file://./src/registry.ts:445:38)
+    at file://./index.ts:168:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[upp] rule failed on comment: @myMacro expected 2 arguments, found 3
+[UPP] Error evaluating macro 'transformer' at ./examples/error_arity.cup: Error: @transformer expected 1 arguments, found 0
+    at Registry.evaluateMacro (file://./src/registry.ts:232:23)
+    at Object.callback (file://./src/registry.ts:286:29)
+    at Transformer.transformNode (file://./src/transformer.ts:154:39)
+    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Registry.transform (file://./src/registry.ts:445:38)
+    at file://./index.ts:168:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[upp] rule failed on comment: @transformer expected 1 arguments, found 0
+[UPP] Error evaluating macro 'transformer' at ./examples/error_arity.cup: Error: @transformer expected 1 arguments, found 2
+    at Registry.evaluateMacro (file://./src/registry.ts:232:23)
+    at Object.callback (file://./src/registry.ts:286:29)
+    at Transformer.transformNode (file://./src/transformer.ts:154:39)
+    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Registry.transform (file://./src/registry.ts:445:38)
+    at file://./index.ts:168:37
+    at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:661:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+[upp] rule failed on comment: @transformer expected 1 arguments, found 2

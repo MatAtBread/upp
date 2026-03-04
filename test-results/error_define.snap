@@ -9,11 +9,11 @@ int main() {
 }
 
 ==== COMPILATION ERROR ===
-/Users/matinmontferrier/git/upp/examples/error_define.c:2:13: error: type specifier missing, defaults to 'int'; ISO C99 and later do not support implicit int [-Wimplicit-int]
+./examples/error_define.c:2:13: error: type specifier missing, defaults to 'int'; ISO C99 and later do not support implicit int [-Wimplicit-int]
     2 | /*@define*/ BadMacro {
       |             ^
       |             int
-/Users/matinmontferrier/git/upp/examples/error_define.c:2:21: error: expected ';' after top level declarator
+./examples/error_define.c:2:21: error: expected ';' after top level declarator
     2 | /*@define*/ BadMacro {
       |                     ^
       |                     ;
