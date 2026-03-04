@@ -1,5 +1,9 @@
 @define match(pattern) {
     upp.withMatch(upp.root, pattern, (p, h) => {
+        /* WARNING: This infinitely loops because p.node.text contains the pattern text
+           Using p.node works (see structural.cup) because the node reference is maintained
+           and marked as transformed.
+        */
         return upp.code`/* ${Object.keys(p).filter(k =>k !== 'node').map(k => `${k}: ${p[k].text}`).join('\n')} */${p.node.text}`
     });
     return null;

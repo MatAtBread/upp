@@ -381,7 +381,6 @@ export class SourceNode<T extends string = string> {
      */
     toJSON(): Object {
         return {
-            _cacheKey: this._cacheKey,
             type: this.type,
             fieldName: this.fieldName,
             startIndex: this.startIndex,
