@@ -238,7 +238,7 @@ export class SourceTree<NodeTypes extends string = string> {
  */
 export class SourceNode<T extends string = string> {
     public tree: SourceTree<any>;
-    public id: number | string;
+    public _cacheKey: number | string;
     public type: T;
     public startIndex: number;
     public endIndex: number;
@@ -264,7 +264,7 @@ export class SourceNode<T extends string = string> {
             throw new Error("SourceNode must be created with a Tree-sitter node.");
         }
         this.tree = tree;
-        this.id = tsNode.id;
+        this._cacheKey = tsNode.id;
         this.type = tsNode.type as T;
         this.startIndex = tsNode.startIndex;
         this.endIndex = tsNode.endIndex;
@@ -294,7 +294,7 @@ export class SourceNode<T extends string = string> {
         return this.startIndex !== -1 &&
             this.tree &&
             this.tree.nodeCache &&
-            this.tree.nodeCache.get(this.id) === this;
+            this.tree.nodeCache.get(this._cacheKey) === this;
     }
 
     /** @returns {SourceNode<any>|null} */
@@ -381,7 +381,7 @@ export class SourceNode<T extends string = string> {
      */
     toJSON(): Object {
         return {
-            id: this.id,
+            _cacheKey: this._cacheKey,
             type: this.type,
             fieldName: this.fieldName,
             startIndex: this.startIndex,
@@ -462,13 +462,13 @@ export class SourceNode<T extends string = string> {
         // Recursive migration function
         const migrate = (n: SourceNode<any>, offsetDelta: number) => {
             // Remove from old tree
-            if (n.tree) n.tree.nodeCache.delete(n.id);
+            if (n.tree) n.tree.nodeCache.delete(n._cacheKey);
 
             // Add to new tree
             n.tree = newTree;
             n.startIndex += offsetDelta;
             n.endIndex += offsetDelta;
-            newTree.nodeCache.set(n.id, n);
+            newTree.nodeCache.set(n._cacheKey, n);
 
             n.children.forEach(c => migrate(c, offsetDelta));
         };
@@ -495,7 +495,7 @@ export class SourceNode<T extends string = string> {
      * @private
      */
     public _invalidateRecursively(): void {
-        this.tree.nodeCache.delete(this.id);
+        this.tree.nodeCache.delete(this._cacheKey);
         this.startIndex = -1;
         this.endIndex = -1;
         for (const child of this.children) {
@@ -608,7 +608,7 @@ export class SourceNode<T extends string = string> {
             const selfIndex = attachedList.indexOf(this);
             if (selfIndex === -1) {
                 const firstNew = attachedList[0] as SourceNode<any>;
-                const oldId = this.id;
+                const oldId = this._cacheKey;
 
                 // We want to KEEP the same object identity.
                 // But we update all properties from the new node.
@@ -666,11 +666,11 @@ export class SourceNode<T extends string = string> {
                 }
 
                 // Ensure ID is updated so we match the new tree-sitter node in subsequent wraps
-                if (firstNew.id !== oldId) {
+                if (firstNew._cacheKey !== oldId) {
                     this.tree.nodeCache.delete(oldId);
-                    this.id = firstNew.id;
+                    this._cacheKey = firstNew._cacheKey;
                 }
-                this.tree.nodeCache.set(this.id, this);
+                this.tree.nodeCache.set(this._cacheKey, this);
 
                 attachedList[0] = this;
             }
@@ -858,7 +858,7 @@ export class SourceNode<T extends string = string> {
 
             const migrate = (n: SourceNode<any>) => {
                 const oldTree = n.tree;
-                const oldId = n.id;
+                const oldId = n._cacheKey;
 
                 // If moving between trees or if ID changed, update cache
                 // We always update to be safe during complex migrations
@@ -868,7 +868,7 @@ export class SourceNode<T extends string = string> {
                 n.startIndex += delta;
                 n.endIndex += delta;
 
-                this.tree.nodeCache.set(n.id, n);
+                this.tree.nodeCache.set(n._cacheKey, n);
                 n.children.forEach(migrate);
             };
 

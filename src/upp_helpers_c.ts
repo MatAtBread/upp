@@ -152,7 +152,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @param {{ resolve?: boolean }} [options] - Options for type resolution.
      * @returns {string} The C type string (e.g. "char *").
      */
-    getType(node: SourceNode<CNodeTypes> | string | null, options: { resolve?: boolean } = {}, _visited: Set<string> = new Set()): string {
+    getType(node: SourceNode<CNodeTypes> | string | null, options: { resolve?: boolean } = {}, _visited: WeakSet<SourceNode<any>> = new WeakSet()): string {
         if (!node) return "";
         const target = typeof node === 'string' ? this.findDefinition(node) : node;
         if (!target) return "";
@@ -231,8 +231,8 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
             if (def && (def.type === 'type_definition' || def.type === 'struct_specifier' || def.type === 'union_specifier' || def.type === 'enum_specifier')) {
                 // Ensure we don't resolve to the same node or a node we already visited
-                if (def.id !== target.id && !_visited.has(String(def.id))) {
-                    _visited.add(String(target.id));
+                if (def !== target && !_visited.has(def)) {
+                    _visited.add(target);
                     const underlyingType = this.getType(def, options, _visited);
                     // Strip structural bodies before collecting stars
                     const cleanUnderlying = underlyingType.replace(/\{[^}]*\}/g, '');
@@ -386,7 +386,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found");
                 name = (idNode as any).searchableText as string;
                 startScope = idNode.parent;
-                cacheKey = idNode.id; // Identifier-based caching
+                cacheKey = idNode.startIndex; // Position-based caching
             }
         }
 
@@ -433,7 +433,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                             }
                         }
                         if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
-                            if (finalOptions.tag && p.child(1) && p.child(1)!.id === idNode.id) {
+                            if (finalOptions.tag && p.child(1) && p.child(1) === idNode) {
                                 return p as SourceNode<CNodeTypes>;
                             }
                             break;
@@ -502,7 +502,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                     // we check if the reference resolves to something with the same name in the same scope.
                     const refScope = this.getEnclosingScope(idNode);
                     const defScope = this.getEnclosingScope(node);
-                    if (refScope && defScope && (refScope === defScope || refScope.id === defScope.id)) {
+                    if (refScope && defScope && refScope === defScope) {
                         refs.push(idNode);
                     }
                 }
@@ -527,7 +527,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
      * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
      */
     withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
-        const definitionId = definitionNode.id;
+
 
         // Find the actual identifier name node within the definition
         let idNode = (definitionNode.type === 'identifier' || definitionNode.type === 'type_identifier') ? definitionNode : null;
@@ -550,7 +550,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         const declarationIdNode = idNode;
         const definitionName = idNode.text;
         const definitionScope = this.getEnclosingScope(definitionNode);
-        const definitionScopeId = definitionScope ? definitionScope.id : null;
+
 
         const firedAt = new Set<number>();
 
@@ -563,20 +563,20 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                 const def = (helpers as UppHelpersC).findDefinitionOrNull(node);
                 if (def) {
                     // Compare by object reference — survives identity morphing
-                    if (def === definitionNode || def.id === definitionId) {
+                    if (def === definitionNode) {
                         return true;
                     }
 
                     // Fallback for morphed definitions: match by scope reference
                     const defScope = (helpers as UppHelpersC).getEnclosingScope(def);
-                    if (defScope && (defScope === definitionScope || (definitionScopeId && defScope.id === definitionScopeId))) {
+                    if (defScope && defScope === definitionScope) {
                         return true;
                     }
                 } else {
                     // Definition not found (tree was mutated). Check by scope.
                     let walkScope: SourceNode<any> | null = (helpers as UppHelpersC).getEnclosingScope(node);
                     while (walkScope) {
-                        if (walkScope === definitionScope || (definitionScopeId && walkScope.id === definitionScopeId)) {
+                        if (walkScope === definitionScope) {
                             return true;
                         }
                         const p: SourceNode<any> | null = walkScope.parent || (walkScope as any)._detachedParent;
@@ -588,7 +588,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             callback: (node, helpers) => {
                 firedAt.add(node.startIndex);
                 const shadowHelpers = Object.create(helpers);
-                shadowHelpers.isDeclaration = () => node === declarationIdNode || node.id === declarationIdNode.id;
+                shadowHelpers.isDeclaration = () => node === declarationIdNode;
                 return callback(node as SourceNode<CNodeTypes>, shadowHelpers as UppHelpersC);
             }
         });

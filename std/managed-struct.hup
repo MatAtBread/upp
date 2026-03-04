@@ -31,7 +31,7 @@ extern void free(void *p);
     const nameText = idNode.text;
 
     const handleReference = (ref, upp) => {
-      if (ref && ref.parent && ref.parent.type === 'assignment_expression' && ref.parent.named.left?.id === ref.id) {
+      if (ref && ref.parent && ref.parent.type === 'assignment_expression' && ref.parent.named.left === ref) {
           const parent = ref.parent;
           const eqIndex = parent.children.findIndex(c => c.type === '=');
           const rhsNodes = parent.children.slice(eqIndex + 1).filter(c => c && c.text && c.text.trim().length > 0);
@@ -44,7 +44,7 @@ extern void free(void *p);
           ref.parent.insertBefore(upp.code`_Managed_retain(${nameText});`);
           return undefined;
       }
-      if (ref && ref.parent && ref.parent.type === 'init_declarator' && ref.parent.named.value?.id === ref.id) {
+      if (ref && ref.parent && ref.parent.type === 'init_declarator' && ref.parent.named.value === ref) {
           // Find the actual declaration statement block to insert before
           let stmt = ref.parent;
           while (stmt && stmt.type !== 'declaration') stmt = stmt.parent;

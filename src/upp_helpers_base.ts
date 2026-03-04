@@ -20,7 +20,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     public lastConsumedNode: SourceNode<LanguageNodeTypes> | null;
     public isDeferred: boolean;
     public currentInvocations: Invocation[];
-    public consumedIds: Set<number | string>;
+    public consumedNodes: WeakSet<SourceNode<any>>;
     public context: RegistryContext | null;
 
     public stdPath: string | null;
@@ -47,7 +47,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         this.lastConsumedNode = null;
         this.isDeferred = false;
         this.currentInvocations = [];
-        this.consumedIds = new Set();
+        this.consumedNodes = new WeakSet();
         this.context = null; // Back-reference to the local transform context
 
         this.stdPath = registry ? registry.stdPath : null;
@@ -140,7 +140,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                 // Filter to only leaf-most nodes matching the placeholder to avoid redundant replacements
                 // (e.g. if a declaration only contains the placeholder, both the declaration and identifier match)
                 placeholderNodes = placeholderNodes.filter((n: SourceNode) =>
-                    !n.children.some(c => fragment.find((child: SourceNode) => child.id === c.id && child.text === placeholder).length > 0)
+                    !n.children.some(c => fragment.find((child: SourceNode) => child === c && child.text === placeholder).length > 0)
                 );
 
                 // Re-fetch nodes after filtering and sort by start index descending to avoid offset issues
@@ -310,7 +310,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                 for (const key in result) {
                     const val = result[key];
                     if (Array.isArray(val)) {
-                        captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                        captures[key] = val.map(n => (n && typeof n.id !== 'undefined') ? node.tree.wrap(n) : n).filter(Boolean);
                     } else if (val && (val as any).id !== undefined) {
                         captures[key] = node.tree.wrap(val as any);
                     } else {
@@ -340,13 +340,13 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         const deep = options.deep === true || (options.deep !== false && (node.type as string) === 'translation_unit');
 
         const allMatches: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[] = [];
-        const seenIds = new Set<number | string>();
+        const seenNodes = new WeakSet<any>();
 
         for (const s of srcs) {
             const matches = this.matcher.matchAll(node as any, s, deep);
             for (const m of matches) {
                 const syntaxNode = m.node as any;
-                if (syntaxNode && !seenIds.has(syntaxNode.id)) {
+                if (syntaxNode && !seenNodes.has(syntaxNode)) {
                     const matchNode = node.tree.wrap(syntaxNode) as SourceNode<LanguageNodeTypes> | null;
                     if (matchNode) {
                         const captures: Record<string, any> = {};
@@ -354,7 +354,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                             if (key !== 'node' && m[key]) {
                                 const val = m[key] as any;
                                 if (Array.isArray(val)) {
-                                    captures[key] = val.map(n => node.tree.wrap(n)).filter(Boolean);
+                                    captures[key] = val.map(n => (n && typeof n.id !== 'undefined') ? node.tree.wrap(n) : n).filter(Boolean);
                                 } else if (val && typeof val.id !== 'undefined') {
                                     const wrapped = node.tree.wrap(val);
                                     if (wrapped) captures[key] = wrapped;
@@ -364,7 +364,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                             }
                         }
                         allMatches.push({ node: matchNode, captures: captures });
-                        seenIds.add(syntaxNode.id);
+                        seenNodes.add(syntaxNode);
                     }
                 }
             }
@@ -547,7 +547,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
             node.remove();
         }
 
-        this.consumedIds.add(node.id);
+        this.consumedNodes.add(node);
         this.lastConsumedNode = node;
         this.lastConsumedIndex = nextSearchIndex;
         return wrapped;
