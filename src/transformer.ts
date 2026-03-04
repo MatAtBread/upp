@@ -148,6 +148,10 @@ export class Transformer {
 
       for (const rule of context.pendingRules) {
         try {
+          // Guard against infinite re-match loops: if this node was produced
+          // as a replacement by this same rule, skip it.
+          if (rule.substituted?.has(node)) continue;
+
           if (rule.matcher(node, helpers)) {
             const oldContext = helpers.contextNode;
             helpers.contextNode = node;
@@ -168,6 +172,26 @@ export class Transformer {
               break;
             } else {
               const result = helpers.replace(node, substitution);
+
+              // After substitution, walk the replacement subtree and add any nodes
+              // matching this rule's pattern into rule.substituted. This prevents the
+              // rule from re-firing on fresh but structurally-identical copies produced
+              // by the callback (e.g. returning node.text creates a new matching node).
+              // This fires only for persistent (non-oneShot) rules, since oneShot rules
+              // self-remove after their first successful substitution anyway.
+              if (!rule.oneShot && result) {
+                if (!rule.substituted) rule.substituted = new WeakSet<object>();
+                const resultNodes = Array.isArray(result) ? result : [result];
+                for (const r of resultNodes) {
+                  helpers.walk(r as any, (n: any) => {
+                    try {
+                      if (rule.matcher(n, helpers)) {
+                        rule.substituted!.add(n);
+                      }
+                    } catch { /* ignore matcher errors during pre-marking */ }
+                  });
+                }
+              }
 
               // If result is a different node, the walker will detect the
               // replacement at the same index and visit the new subtree.

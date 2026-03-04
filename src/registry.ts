@@ -25,6 +25,8 @@ export interface PendingRule<T extends string = string> {
     matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
     oneShot?: boolean;
+    /** Tracks node instances that have already been produced as replacements by this rule, to prevent re-matching freshly-created identical subtrees. */
+    substituted?: WeakSet<object>;
 }
 
 export interface Invocation {
