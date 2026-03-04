@@ -500,10 +500,6 @@ class Registry {
         for (let i = defines.length - 1; i >= 0; i--) {
             const def = defines[i];
             let replaced = "";
-            if (this.config.comments) {
-                const commentContent = def.original.replace(/^(\s*)@/, '$1');
-                replaced = `/* ${commentContent} */`;
-            }
             cleanSource = cleanSource.slice(0, def.index) + replaced + cleanSource.slice(def.index + def.length);
         }
 

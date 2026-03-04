@@ -1,5 +1,6 @@
 @define implements(pkgName) {
-    // Marker macro used by @package
+    // Return a comment that the package macro can find
+    return `/*implements:${pkgName}*/`
 }
 
 @define package(pkgName) {
@@ -13,7 +14,7 @@
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    upp.isAuthoritative = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
+    upp.isAuthoritative = upp.parentHelpers?.root && upp.parentHelpers?.match(upp.parentHelpers?.root, `/*implements:${pkgName}*/`);
 
     if (upp.isAuthoritative) {
         upp.registry.shouldMaterializeDependency = true;

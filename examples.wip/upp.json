@@ -1,5 +1,6 @@
 {
-    "comments": true,
-    "includePaths": ["${UPP}/std"],
+    "includePaths": [
+        "${UPP}/std"
+    ],
     "core": []
 }
