@@ -25,8 +25,10 @@ export class Transformer {
     // Initialize tree and helpers early so dependencies loaded during
     // prepareSource() can see this registry's tree via parentRegistry.
     registry.tree = new SourceTree<any>(source, registry.language as any);
+    if (!registry.tree) throw new Error("Could not create source tree for transformation.");
+
     registry.tree.onMutation = () => registry.markMutated();
-    registry.helpers = new UppHelpersC(registry.tree.root as any, registry, parentHelpers) as any;
+    registry.helpers = new UppHelpersC(registry, parentHelpers) as any;
 
     // Initial invocation processing populates macro definitions without mutating the tree
     const { cleanSource, invocations: foundInvs } = registry.prepareSource(source, originPath);
@@ -35,24 +37,19 @@ export class Transformer {
     if (cleanSource !== source) {
       registry.tree = new SourceTree<any>(cleanSource || "", registry.language as any);
     }
-    const sourceTree = registry.tree!;
 
-    const helpers = new UppHelpersC(sourceTree.root as any, registry, parentHelpers) as any;
+    const helpers = new UppHelpersC(registry, parentHelpers) as any;
 
     const context: RegistryContext = {
-      source: sourceTree.source,
-      tree: sourceTree,
+      source: registry.tree.source,
+      tree: registry.tree,
       originPath,
       invocations: foundInvs,
       helpers,
       pendingRules: registry.pendingRules // Shared array reference
     };
 
-    if (!sourceTree) throw new Error("Could not create source tree for transformation.");
-
-    context.helpers = helpers;
     helpers.context = context;
-    helpers.root = sourceTree.root;
 
     if (!registry.mainContext) {
       registry.mainContext = context;
@@ -74,13 +71,13 @@ export class Transformer {
     const walkerDone = new WeakSet<SourceNode<any>>();
     context.walkerDone = walkerDone;
 
-    const it = this.walk(sourceTree.root, walkerDone);
+    const it = this.walk(registry.tree.root, walkerDone);
     let newSubTree: SourceNode<any> | undefined = undefined;
     for (let { value, done } = it.next(); value && !done; { value, done } = it.next(newSubTree)) {
       newSubTree = this.transformNode(value, helpers, context);
     }
 
-    return sourceTree.source;
+    return registry.tree.source;
   }
 
   /**

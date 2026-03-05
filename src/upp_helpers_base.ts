@@ -11,7 +11,7 @@ let uniqueIdCounter = 1;
  * @class
  */
 abstract class UppHelpersBase<LanguageNodeTypes extends string> {
-    public root: SourceNode<LanguageNodeTypes> | null;
+    public get root(): SourceNode<LanguageNodeTypes> | null { return this.registry.tree?.root };
     public registry: Registry;
     public matcher: PatternMatcher;
     public _parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
@@ -38,8 +38,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     get isAuthoritative(): boolean { return this.registry.isAuthoritative; }
     set isAuthoritative(v: boolean) { this.registry.isAuthoritative = v; }
 
-    constructor(root: SourceNode<LanguageNodeTypes> | null, registry: Registry, parentHelpers: UppHelpersBase<LanguageNodeTypes> | null = null) {
-        this.root = root;
+    constructor(registry: Registry, parentHelpers: UppHelpersBase<LanguageNodeTypes> | null = null) {
         this.registry = registry;
         this._parentHelpers = parentHelpers;
         this.contextNode = null;

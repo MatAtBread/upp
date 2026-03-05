@@ -133,7 +133,7 @@ class Registry {
         this.language = lang;
 
         this.helpers = null;
-        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(null as any, parentRegistry, null)) : null;
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(parentRegistry, null)) : null;
         this.isAuthoritative = true;
 
         this.macros = new Map();
@@ -151,8 +151,6 @@ class Registry {
 
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
-        //        this.registerMacro('__deferred_task', ['id'], '/* handled internally */', 'js', 'internal');
-        //        this.registerMacro('implements', ['pkgName'], '', 'js', 'internal');
         this.registerMacro('include', ['file'], `
             upp.loadDependency(file, null, upp);
             let headerName = file;

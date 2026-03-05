@@ -16,14 +16,14 @@ int main() {
 ==== RUN OUTPUT ===
 
 [UPP] Error evaluating macro 'test_error_missing' at ./examples/error_consume.cup: Error: @test_error_missing expected compound_statement, but nothing found
-    at UppHelpersC.error (file://./src/upp_helpers_base.ts:743:26)
-    at reportFailure (file://./src/upp_helpers_base.ts:522:18)
-    at UppHelpersC.consume (file://./src/upp_helpers_base.ts:528:46)
+    at UppHelpersC.error (file://./src/upp_helpers_base.ts:742:26)
+    at reportFailure (file://./src/upp_helpers_base.ts:521:18)
+    at UppHelpersC.consume (file://./src/upp_helpers_base.ts:527:46)
     at eval (eval at createMacroFunction (file://./src/registry.ts:432:20), <anonymous>:3:18)
     at Registry.evaluateMacro (file://./src/registry.ts:235:20)
     at Object.callback (file://./src/registry.ts:286:29)
-    at Transformer.transformNode (file://./src/transformer.ts:154:39)
-    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Transformer.transformNode (file://./src/transformer.ts:155:39)
+    at Transformer.run (file://./src/transformer.ts:77:25)
     at Registry.transform (file://./src/registry.ts:445:38)
     at file://./index.ts:168:37 {
   isUppError: true,
@@ -49,14 +49,14 @@ int main() {
       root: [SourceNode],
       onMutation: null
     },
-    _cacheKey: 36358247008,
+    _cacheKey: 36857730304,
     type: 'comment',
     startIndex: 260,
     endIndex: 283,
     children: [],
     parent: SourceNode {
       tree: [SourceTree],
-      _cacheKey: 36356113824,
+      _cacheKey: 36855867648,
       type: 'translation_unit',
       startIndex: 3,
       endIndex: 284,

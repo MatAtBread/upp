@@ -107,8 +107,8 @@ export type CNodeTypes =
  * @extends UppHelpersBase
  */
 export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
-    constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers: UppHelpersBase<any> | null = null) {
-        super(root, registry, parentHelpers);
+    constructor(registry: Registry, parentHelpers: UppHelpersBase<any> | null = null) {
+        super(registry, parentHelpers);
     }
 
     /**

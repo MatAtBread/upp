@@ -21,8 +21,8 @@ int main() {
 [UPP] Error evaluating macro 'myMacro' at ./examples/error_arity.cup: Error: @myMacro expected 2 arguments, found 1
     at Registry.evaluateMacro (file://./src/registry.ts:232:23)
     at Object.callback (file://./src/registry.ts:286:29)
-    at Transformer.transformNode (file://./src/transformer.ts:154:39)
-    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Transformer.transformNode (file://./src/transformer.ts:155:39)
+    at Transformer.run (file://./src/transformer.ts:77:25)
     at Registry.transform (file://./src/registry.ts:445:38)
     at file://./index.ts:168:37
     at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
@@ -32,8 +32,8 @@ int main() {
 [UPP] Error evaluating macro 'myMacro' at ./examples/error_arity.cup: Error: @myMacro expected 2 arguments, found 3
     at Registry.evaluateMacro (file://./src/registry.ts:232:23)
     at Object.callback (file://./src/registry.ts:286:29)
-    at Transformer.transformNode (file://./src/transformer.ts:154:39)
-    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Transformer.transformNode (file://./src/transformer.ts:155:39)
+    at Transformer.run (file://./src/transformer.ts:77:25)
     at Registry.transform (file://./src/registry.ts:445:38)
     at file://./index.ts:168:37
     at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
@@ -43,8 +43,8 @@ int main() {
 [UPP] Error evaluating macro 'transformer' at ./examples/error_arity.cup: Error: @transformer expected 1 arguments, found 0
     at Registry.evaluateMacro (file://./src/registry.ts:232:23)
     at Object.callback (file://./src/registry.ts:286:29)
-    at Transformer.transformNode (file://./src/transformer.ts:154:39)
-    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Transformer.transformNode (file://./src/transformer.ts:155:39)
+    at Transformer.run (file://./src/transformer.ts:77:25)
     at Registry.transform (file://./src/registry.ts:445:38)
     at file://./index.ts:168:37
     at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
@@ -54,8 +54,8 @@ int main() {
 [UPP] Error evaluating macro 'transformer' at ./examples/error_arity.cup: Error: @transformer expected 1 arguments, found 2
     at Registry.evaluateMacro (file://./src/registry.ts:232:23)
     at Object.callback (file://./src/registry.ts:286:29)
-    at Transformer.transformNode (file://./src/transformer.ts:154:39)
-    at Transformer.run (file://./src/transformer.ts:80:25)
+    at Transformer.transformNode (file://./src/transformer.ts:155:39)
+    at Transformer.run (file://./src/transformer.ts:77:25)
     at Registry.transform (file://./src/registry.ts:445:38)
     at file://./index.ts:168:37
     at ModuleJob.run (node:internal/modules/esm/module_job:430:25)
