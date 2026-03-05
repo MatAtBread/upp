@@ -10,17 +10,19 @@ extern void free(void *p);
   const name = nameNode.text.replace(/;$/, '');
 
   const handledIds = new Set();
+  // const retainedParameters = new WeakSet();
+
+  // Robustly get the identifier from the declaration or parameter
+  const getIdentifier = (n) => {
+    if (n.type === 'identifier') return n;
+    if (n.named && n.named.declarator) return getIdentifier(n.named.declarator);
+    return n.find(c => c.type === 'identifier')[0];
+  };
 
   upp.withMatch(upp.root, [`${name} $id;`, `${name} $id`], ({ id }, upp, node) => {
     if (!id) return undefined;
     if (node.type !== 'declaration' && node.type !== 'parameter_declaration') return undefined;
     
-    // Robustly get the identifier from the declaration or parameter
-    const getIdentifier = (n) => {
-      if (n.type === 'identifier') return n;
-      if (n.named && n.named.declarator) return getIdentifier(n.named.declarator);
-      return n.find(c => c.type === 'identifier')[0];
-    };
     const idNode = getIdentifier(node);
     if (!idNode) return undefined;
 
@@ -60,6 +62,23 @@ extern void free(void *p);
       upp.withReferences(node, handleReference);
       if (node.parent && node.parent.parent && node.parent.parent.parent && node.parent.parent.parent.type == 'function_definition') {
         upp.withNode(node.parent.parent.parent.named.body, (body, upp) => {
+          // Avoid the recursion caused by withReferences finding the insertion of ${nameText}
+          // by checking if we have already injected a _Managed_retain
+          /*** WIP
+          let retained = retainedParameters.get(body);
+          if (retained?.has(nameText))
+            return undefined;
+
+          if (!retained) {
+            retained = new Set();
+            retainedParameters.set(body,retained);
+          }
+          retained.add(nameText);
+          ****/
+          
+          if (body.children[1].text === `_Managed_retain(${nameText});`)
+            return undefined;
+
           return upp.code`{
           _Managed_retain(${nameText}); 
           @defer _Managed_release(&${nameText}); 
@@ -69,7 +88,6 @@ extern void free(void *p);
       }
       return undefined; 
     }
-
     upp.withReferences(node, handleReference);
 
     if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
@@ -287,21 +305,21 @@ static inline int _Managed_ref_count(void *data) {
     );
 
     /* Tidy up: elide redundant retain/release pairs on the same local
-    upp.withMatch(upp.root, `_Managed_retain($a);`, ({ a }, upp, node) => {
-        if (!a) return undefined;
-        let stmt = node;
-        while (stmt && stmt.type !== 'expression_statement') stmt = stmt.parent;
-        if (!stmt || !stmt.nextNamedSibling) return undefined;
+        debugger;
+    upp.withMatch(upp.root, `_Managed_release(&$a);`, ({ a }, upp, node) => {
+console.log(">>>>",node.text);
+        if (!a || node.type !== 'expression_statement') return undefined;
+        if (!node.prevNamedSibling) return undefined;
         
-        let nextStmt = stmt.nextNamedSibling;
-        const releaseMatch = upp.match(nextStmt, `_Managed_release(&$b);`);
+        let stmt = stmt.prevNamedSibling;
+console.log("****",stmt.text);
+        const releaseMatch = upp.match(stmt, `_Managed_retain($b);`);
         if (releaseMatch && releaseMatch.b && releaseMatch.b.text === a.text) {
-            stmt.remove();
             nextStmt.remove();
         }
-        return undefined;
+        return null;
     });
-    */
+    /**/
     return $`
 ${boilerplate}
 typedef ${T}* ${name};

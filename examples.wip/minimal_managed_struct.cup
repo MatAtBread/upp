@@ -1,4 +1,7 @@
 @include(managed-struct.hup)
 typedef struct S { int x; } S;
-@ManagedStruct(S) SRef;
-void main() { SRef s; }
+@ManagedStruct(S) M;
+void main() { 
+    M s;
+    M a[10];
+}

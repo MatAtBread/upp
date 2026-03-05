@@ -73,8 +73,10 @@ typedef struct {
 #define _Managed_Sizeof_AnonBox(n) (sizeof(*(AnonBox)0) * (n))
 
 static inline  int _AnonBox_method_managed_reference_count(AnonBox p) {
-    return _Managed_ref_count((void *)p);
-}
+          _Managed_retain(p); 
+            
+          return _Managed_ref_count((void *)p);
+          }
 
  
 AnonBox create_anon(int id, float value) {

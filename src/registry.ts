@@ -234,7 +234,7 @@ class Registry {
 
             return macroFn(upp, console, upp.code.bind(upp), ...callArgs);
         } catch (e: any) {
-            console.error(`[UPP] Error evaluating macro '${invocation.name}' at ${filePath}:`, e);
+            console.error(`[UPP] Error evaluating macro '${invocation.name}' at ${filePath}:`, e.message);
             throw e; // Rethrow to halt transformation
         } finally {
             helpers.invocation = oldInvocation;
@@ -619,7 +619,7 @@ class Registry {
  */
     private absorbInvocation(text: string): { name: string, args: string[] } | null {
         text = text.trim();
-        const match = text.match(/^@?([a-zA-Z0-9_]+)\s*(\(.*\))?$/);
+        const match = text.match(/^@([a-zA-Z0-9_]+)(\(.*\))?$/s);
         if (!match) return null;
 
         const name = match[1];
