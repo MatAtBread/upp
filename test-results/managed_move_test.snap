@@ -68,9 +68,11 @@ static inline int _Managed_ref_count(void *data) {
 typedef struct Foo_s* Foo;
 #define _Managed_Sizeof_Foo(n) (sizeof(*(Foo)0) * (n))
 
-static inline  int _Foo_method_managed_reference_count(Foo p) {
-    return _Managed_ref_count((void *)p);
-}
+static inline  int _Foo_method_managed_reference_count(Foo p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
 struct Foo_s {
@@ -81,7 +83,7 @@ Foo CreateFoo(int val) {
 
 
     f->x = val;
-    _Managed_retain(f);_Managed_release(&f);return f;
+    /* elided retain/release f */return f;
 }
 int main() {
     Foo f1 = _Managed_allocate(_Managed_Sizeof_Foo(1));

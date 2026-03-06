@@ -1,4 +1,4 @@
-==== examples/string_method.c ===
+==== examples/managed_method.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -14,8 +14,10 @@ extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
-
 #include "managed-struct.h"
+struct Foo_s {
+    int x;
+};
 #ifndef __MANAGED_STRUCT__HUP
 #define  __MANAGED_STRUCT__HUP
 struct _ReferenceCount {
@@ -66,54 +68,40 @@ static inline int _Managed_ref_count(void *data) {
 }
 #endif
 // __MANAGED_STRUCT__HUP
-typedef struct {
-    char data[];
-}* String;
-#define _Managed_Sizeof_String(n) (sizeof(*(String)0) + sizeof(((String)0)->data[0]) * (n))
+typedef struct Foo_s* Foo;
+#define _Managed_Sizeof_Foo(n) (sizeof(*(Foo)0) * (n))
 
-static inline  int _String_method_managed_reference_count(String p) { 
+static inline  int _Foo_method_managed_reference_count(Foo p) { 
          
          
         /* elided retain/release p */return _Managed_ref_count((void *)p);
         }
 
  
-String create_string(const char *src) {
-    int _n = strlen(src);
-    String s = _Managed_allocate(_Managed_Sizeof_String(_n + 1));
+ void _Foo_method_fn(Foo g) { 
+        _Managed_retain(g); 
+         
+        g->x += 1;
+        _Managed_release(&g);}
+Foo init(int x) {
+    Foo i = _Managed_allocate(_Managed_Sizeof_Foo(1));
 
- // Size includes null terminator
-    strcpy(s->data, src);
-    /* elided retain/release s */return s;
+
+    i->x = x;
+    /* elided retain/release i */return i;
 }
- String _String_method_copy(String s) { 
-         
-         
-        /* elided retain/release s */return create_string(s->data);
-        }
- void _String_method_test(String s) { 
-         
-         
-        
-        /* elided retain/release s */}
- int _String_method_length(String s) { 
-         
-         
-        /* elided retain/release s */return strlen(s->data);
-        }
 int main() {
-    String s = create_string("Hello, UPP Flexible Array\n");
+    Foo f1 = _Managed_allocate(_Managed_Sizeof_Foo(1));
 
-    int l = _String_method_length(s);
-    _String_method_test(s);
-    String t = _String_method_copy(s);
 
-    printf("[%d] %s", _String_method_managed_reference_count(t), t->data);
-    printf("[%d] %s", _String_method_managed_reference_count(s), s->data);
-    _Managed_set(&s, t);
-    printf("[%d] %s", _String_method_managed_reference_count(s), s->data);
-    _Managed_release(&t);
-_Managed_release(&s);return 0;
+    f1->x = 465;
+    _Managed_move(&f1, init(123));
+    _Foo_method_fn(f1);
+    printf("%s: %d [%d]",
+        f1->x == 123 && _Foo_method_managed_reference_count(f1) == 1
+            ? "PASS":"FAIL",
+        f1->x, _Foo_method_managed_reference_count(f1));
+    _Managed_release(&f1);return 0;
 }
 
 ==== std/defer.h ===
@@ -138,7 +126,4 @@ extern void free(void *p);
 
 
 ==== RUN OUTPUT ===
-[1] Hello, UPP Flexible Array
-[1] Hello, UPP Flexible Array
-[2] Hello, UPP Flexible Array
-
+FAIL: 124 [1]

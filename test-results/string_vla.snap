@@ -72,16 +72,18 @@ typedef struct {
 }* String;
 #define _Managed_Sizeof_String(n) (sizeof(*(String)0) + sizeof(((String)0)->data[0]) * (n))
 
-static inline  int _String_method_managed_reference_count(String p) {
-    return _Managed_ref_count((void *)p);
-}
+static inline  int _String_method_managed_reference_count(String p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
- void _String_method_print(String s) {
-          _Managed_retain(s); 
-            
-          printf("%s", s->data);
-          _Managed_release(&s);}
+ void _String_method_print(String s) { 
+        _Managed_retain(s); 
+         
+        printf("%s", s->data);
+        _Managed_release(&s);}
 String create_string(const char *src) {
     int _n = strlen(src);
     String s = _Managed_allocate(_Managed_Sizeof_String(_n + 1));
@@ -89,7 +91,7 @@ String create_string(const char *src) {
  // Size includes null terminator
     s->len = _n;
     strcpy(s->data, src);
-    _Managed_retain(s);_Managed_release(&s);return s;
+    /* elided retain/release s */return s;
 }
 int main() {
     String s = create_string("Hello, UPP Flexible Array\n");

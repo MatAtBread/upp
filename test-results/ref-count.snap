@@ -74,28 +74,30 @@ static inline int _Managed_ref_count(void *data) {
 typedef Point* PointRef;
 #define _Managed_Sizeof_PointRef(n) (sizeof(*(PointRef)0) * (n))
 
-static inline  int _PointRef_method_managed_reference_count(PointRef p) {
-    return _Managed_ref_count((void *)p);
-}
+static inline  int _PointRef_method_managed_reference_count(PointRef p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
- void _PointRef_method_print(PointRef p, const char *s) {
-          _Managed_retain(p); 
-            
-          printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p), p->x, p->y);
-          _Managed_release(&p);}
-void fn(PointRef p) {
-          _Managed_retain(p); 
-            
-          _PointRef_method_print(p, "fn");
-          _Managed_release(&p);}
+ void _PointRef_method_print(PointRef p, const char *s) { 
+        _Managed_retain(p); 
+         
+        printf("%s {%d} (%d, %d)\n", s, _PointRef_method_managed_reference_count(p), p->x, p->y);
+        _Managed_release(&p);}
+void fn(PointRef p) { 
+        _Managed_retain(p); 
+         
+        _PointRef_method_print(p, "fn");
+        _Managed_release(&p);}
 PointRef origin() {
     PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
 
 
     p->x = 0;
     p->y = 0;
-    _Managed_retain(p);_Managed_release(&p);return p;
+    /* elided retain/release p */return p;
 }
 PointRef point(int x, int y) {
     PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
@@ -103,7 +105,7 @@ PointRef point(int x, int y) {
 
     p->x = x;
     p->y = y;
-    _Managed_retain(p);_Managed_release(&p);return p;
+    /* elided retain/release p */return p;
 }
 int main() {
     PointRef p = _Managed_allocate(_Managed_Sizeof_PointRef(1));
