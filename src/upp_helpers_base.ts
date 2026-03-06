@@ -6,6 +6,8 @@ import type { MacroResult, AnySourceNode, InterpolationValue } from './types.ts'
 
 let uniqueIdCounter = 1;
 
+export interface MatchOptions { deep?: boolean };
+
 /**
  * Base helper class providing general-purpose macro utilities.
  * @class
@@ -293,10 +295,10 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {AnySourceNode} node - Target node to match against.
     * @param {string | string[]} src - Pattern(s) to match. Can include $wildcards.
     * @param {function(captures: Record<string, AnySourceNode>): any} [callback] - Function called with captures if match succeeds.
-    * @param {{ deep?: boolean }} [options] - Match options (e.g., deep search).
+    * @param {MatchOptions} [options] - Match options (e.g., deep search).
     * @returns {any} Result of callback, captures object, or null.
     */
-    protected match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options: { deep?: boolean } = {}): any {
+    protected match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options: MatchOptions = {}): any {
         if (!node) throw new Error("upp.match: Argument 1 must be a valid node.");
 
         const srcs = Array.isArray(src) ? src : [src];
@@ -382,7 +384,11 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {string} pattern - The source fragment pattern.
     * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
     */
-    withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void {
+    withMatch(scope: AnySourceNode, 
+        pattern: string | string[], 
+        callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult,
+        options: MatchOptions = {}
+    ): void {
         const patterns = Array.isArray(pattern) ? pattern : [pattern];
 
         this.registry.registerPendingRule({
@@ -392,12 +398,12 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                 const isRootScope = (scope as SourceNode<any>).type === 'translation_unit';
                 if (!isRootScope && !h.isDescendant(scope as SourceNode<any>, n)) return false;
                 // Live structural match - check any of the patterns
-                return patterns.some(p => !!h.match(n, p));
+                return patterns.some(p => !!h.match(n, p, undefined, options));
             },
             callback: (n, h) => {
                 // Find which pattern matched
                 for (const p of patterns) {
-                    const m = h.match(n, p);
+                    const m = h.match(n, p, undefined, options);
                     if (m) return callback(m, h as UppHelpersBase<LanguageNodeTypes>, n);
                 }
                 return undefined;
@@ -409,7 +415,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         const done = this.context?.walkerDone;
         if (done) {
             this.walk(scope as SourceNode<any>, (n) => {
-                if (done.has(n) && patterns.some(p => !!this.match(n, p))) {
+                if (done.has(n) && patterns.some(p => !!this.match(n, p, undefined, options))) {
                     this.revisit(n);
                 }
             });

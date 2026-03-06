@@ -61,7 +61,7 @@ export interface RegistryContext {
     originPath: string;
     invocations: Invocation[];
     helpers: UppHelpersBase<any> | null;
-    pendingRules: PendingRule<any>[];
+    pendingRules: Set<PendingRule<any>>;
     mutated?: boolean;
     /** The walker's visited-node set. Used by withXxx to unmark already-visited targets. */
     walkerDone?: WeakSet<SourceNode<any>>;
@@ -92,7 +92,7 @@ class Registry {
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
 
-    public pendingRules: PendingRule<any>[];
+    public pendingRules: Set<PendingRule<any>>;
 
     public mainContext: RegistryContext | null;
     public source?: string;
@@ -147,7 +147,7 @@ class Registry {
         this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
         this.shouldMaterializeDependency = false;
 
-        this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
+        this.pendingRules = parentRegistry ? parentRegistry.pendingRules : new Set();
 
         this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
         this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
@@ -176,7 +176,7 @@ class Registry {
     registerPendingRule(rule: Omit<PendingRule<any>, 'id'>): number {
         const id = ++Registry.ruleIdCounter;
         const fullRule = { ...rule, id };
-        this.pendingRules.push(fullRule);
+        this.pendingRules.add(fullRule);
         return id;
     }
 
@@ -619,7 +619,7 @@ class Registry {
  */
     private absorbInvocation(text: string): { name: string, args: string[] } | null {
         text = text.trim();
-        const match = text.match(/^@([a-zA-Z0-9_]+)(\(.*\))?$/s);
+        const match = text.match(/^@([a-zA-Z0-9_]+)\s*(\(.*\))?$/s);
         if (!match) return null;
 
         const name = match[1];

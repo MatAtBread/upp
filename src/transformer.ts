@@ -46,7 +46,7 @@ export class Transformer {
       originPath,
       invocations: foundInvs,
       helpers,
-      pendingRules: registry.pendingRules // Shared array reference
+      pendingRules: registry.pendingRules // Shared reference
     };
 
     helpers.context = context;
@@ -80,58 +80,46 @@ export class Transformer {
     return registry.tree.source;
   }
 
-  /**
+/**
  * A back-tracking depth-first tree walker.
  * This is aware that the tree structure may change during iteration, 
- * and attempts to walk all nodes in the tree
+ * and attempts to walk all nodes in the tree.
+ * 
+ * This implementation works by finding the deepest unvisited child, yielding
+ * and then repeating the same process until nothing is found. It does not
+ * need to track changes to node structures (parents/siblings) as it always
+ * seeks.
+ * 
+ * A node can be re-added to the search tree by calling revisit that removes
+ * the node and all it's parents from the `done` set.
+ * 
+ * Question: how to ensure any new nodes added to the tree are *always* found.
+ * They will be added and discoverable iff all their parents are not in `done`
+ * 
  * @param node 
  */
   private *walk(start: SourceNode<any>, done: WeakSet<SourceNode<any>>): Generator<SourceNode<any>, SourceNode<any> | undefined, SourceNode<any> | undefined> {
-    let node: SourceNode<any> | undefined | null = start;
-
-    while (node) {
-      // Descend to first unfinished child
-      const nextChild: SourceNode<any> | undefined = node.children.find(c => !done.has(c));
-      if (nextChild) {
-        node = nextChild;
+    let node: SourceNode<any> = start;
+    
+    while (true) {
+      const unvisitedChildren = node.children.filter(ch => !done.has(ch));
+      if (unvisitedChildren.length) {
+        node = unvisitedChildren[0];
         continue;
       }
-
-      // Capture structural position before yield
-      const parent: SourceNode<any> | null = node.parent;
-      const index: number = parent ? parent.children.indexOf(node) : -1;
-
-      const injectedTree = yield node;
-      done.add(node);
-      if (injectedTree) {
-        yield* this.walk(injectedTree, done);
-      }
-
-      // If still attached, try next sibling
-      if (parent && node.parent === parent) {
-        const i: number = parent.children.indexOf(node);
-        if (i >= 0 && parent.children[i + 1]) {
-          node = parent.children[i + 1];
-          continue;
+      if (!done.has(node)) {
+        done.add(node);
+        const injectedTree = yield node;
+        if (injectedTree) {
+          yield* this.walk(injectedTree, done);
         }
-      }
-
-      // If replaced, visit replacement
-      if (
-        parent &&
-        index >= 0 &&
-        parent.children[index] &&
-        parent.children[index] !== node
-      ) {
-        node = parent.children[index];
+        node = start;
         continue;
       }
-
-      // Otherwise climb
-      node = parent;
+      return;
     }
-    return undefined;
   }
+
 
   private transformNode(node: SourceNode<any>, helpers: UppHelpersBase<any>, context: RegistryContext): SourceNode<any> | undefined {
     let iterations = 0;
@@ -158,8 +146,7 @@ export class Transformer {
             if (substitution === undefined || substitution === node) {
               // Consume one-shot rules after they fire
               if (rule.oneShot) {
-                const idx = context.pendingRules.indexOf(rule);
-                if (idx >= 0) context.pendingRules.splice(idx, 1);
+                context.pendingRules.delete(rule);
               }
               continue; // No substitution — try remaining rules
             }
@@ -181,11 +168,11 @@ export class Transformer {
                 const resultNodes = Array.isArray(result) ? result : [result];
                 for (const r of resultNodes) {
                   helpers.walk(r as any, (n: any) => {
-                    try {
-                      if (rule.matcher(n, helpers)) {
+                    //try {
+                      //if (rule.matcher(n, helpers)) {
                         rule.substituted!.add(n);
-                      }
-                    } catch { /* ignore matcher errors during pre-marking */ }
+                      //}
+                    //} catch { /* ignore matcher errors during pre-marking */ }
                   });
                 }
               }

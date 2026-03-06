@@ -1,7 +1,6 @@
 ==== examples/deferred_order_test.c ===
 
 void main() /* Start of function */
-/* Start of function */
 {
     /* Macro expanded */
     

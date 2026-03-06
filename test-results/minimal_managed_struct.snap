@@ -1,21 +1,6 @@
-==== examples/anon_struct.c ===
-/* A minimal C stdio/stdlib/string for upp to make it easy to
-   see the output of the examples but permit compilation
-*/
-extern int puts(const char *s);
-extern int printf(const char *format, ...);
-extern int fputs(const char *s, void *stream);
-extern void *malloc(unsigned long n);
-extern void free(void *p);
-extern char *strcpy(char *dest, const char *src);
-extern char *strncat(char *dest, const char *src, unsigned long n);
-extern int strcmp(const char *s1, const char *s2);
-extern int snprintf(char *str, unsigned long size, const char *format, ...);
-extern unsigned long strlen(const char *s);
-extern void *stderr;
-extern void *_stderr;
-
+==== examples/minimal_managed_struct.c ===
 #include "managed-struct.h"
+typedef struct S { int x; } S;
 #ifndef __MANAGED_STRUCT__HUP
 #define  __MANAGED_STRUCT__HUP
 struct _ReferenceCount {
@@ -66,38 +51,25 @@ static inline int _Managed_ref_count(void *data) {
 }
 #endif
 // __MANAGED_STRUCT__HUP
-typedef struct {
-    int id;
-    float value;
-}* AnonBox;
-#define _Managed_Sizeof_AnonBox(n) (sizeof(*(AnonBox)0) * (n))
+typedef S* M;
+#define _Managed_Sizeof_M(n) (sizeof(*(M)0) * (n))
 
-static inline  int _AnonBox_method_managed_reference_count(AnonBox p) { 
+static inline  int _M_method_managed_reference_count(M p) { 
          
          
         /* elided retain/release p */return _Managed_ref_count((void *)p);
         }
 
  
-AnonBox create_anon(int id, float value) {
-    AnonBox a = _Managed_allocate(_Managed_Sizeof_AnonBox(1));
+void main() {
+    M s = _Managed_allocate(_Managed_Sizeof_M(1));
 
 
-    a->id = id;
-    a->value = value;
-    /* elided retain/release a */return a;
-}
-int main() {
-    AnonBox a1 = create_anon(1, 3.14);
+    M a = _Managed_allocate(_Managed_Sizeof_M(10));
 
-    int ok = (a1->id == 1);
-    _Managed_retain(a1);AnonBox a2 = a1;
- // Should retain
-    ok &= (_Managed_ref_count(a1) == 2);
-    printf("%s (refs=%d)\n", ok ? "PASS":"FAIL", _Managed_ref_count(a1));
-    _Managed_release(&a2);
-_Managed_release(&a1);return 0;
-}
+
+_Managed_release(&a);
+_Managed_release(&s);}
 
 ==== std/defer.h ===
 #ifndef __UPP_STDLIB_DEFER_H__
@@ -121,5 +93,4 @@ extern void free(void *p);
 
 
 ==== RUN OUTPUT ===
-PASS (refs=2)
 

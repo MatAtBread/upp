@@ -1,0 +1,30 @@
+#include "io-lite.h"
+@include(managed-struct.hup)
+
+struct Foo_s {
+    int x;
+};
+
+@ManagedStruct(struct Foo_s) Foo;
+
+@method(Foo) void fn(Foo g) {
+    g->x += 1;
+}
+
+Foo init(int x) {
+    Foo i;
+    i->x = x;
+    return i;
+}
+
+int main() {
+    Foo f1;
+    f1->x = 465;
+    f1 = init(123);
+    f1->fn();
+    printf("%s: %d [%d]",
+        f1->x == 123 && f1->managed_reference_count() == 1
+            ? "PASS":"FAIL",
+        f1->x, f1->managed_reference_count());
+    return 0;
+}

@@ -2,7 +2,7 @@ import type { Macro, PendingRule } from './registry.ts';
 
 export interface CacheData {
     macros: Macro[];
-    pendingRules: PendingRule[];
+    pendingRules: Set<PendingRule>;
     output: string;
     shouldMaterialize: boolean;
     isAuthoritative: boolean;

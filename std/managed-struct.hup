@@ -10,7 +10,7 @@ extern void free(void *p);
   const name = nameNode.text.replace(/;$/, '');
 
   const handledIds = new Set();
-  // const retainedParameters = new WeakSet();
+  const retainedParameters = new WeakMap();
 
   // Robustly get the identifier from the declaration or parameter
   const getIdentifier = (n) => {
@@ -59,33 +59,31 @@ extern void free(void *p);
     };
 
     if (node.type === 'parameter_declaration') {
+      upp.withNode(upp.findEnclosing(node,'function_definition').named.body, (body, upp) => {
+        // Avoid the recursion caused by withReferences finding the insertion of ${nameText}
+        // by checking if we have already injected a _Managed_retain
+        /***/
+        let retained = retainedParameters.get(body);
+        if (retained?.has(nameText))
+          return undefined;
+
+        if (!retained) {
+          retained = new Set();
+          retainedParameters.set(body,retained);
+        }
+        retained.add(nameText);
+        /****/
+        
+        // if (body.children[1].text === `_Managed_retain(${nameText});`)
+        //   return undefined;
+
+        return upp.code`{ 
+        _Managed_retain(${nameText}); 
+        @defer _Managed_release(&${nameText});
+        ${body.children.slice(1, -1)}
+        }`;
+      });
       upp.withReferences(node, handleReference);
-      if (node.parent && node.parent.parent && node.parent.parent.parent && node.parent.parent.parent.type == 'function_definition') {
-        upp.withNode(node.parent.parent.parent.named.body, (body, upp) => {
-          // Avoid the recursion caused by withReferences finding the insertion of ${nameText}
-          // by checking if we have already injected a _Managed_retain
-          /*** WIP
-          let retained = retainedParameters.get(body);
-          if (retained?.has(nameText))
-            return undefined;
-
-          if (!retained) {
-            retained = new Set();
-            retainedParameters.set(body,retained);
-          }
-          retained.add(nameText);
-          ****/
-          
-          if (body.children[1].text === `_Managed_retain(${nameText});`)
-            return undefined;
-
-          return upp.code`{
-          _Managed_retain(${nameText}); 
-          @defer _Managed_release(&${nameText}); 
-          ${body.children.slice(1, -1)}
-          }`;
-        });
-      }
       return undefined; 
     }
     upp.withReferences(node, handleReference);
@@ -304,22 +302,16 @@ static inline int _Managed_ref_count(void *data) {
         }
     );
 
-    /* Tidy up: elide redundant retain/release pairs on the same local
-        debugger;
+    /* Tidy up: elide redundant retain/release pairs on the same local var */
     upp.withMatch(upp.root, `_Managed_release(&$a);`, ({ a }, upp, node) => {
-console.log(">>>>",node.text);
         if (!a || node.type !== 'expression_statement') return undefined;
-        if (!node.prevNamedSibling) return undefined;
-        
-        let stmt = stmt.prevNamedSibling;
-console.log("****",stmt.text);
-        const releaseMatch = upp.match(stmt, `_Managed_retain($b);`);
-        if (releaseMatch && releaseMatch.b && releaseMatch.b.text === a.text) {
-            nextStmt.remove();
+        let stmt = node.prevNamedSibling;
+        if (stmt && upp.match(stmt, `_Managed_retain(${a.text});`)) {
+            stmt.remove();
+            return `/* elided retain/release ${a.text} */`;
         }
-        return null;
-    });
-    /**/
+    }, { deep: true });
+
     return $`
 ${boilerplate}
 typedef ${T}* ${name};
