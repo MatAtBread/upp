@@ -167,13 +167,7 @@ export class Transformer {
                 if (!rule.substituted) rule.substituted = new WeakSet<object>();
                 const resultNodes = Array.isArray(result) ? result : [result];
                 for (const r of resultNodes) {
-                  helpers.walk(r as any, (n: any) => {
-                    //try {
-                      //if (rule.matcher(n, helpers)) {
-                        rule.substituted!.add(n);
-                      //}
-                    //} catch { /* ignore matcher errors during pre-marking */ }
-                  });
+                  helpers.walk(r as any, (n: any) => { rule.substituted!.add(n) });
                 }
               }
 
@@ -183,6 +177,8 @@ export class Transformer {
               // the walker won't detect it, so return it as an injectedTree
               // for the walker to re-descend and discover new children.
               if (result === node) {
+                if (node.text.includes('/*@'))
+                  helpers.revisit(node);
                 return node; // Morphed in place — walker re-walks new children
               }
               break; // Structurally replaced — walker detects at same index

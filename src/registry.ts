@@ -22,6 +22,7 @@ export interface Macro {
 
 export interface PendingRule<T extends string = string> {
     id: number;
+    description?: string,
     matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
     oneShot?: boolean;
@@ -276,6 +277,7 @@ class Registry {
 
         this.macros.set(name, macro);
         this.registerPendingRule({
+            description: `@${name}`,
             matcher: (n, h) => n.type === 'comment' && n.text.startsWith(`/*@${name}`) && n.text.endsWith('*/'),
             callback: (n, h) => {
                 const invocation = this.absorbInvocation(n.text.slice(2, -2));
