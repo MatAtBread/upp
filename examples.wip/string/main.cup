@@ -1,0 +1,11 @@
+#include "../io-lite.h"
+
+@include(strings.hup)
+
+int main() {
+    String s = String_literal("abcd");
+    String t = s->copy();
+    printf("s: %s\n", s->data);
+    printf("t: %s\n", t->data);
+    return 0;
+}

@@ -1,3 +1,5 @@
+#include "io-lite.h"
+
 @include(method.hup)
 
 typedef struct { int x; } Point;
@@ -12,5 +14,6 @@ int main() {
     Point p = {10};
     p.setX(20);
     int val = p.getX();
+    printf("%d\n", val);
     return 0;
 }

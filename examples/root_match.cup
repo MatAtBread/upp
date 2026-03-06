@@ -1,0 +1,16 @@
+#include "io-lite.h"
+
+@define GlobalModifier() {
+    upp.withMatch(upp.root, 'int $name = 100;', ({name}, helpers, node) => {
+        return helpers.replace(node, `/* global root modified ${name} */`);
+    });
+}
+
+int z = 100;
+
+@GlobalModifier()
+int main() {
+    return 0;
+}
+
+int x = 100;

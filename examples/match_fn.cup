@@ -2,12 +2,13 @@
 
 @define xxx() {
     const fn = upp.consume('function_definition');
-    return upp.match(fn, '$returnType $name($params__until) { $body__until }', 
+    const r = upp.match(fn, '$returnType $name($params__until) { $body__until }', 
     ({ returnType, name, params, body }) => upp.code`
     ${returnType} ${name}(${params}) {
         puts("Running '${name.text}', returns ${returnType.text}");
         ${body}
     }`);
+    return r;
 }
 
 @xxx int my_fn(int x, int y) {

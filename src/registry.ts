@@ -10,7 +10,6 @@ import { Transformer } from './transformer.ts';
 import type { Tree, SyntaxNode } from 'tree-sitter';
 import type { DependencyCache } from './dependency_cache.ts';
 
-
 export interface Macro {
     name: string;
     params: string[];
@@ -18,13 +17,17 @@ export interface Macro {
     language: string;
     origin: string;
     startIndex: number;
+    fn?: Function; // Cached compiled function
 }
 
 export interface PendingRule<T extends string = string> {
     id: number;
-    contextNode: SourceNode<any>;
+    description?: string,
     matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
     callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
+    oneShot?: boolean;
+    /** Tracks node instances that have already been produced as replacements by this rule, to prevent re-matching freshly-created identical subtrees. */
+    substituted?: WeakSet<object>;
 }
 
 export interface Invocation {
@@ -59,11 +62,10 @@ export interface RegistryContext {
     originPath: string;
     invocations: Invocation[];
     helpers: UppHelpersBase<any> | null;
-    transformed: Set<SourceNode<any>>;
-    transformStack: Set<SourceNode<any>>;
-    appliedRules: WeakMap<SourceNode<any>, Set<number>>;
-    pendingRules: PendingRule<any>[];
+    pendingRules: Set<PendingRule<any>>;
     mutated?: boolean;
+    /** The walker's visited-node set. Used by withXxx to unmark already-visited targets. */
+    walkerDone?: WeakSet<SourceNode<any>>;
 }
 
 type TreeSitterLang = Language;
@@ -72,6 +74,8 @@ type TreeSitterLang = Language;
  * @class
  */
 class Registry {
+    static ruleIdCounter: number = 0;
+
     public config: RegistryConfig;
     public parentRegistry: Registry | null;
     public depth: number;
@@ -89,12 +93,26 @@ class Registry {
     public loadedDependencies: Map<string, string>;
     public shouldMaterializeDependency: boolean;
 
-    public pendingRules: PendingRule<any>[];
-    public ruleIdCounter: number;
+    public pendingRules: Set<PendingRule<any>>;
 
     public mainContext: RegistryContext | null;
     public source?: string;
-    public tree?: SourceTree<any>;
+    private __tree?: SourceTree<any>;
+    public get tree(): SourceTree<any> {
+        if (!this.__tree) {
+            if (this.parentRegistry) {
+                return this.parentRegistry.tree;
+            }
+            throw new Error("Tree not initialized");
+        }
+        return this.__tree;
+    }
+    public set tree(tree: SourceTree<any>) {
+        if (!tree) {
+            throw new Error("Tree not initialized");
+        }
+        this.__tree = tree;
+    }
     public dependencyHelpers: UppHelpersBase<any>[];
 
     public activeTransformNode?: SourceNode<any> | null;
@@ -116,13 +134,24 @@ class Registry {
         this.language = lang;
 
         this.helpers = null;
-        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(null as any, parentRegistry, null)) : null;
+        this.parentHelpers = parentRegistry ? (parentRegistry.helpers || new UppHelpersC(parentRegistry, null)) : null;
         this.isAuthoritative = true;
 
         this.macros = new Map();
 
-        this.registerMacro('__deferred_task', ['id'], '/* handled internally */', 'js', 'internal');
-        this.registerMacro('implements', ['pkgName'], '', 'js', 'internal');
+        this.parser = new Parser();
+        this.parser.setLanguage(this.language);
+
+
+        this.stdPath = config.stdPath || null;
+        this.includePaths = config.includePaths || [];
+        this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
+        this.shouldMaterializeDependency = false;
+
+        this.pendingRules = parentRegistry ? parentRegistry.pendingRules : new Set();
+
+        this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
+        this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
         this.registerMacro('include', ['file'], `
             upp.loadDependency(file, null, upp);
             let headerName = file;
@@ -139,20 +168,6 @@ class Registry {
             }
         `, 'js', 'internal');
 
-        this.parser = new Parser();
-        this.parser.setLanguage(this.language);
-
-
-        this.stdPath = config.stdPath || null;
-        this.includePaths = config.includePaths || [];
-        this.loadedDependencies = parentRegistry ? parentRegistry.loadedDependencies : new Map();
-        this.shouldMaterializeDependency = false;
-
-        this.pendingRules = parentRegistry ? parentRegistry.pendingRules : [];
-        this.ruleIdCounter = 0;
-
-        this.mainContext = parentRegistry ? parentRegistry.mainContext : null;
-        this.dependencyHelpers = parentRegistry ? parentRegistry.dependencyHelpers : [];
     }
 
     /**
@@ -160,11 +175,76 @@ class Registry {
      * @param {PendingRule<any>} rule - The rule to register.
      */
     registerPendingRule(rule: Omit<PendingRule<any>, 'id'>): number {
-        const id = ++this.ruleIdCounter;
+        const id = ++Registry.ruleIdCounter;
         const fullRule = { ...rule, id };
-        this.pendingRules.push(fullRule);
+        this.pendingRules.add(fullRule);
         return id;
     }
+
+    /**
+ * Evaluates a macro invocation.
+ */
+    private evaluateMacro(invocation: Invocation, source: string, helpers: UppHelpersBase<any>, filePath: string): MacroResult | undefined {
+        const macroDef = this.getMacro(invocation.name);
+        if (!macroDef) {
+            console.warn(`[UPP] Macro '${invocation.name}' not found.`);
+            return undefined;
+        }
+
+        const args = invocation.args.map(a => {
+            const trimmed = a.trim();
+            if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                return trimmed.slice(1, -1); // Unquote strings
+            }
+            return trimmed;
+        });
+
+        const oldInvocation = helpers.invocation;
+        const oldContext = helpers.contextNode;
+        const oldConsumed = helpers.lastConsumedNode;
+        const oldActiveNode = this.activeTransformNode;
+
+        try {
+            const invocationNode = invocation.invocationNode!;
+            const contextNode = helpers.contextNode || invocationNode;
+
+            helpers.invocation = { ...invocation, invocationNode };
+            helpers.contextNode = contextNode;
+            helpers.lastConsumedNode = null;
+            this.activeTransformNode = invocationNode;
+
+            const upp = Object.create(helpers);
+            upp.registry = this;
+            upp.parentHelpers = this.parentHelpers;
+            upp.path = path;
+            upp.invocation = { ...invocation, invocationNode };
+
+            const macroFn = macroDef.fn || this.createMacroFunction(macroDef);
+            let callArgs: any[] = [...args];
+            let isTransformer = false;
+
+            if (macroDef.params.length > 0 && macroDef.params[0] === 'node') {
+                callArgs.unshift(contextNode);
+                isTransformer = true;
+            }
+
+            const hasRest = macroDef.params.length > 0 && macroDef.params[macroDef.params.length - 1].startsWith('...');
+            if (!hasRest && callArgs.length !== macroDef.params.length) {
+                throw new Error(`@${invocation.name} expected ${isTransformer ? macroDef.params.length - 1 : macroDef.params.length} arguments, found ${args.length}`);
+            }
+
+            return macroFn(upp, console, upp.code.bind(upp), ...callArgs);
+        } catch (e: any) {
+            console.error(`[UPP] Error evaluating macro '${invocation.name}' at ${filePath}:`, e.message);
+            throw e; // Rethrow to halt transformation
+        } finally {
+            helpers.invocation = oldInvocation;
+            helpers.contextNode = oldContext;
+            helpers.lastConsumedNode = oldConsumed;
+            this.activeTransformNode = oldActiveNode;
+        }
+    }
+
 
     /**
      * Registers a new macro in the registry.
@@ -176,15 +256,13 @@ class Registry {
      * @param {number} [startIndex=0] - Start index in the origin file.
      */
     registerMacro(name: string, params: string[], body: string, language: string = 'js', origin: string = 'unknown', startIndex: number = 0): void {
-        const macro = { name, params, body, language, origin, startIndex };
+        const macro: Macro = { name, params, body, language, origin, startIndex };
 
-        // Eagerly validate JavaScript macros
+        // Compile and cache the macro function at registration time
         if (language === 'js') {
             try {
-                this.createMacroFunction(macro);
+                macro.fn = this.createMacroFunction(macro);
             } catch (e: any) {
-                const lines = body.split('\n');
-                const lineCount = lines.length;
                 this.diagnostics.reportError(
                     'UPP003',
                     `Syntax error in @${name} macro definition: ${e.message}`,
@@ -198,6 +276,23 @@ class Registry {
         }
 
         this.macros.set(name, macro);
+        this.registerPendingRule({
+            description: `@${name}`,
+            matcher: (n, h) => n.type === 'comment' && n.text.startsWith(`/*@${name}`) && n.text.endsWith('*/'),
+            callback: (n, h) => {
+                const invocation = this.absorbInvocation(n.text.slice(2, -2));
+                // We remove the macro invocation from the tree to prevent it from being processed again.
+                // Many macros will later replace this comment with other nodes.
+                n.text = n.text.replace(`/*@`, '/* ');
+                if (!invocation) throw new Error(`Failed to parse macro invocation: ${n.text}`);
+                return this.evaluateMacro({
+                    ...invocation,
+                    startIndex: n.startIndex,
+                    endIndex: n.endIndex,
+                    invocationNode: n
+                }, null!, h, origin);
+            }
+        });
         if (this.parentRegistry) {
             this.parentRegistry.registerMacro(name, params, body, language, origin, startIndex);
         }
@@ -358,8 +453,6 @@ class Registry {
     public markMutated(): void {
         if (this.mainContext) {
             this.mainContext.mutated = true;
-            // Clear semantic caches when tree mutates
-            this.mainContext.helpers?.clearSemanticCaches?.();
         }
     }
 
@@ -375,7 +468,7 @@ class Registry {
      * Phase 1 (pure): parse @define blocks, strip them from source, find macro invocations.
      * Phase 2 (side effects): register macros, load @include dependencies.
      */
-    prepareSource(source: string, originPath: string): { cleanSource: string; invocations: Invocation[] } {
+    prepareSource(source: string, originPath?: string): { cleanSource: string; invocations: Invocation[] } {
         // --- Phase 1: Pure source analysis ---
         const definerRegex = /^\s*@define\s+(\w+)\s*\(([^)]*)\)\s*\{/gm;
         let cleanSource = source;
@@ -409,10 +502,6 @@ class Registry {
         for (let i = defines.length - 1; i >= 0; i--) {
             const def = defines[i];
             let replaced = "";
-            if (this.config.comments) {
-                const commentContent = def.original.replace(/^(\s*)@/, '$1');
-                replaced = `/* ${commentContent} */`;
-            }
             cleanSource = cleanSource.slice(0, def.index) + replaced + cleanSource.slice(def.index + def.length);
         }
 
@@ -527,16 +616,59 @@ class Registry {
         return invs;
     }
 
-    absorbInvocation(text: string, startIndex: number): { name: string; args: string[] } | null {
-        const regex = /@(\w+)(\s*\(([^)]*)\))?/;
-        const match = text.slice(startIndex).match(regex);
-        if (match) {
-            return {
-                name: match[1],
-                args: match[3]?.trim().split(',').map(s => s.trim()).filter(Boolean) || []
-            };
+    /**
+ * Parses a macro invocation string.
+ */
+    private absorbInvocation(text: string): { name: string, args: string[] } | null {
+        text = text.trim();
+        const match = text.match(/^@([a-zA-Z0-9_]+)\s*(\(.*\))?$/s);
+        if (!match) return null;
+
+        const name = match[1];
+        const argsStr = match[2]?.slice(1, -1);
+        const args: string[] = [];
+
+        if (argsStr?.trim()) {
+            let depth = 0;
+            let current = "";
+            let inString = false;
+            let escape = false;
+
+            for (let i = 0; i < argsStr.length; i++) {
+                const char = argsStr[i];
+                if (escape) {
+                    current += char;
+                    escape = false;
+                    continue;
+                }
+
+                if (char === '\\') {
+                    escape = true;
+                    current += char;
+                    continue;
+                }
+
+                if (char === '"') {
+                    inString = !inString;
+                    current += char;
+                    continue;
+                }
+
+                if (!inString) {
+                    if (char === '(' || char === '{' || char === '[') depth++;
+                    else if (char === ')' || char === '}' || char === ']') depth--;
+                    else if (char === ',' && depth === 0) {
+                        args.push(current);
+                        current = "";
+                        continue;
+                    }
+                }
+                current += char;
+            }
+            args.push(current);
         }
-        return null;
+
+        return { name, args };
     }
 }
 

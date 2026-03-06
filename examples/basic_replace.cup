@@ -1,0 +1,17 @@
+#include "io-lite.h"
+
+@define ReplaceNode(msg) {
+    return $`/* ${msg} */`;
+}
+
+
+@ReplaceNode("replaced")
+int foo() {
+    return 1;
+}
+
+int main() {
+    @ReplaceNode("another_replaced")
+    int x = foo();
+    return x;
+}

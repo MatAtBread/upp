@@ -55,6 +55,7 @@ int main() {
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 val1: 10
 val2: 50

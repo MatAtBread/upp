@@ -125,18 +125,27 @@ export class PatternMatcher {
                     patternRoot = kids[0];
                 } else if (kids.length > 1) {
                     // It's a list of statements/nodes
-                    patternRoot = body as SyntaxNode;
+                    throw new Error(`PatternMatcher cannot match sequences of independent statements. Pattern snippet evaluates to ${kids.length} distinct AST nodes. Please use structural relationships on a single root node. Pattern: ${cleanPattern}`);
                 }
             }
         }
 
         if (patternRoot.type === 'translation_unit' && patternRoot.childCount > 0) {
+            let significantKids = 0;
+            let lastKid: SyntaxNode | null = null;
+            const nodeTypes = [];
             for (let i = 0; i < patternRoot.childCount; i++) {
                 const child = patternRoot.child(i);
-                if (child && child.type !== 'comment') {
-                    patternRoot = child;
-                    break;
+                if (child && child.type !== 'comment' && child.type !== ';') {
+                    significantKids++;
+                    lastKid = child;
+                    nodeTypes.push(child.type);
                 }
+            }
+            if (significantKids > 1) {
+                throw new Error(`PatternMatcher cannot match sequences of independent statements. Pattern snippet evaluates to ${significantKids} distinct AST nodes at the translation_unit level (${nodeTypes.join(', ')}). Pattern: ${cleanPattern}`);
+            } else if (lastKid) {
+                patternRoot = lastKid;
             }
         }
 

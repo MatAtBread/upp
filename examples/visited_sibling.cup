@@ -1,0 +1,14 @@
+#include "io-lite.h"
+
+@define ModifySibling() {
+    upp.withMatch(upp.contextNode.parent, 'int $name = $val;', (m, helpers, node) => {
+        return helpers.replace(node, "/* modified sibling " + m.name.text + " */");
+    });
+    return $`/* WOZ HERE */`
+}
+
+int z = 100;
+@ModifySibling();
+int main() {
+    return 0;
+}

@@ -38,6 +38,7 @@ int main() {
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 distance: 500
 distance: 500

@@ -1,4 +1,20 @@
 ==== examples/two_methods_test.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
 #include "method.h"
 typedef struct { int x; } Point;
 
@@ -9,11 +25,14 @@ int main() {
     Point p = {10};
     _Point_method_setX(&p, 20);
     int val = _Point_method_getX(&p);
+    printf("%d\n", val);
     return 0;
 }
 
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
+20
 

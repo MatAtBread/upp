@@ -25,7 +25,7 @@ void _String_method_Defer(String * s) {
     free(s -> data);
 } 
 int main() {
-    String s1;/*@defer*/
+    String s1;/* defer*/
 
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");

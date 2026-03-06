@@ -1,5 +1,6 @@
 @define implements(pkgName) {
-    // Marker macro used by @package
+    // Return a comment that the package macro can find
+    return `/*implements:${pkgName}*/`
 }
 
 @define package(pkgName) {
@@ -13,7 +14,7 @@
     const publicProtos = [];
 
     // 1. Check if the parent file explicitly implements this package
-    upp.isAuthoritative = upp.parentHelpers.findInvocations('implements').some(inv => inv.text.includes(pkgName));
+    upp.isAuthoritative = upp.parentHelpers?.registry?.tree?.root?.text?.includes(`/*implements:${pkgName}*/`);
 
     if (upp.isAuthoritative) {
         upp.registry.shouldMaterializeDependency = true;
@@ -21,16 +22,76 @@
             upp.parentHelpers.registry.shouldMaterializeDependency = true;
         }
 
-        // Find public functions to generate headers
         const functions = upp.parentHelpers.root.find('function_definition');
         for (const fn of functions) {
             const isStatic = fn.children.some(c => c.type === 'storage_class_specifier' && c.text === 'static');
             if (isStatic) continue;
 
+            let isMethod = false;
+            let targetType = "";
+
+            let prev = null;
+            if (fn.parent) {
+                const idx = fn.parent.children.indexOf(fn);
+                if (idx > 0) prev = fn.parent.children[idx - 1];
+            }
+
+            while (prev) {
+                // Ignore whitespace or preprocessor nodes
+                if (!prev.text.trim()) {
+                    if (prev.parent) {
+                        const idx = prev.parent.children.indexOf(prev);
+                        prev = idx > 0 ? prev.parent.children[idx - 1] : null;
+                    } else {
+                        prev = null;
+                    }
+                    continue;
+                }
+                // If it's a comment, check if it contains the masked macro
+                if (prev.type.includes('comment')) {
+                    const methodMatch = prev.text.match(/@method\s*\(\s*([^)]+)\s*\)/);
+                    if (methodMatch) {
+                        isMethod = true;
+                        targetType = methodMatch[1];
+                        break;
+                    }
+                    if (prev.parent) {
+                        const idx = prev.parent.children.indexOf(prev);
+                        prev = idx > 0 ? prev.parent.children[idx - 1] : null;
+                    } else {
+                        prev = null;
+                    }
+                    continue;
+                }
+                // Stop searching once we hit an actual code node (like the previous function)
+                break;
+            }
+
             const { returnType, name, params, nameNode } = upp.parentHelpers.getFunctionSignature(fn);
-            if (name !== 'unknown' && !name.startsWith(nameSpace)) {
-                publicProtos.push(`extern ${returnType} ${nameSpace}${name}${params};`);
-                
+            
+            let exportName = name;
+            let needsRename = true;
+
+            if (isMethod) {
+                const targetMacro = upp.registry.getMacro('methodTargetName');
+                if (targetMacro) {
+                    const macroFn = upp.registry.createMacroFunction(targetMacro);
+                    // (upp, console, $, targetType, originalName)
+                    exportName = macroFn(upp, console, upp.code, targetType, name);
+                    needsRename = false; // @method macro handles renaming later!
+                }
+            } else if (name !== 'unknown' && !name.startsWith(nameSpace)) {
+                exportName = nameSpace + name;
+                needsRename = true;
+            } else {
+                needsRename = false;
+            }
+
+            if (name !== 'unknown' && (needsRename || isMethod)) {
+                publicProtos.push(`extern ${returnType} ${exportName}${params};`);
+            }
+
+            if (needsRename && name !== 'unknown') {
                 const originalName = name;
                 
                 // Immediately rename all existing references in the tree
@@ -49,7 +110,7 @@
 
                 // Rename definition
                 nameNode.text = nameSpace + originalName;
-            }
+            } // end needsRename
         }
     }
 

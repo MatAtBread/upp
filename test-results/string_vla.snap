@@ -16,20 +16,20 @@ extern void *stderr;
 extern void *_stderr;
 
 #include "managed-struct.h"
+#ifndef __MANAGED_STRUCT__HUP
+#define  __MANAGED_STRUCT__HUP
 struct _ReferenceCount {
   int ref_count;
-}
-;
+};
 static inline void *_Managed_allocate(int size) {
   struct _ReferenceCount *p = malloc(size + sizeof(struct _ReferenceCount));
   p->ref_count = 1;
-  printf("{%d} Allocate %d bytes\n", p->ref_count, size);
+  // printf("{%d} Allocate %d bytes\n", p->ref_count, size);
   return (void *)(p + 1);
 }
 static inline void *_Managed_retain(void *data) {
   struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
   p->ref_count++;
-  //printf("{%d} Retain\n", p->ref_count);
   return data;
 }
 static inline void _Managed_release(void *__p) {
@@ -38,7 +38,7 @@ static inline void _Managed_release(void *__p) {
   if (data) {
     struct _ReferenceCount *p = (struct _ReferenceCount *)data - 1;
     if (--p->ref_count <= 0) {
-      printf("{%d} Free\n", p->ref_count);
+      // printf("{%d} Free\n", p->ref_count);
       free(p);
       *_p = ((void *)0);
     }
@@ -48,7 +48,6 @@ static inline void *_Managed_set(void *_dest, void *_src) {
   void **dest = _dest;
   if (*dest) { 
     struct _ReferenceCount *p = (struct _ReferenceCount *)(*dest) - 1;
-    //printf("{%d} Set\n", p->ref_count);
     _Managed_release(dest);
   }
   return *dest = (_src ? _Managed_retain(_src) : ((void *)0));
@@ -65,24 +64,26 @@ static inline int _Managed_ref_count(void *data) {
     if (!data) return -1;
     return ((struct _ReferenceCount *)data - 1)->ref_count;
 }
+#endif
+// __MANAGED_STRUCT__HUP
 typedef struct {
     int len;
     char data[];
 }* String;
 #define _Managed_Sizeof_String(n) (sizeof(*(String)0) + sizeof(((String)0)->data[0]) * (n))
 
-
-int _String_method_managed_reference_count(String p) {
-    if (!p) return -1;
-    return ((struct _ReferenceCount *)p - 1)->ref_count;
-}
+static inline  int _String_method_managed_reference_count(String p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
- void _String_method_print(String s) {
-          _Managed_retain(s); 
-            
-          printf("%s", s->data);
-          _Managed_release(&s);}
+ void _String_method_print(String s) { 
+        _Managed_retain(s); 
+         
+        printf("%s", s->data);
+        _Managed_release(&s);}
 String create_string(const char *src) {
     int _n = strlen(src);
     String s = _Managed_allocate(_Managed_Sizeof_String(_n + 1));
@@ -90,7 +91,7 @@ String create_string(const char *src) {
  // Size includes null terminator
     s->len = _n;
     strcpy(s->data, src);
-    _Managed_retain(s);_Managed_release(&s);return s;
+    /* elided retain/release s */return s;
 }
 int main() {
     String s = create_string("Hello, UPP Flexible Array\n");
@@ -116,15 +117,18 @@ _Managed_release(&s);return 0;
 #include "defer.h"
 #include "method.h"
 
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+
+
 
 
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
-{1} Allocate 31 bytes
 Hello, UPP Flexible Array
 PASS: Hello, UPP Flexible Array
  (refs=2)
-{0} Free
 

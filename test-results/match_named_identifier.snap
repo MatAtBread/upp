@@ -1,6 +1,6 @@
 ==== examples/match_named_identifier.c ===
 
-/*@retype*/;
+/* retype*/;
 int foo = (int)100;
 int bar = (int)200;
 void f() {

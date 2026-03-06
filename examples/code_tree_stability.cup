@@ -2,7 +2,7 @@
     // 1. Get a node from the code
     const decl = upp.consume();
 
-    const originalId = decl.id;
+    const originalRef = decl;
 
     // 2. Interpolate into a new tree using code
     const newTree = upp.code`int ${fn}() { ${decl}; return -1; }`;
@@ -12,9 +12,9 @@
 
     if (!found) throw new Error("Node not found in new tree");
 
-    // 4. Verify referential stability (ID should be the same)
-    if (found.id !== originalId) {
-        throw new Error(`Referential stability failed: original.id=${originalId}, found.id=${found.id}\n${found}`);
+    // 4. Verify referential stability (object reference should be the same)
+    if (found !== originalRef) {
+        throw new Error(`Referential stability failed: objects differ\n${found}`);
     }
 
     // 5. Verify it was removed from source (decl.tree should be different from upp.registry.tree, or startIndex -1)

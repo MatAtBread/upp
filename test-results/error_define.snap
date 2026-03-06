@@ -1,3 +1,21 @@
-[31m./examples/error_define.cup:1:1: error: [0] Macro @define failed: Macro @define not found[0m
+==== examples/error_define.c ===
 
-[31m^[0m
+/*@define*/ BadMacro {
+    // Missing parentheses!
+    return "void bad() {}";
+}
+int main() {
+    return 0;
+}
+
+==== COMPILATION ERROR ===
+./examples/error_define.c:2:13: error: type specifier missing, defaults to 'int'; ISO C99 and later do not support implicit int [-Wimplicit-int]
+    2 | /*@define*/ BadMacro {
+      |             ^
+      |             int
+./examples/error_define.c:2:21: error: expected ';' after top level declarator
+    2 | /*@define*/ BadMacro {
+      |                     ^
+      |                     ;
+2 errors generated.
+

@@ -1,0 +1,23 @@
+@implements(String)
+@include(strings.hup)
+
+@define hashinclude(x) {
+    return `#include ${x}`
+}
+
+@hashinclude(<string.h>)
+
+String literal(const char *src) {
+    int _n = strlen(src);
+    String s[_n + 1]; // Size includes null terminator
+    strcpy(s->data, src);
+    return s;
+}
+
+@method(String) String copy(String s) {
+    return literal(s->data);
+}
+
+@method(String) int length(String s) {
+    return strlen(s->data);
+}

@@ -1,11 +1,11 @@
 @define match(pattern) {
     upp.withMatch(upp.root, pattern, (p, h) => {
-        return upp.code`/* ${Object.keys(p).filter(k =>k !== 'node').map(k => `${k}: ${p[k].text}`).join('\n')} */${p.node.text}`
+        return upp.code`/* ${Object.keys(p).filter(k =>k !== 'node').map(k => `${k}: ${p[k].text}`).join('\n')} */${p.node}`
     });
     return null;
 }
 
-@match(struct $S { $y__until; int $s; $x__until; })
+@match(struct $S { $y__until; int $s; $x__until; };)
 
 @match($l+$r)
 @match($l-$r)

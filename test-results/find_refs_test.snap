@@ -15,10 +15,10 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-/*@rename(y)*/ int y = 10;
+/* rename(y)*/ int y = 10;
 void print_x() { printf("Global x: %d\n", y); }
 int local_rename() {
-  /*@rename(a)*/ int a = 10;
+  /* rename(a)*/ int a = 10;
   {
     // Shadowed
     int b = 40;

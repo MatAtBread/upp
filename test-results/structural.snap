@@ -1,8 +1,5 @@
 ==== examples/structural.c ===
 
-
-
-
 /* S: NAME
 y: undefined
 s: ST2
@@ -14,17 +11,22 @@ struct NAME {
     int ST2;
     long l;
 }
+
+
+
 ;
 void fn(int c) {}
 int main() {
     int b;
     int a = 0;
-    a = /* l: b
+    a =/* l: b
 r: 2 */
-b + 2;
-    b = /* l: a
+b + 2
+ ;
+    b =/* l: a
 r: 9 */
-a - 9;
+a - 9
+ ;
     return 0;
 }
 

@@ -1,5 +1,4 @@
 ==== examples/stream.c ===
-#include "expressionType.h"
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -77,9 +76,6 @@ int main() {
     printf("%s\n", x);
     return 0;
 }
-
-==== std/expressionType.h ===
-
 
 ==== RUN OUTPUT ===
 10abc73.140000BCDE100a

@@ -45,6 +45,7 @@ int main() {
 ==== std/method.h ===
 
 
+
 ==== RUN OUTPUT ===
 Foo 2
 

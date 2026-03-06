@@ -168,6 +168,11 @@ export class SourceTree<NodeTypes extends string = string> {
         const wrappedCode = `void __frag() { ${code} }`;
         const wrappedTree = new SourceTree(wrappedCode, language);
 
+        // Guarantee no ERROR nodes in the wrapped fragment
+        if (wrappedTree.root.toString().includes("ERROR")) {
+            throw new Error(`[UPP] Failed to parse code fragment. The following code resulted in a syntax error: \n\n${code}\n\nPlease ensure the fragment is valid C or UPP macro syntax.`);
+        }
+
         const funcDef = wrappedTree.root.children.find(c => c.type === 'function_definition');
         if (!funcDef) throw new Error("Failed to parse wrapped fragment.");
 
@@ -233,7 +238,7 @@ export class SourceTree<NodeTypes extends string = string> {
  */
 export class SourceNode<T extends string = string> {
     public tree: SourceTree<any>;
-    public id: number | string;
+    public _cacheKey: number | string;
     public type: T;
     public startIndex: number;
     public endIndex: number;
@@ -246,6 +251,7 @@ export class SourceNode<T extends string = string> {
     public _snapshotSearchable?: string;
     public _detachedParent?: SourceNode<any> | null;
     public _detachedIndex?: number;
+    public isReadOnly: boolean = false;
 
     /**
      * @param {SourceTree<any>} tree The tree this node belongs to.
@@ -258,7 +264,7 @@ export class SourceNode<T extends string = string> {
             throw new Error("SourceNode must be created with a Tree-sitter node.");
         }
         this.tree = tree;
-        this.id = tsNode.id;
+        this._cacheKey = tsNode.id;
         this.type = tsNode.type as T;
         this.startIndex = tsNode.startIndex;
         this.endIndex = tsNode.endIndex;
@@ -288,7 +294,7 @@ export class SourceNode<T extends string = string> {
         return this.startIndex !== -1 &&
             this.tree &&
             this.tree.nodeCache &&
-            this.tree.nodeCache.get(this.id) === this;
+            this.tree.nodeCache.get(this._cacheKey) === this;
     }
 
     /** @returns {SourceNode<any>|null} */
@@ -375,7 +381,6 @@ export class SourceNode<T extends string = string> {
      */
     toJSON(): Object {
         return {
-            id: this.id,
             type: this.type,
             fieldName: this.fieldName,
             startIndex: this.startIndex,
@@ -426,12 +431,18 @@ export class SourceNode<T extends string = string> {
     }
 
     // --- DOM API ---
+    private assertMutable() {
+        if (this.isReadOnly) {
+            throw new Error(`[UPP] Cannot mutate node of type '${this.type}': marked as ReadOnly (usually indicating it is an ancestor of the currently executing rule context). Modification restricted to the current context node and its sub-tree.`);
+        }
+    }
 
     /**
      * Removes the node from the tree and returns the removed sub-tree.
      * @returns {SourceTree<any>}
      */
     remove(): SourceTree<any> {
+        this.assertMutable();
         this._detachedParent = this.parent;
         if (this.parent) {
             this._detachedIndex = this.parent.children.indexOf(this);
@@ -450,13 +461,13 @@ export class SourceNode<T extends string = string> {
         // Recursive migration function
         const migrate = (n: SourceNode<any>, offsetDelta: number) => {
             // Remove from old tree
-            if (n.tree) n.tree.nodeCache.delete(n.id);
+            if (n.tree) n.tree.nodeCache.delete(n._cacheKey);
 
             // Add to new tree
             n.tree = newTree;
             n.startIndex += offsetDelta;
             n.endIndex += offsetDelta;
-            newTree.nodeCache.set(n.id, n);
+            newTree.nodeCache.set(n._cacheKey, n);
 
             n.children.forEach(c => migrate(c, offsetDelta));
         };
@@ -483,7 +494,7 @@ export class SourceNode<T extends string = string> {
      * @private
      */
     public _invalidateRecursively(): void {
-        this.tree.nodeCache.delete(this.id);
+        this.tree.nodeCache.delete(this._cacheKey);
         this.startIndex = -1;
         this.endIndex = -1;
         for (const child of this.children) {
@@ -498,6 +509,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[] | null}
      */
     replaceWith(content: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any>, morphIdentity: boolean = true): SourceNode<any> | SourceNode<any>[] | null {
+        this.assertMutable();
         let tree = this.tree;
         let start = this.startIndex;
         let end = this.endIndex;
@@ -595,7 +607,7 @@ export class SourceNode<T extends string = string> {
             const selfIndex = attachedList.indexOf(this);
             if (selfIndex === -1) {
                 const firstNew = attachedList[0] as SourceNode<any>;
-                const oldId = this.id;
+                const oldId = this._cacheKey;
 
                 // We want to KEEP the same object identity.
                 // But we update all properties from the new node.
@@ -653,11 +665,11 @@ export class SourceNode<T extends string = string> {
                 }
 
                 // Ensure ID is updated so we match the new tree-sitter node in subsequent wraps
-                if (firstNew.id !== oldId) {
+                if (firstNew._cacheKey !== oldId) {
                     this.tree.nodeCache.delete(oldId);
-                    this.id = firstNew.id;
+                    this._cacheKey = firstNew._cacheKey;
                 }
-                this.tree.nodeCache.set(this.id, this);
+                this.tree.nodeCache.set(this._cacheKey, this);
 
                 attachedList[0] = this;
             }
@@ -678,6 +690,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertAfter(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        if (this.parent) this.parent.assertMutable();
         const tree = this.tree;
         if (content instanceof SourceNode || content instanceof SourceTree || Array.isArray(content)) {
             const checkNode = (n: any) => {
@@ -739,6 +752,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertBefore(content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        if (this.parent) this.parent.assertMutable();
         if (!this.parent) return this.insertAt(-1, content);
         const siblings = this.parent.allChildren;
         return this.parent.insertAt(siblings.indexOf(this), content);
@@ -751,6 +765,7 @@ export class SourceNode<T extends string = string> {
      * @returns {SourceNode<any> | SourceNode<any>[]}
      */
     insertAt(idx: number, content: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string>): SourceNode<any> | SourceNode<any>[] {
+        this.assertMutable();
         const tree = this.tree;
         let newNode: SourceNode<any> | SourceTree<any> | string | Array<SourceNode<any> | string> = content;
         if (typeof newNode === 'string') {
@@ -842,7 +857,7 @@ export class SourceNode<T extends string = string> {
 
             const migrate = (n: SourceNode<any>) => {
                 const oldTree = n.tree;
-                const oldId = n.id;
+                const oldId = n._cacheKey;
 
                 // If moving between trees or if ID changed, update cache
                 // We always update to be safe during complex migrations
@@ -852,7 +867,7 @@ export class SourceNode<T extends string = string> {
                 n.startIndex += delta;
                 n.endIndex += delta;
 
-                this.tree.nodeCache.set(n.id, n);
+                this.tree.nodeCache.set(n._cacheKey, n);
                 n.children.forEach(migrate);
             };
 

@@ -179,7 +179,7 @@
             // Scan top-level children of the root
             for (let i = 0; i < root.childCount; i++) {
                 const child = root.child(i);
-                if (child.id === enclosingFn.id ||
+                if (child === enclosingFn ||
                     (child.type === 'function_definition' && upp.getFunctionSignature(child)?.name === targetName)) {
                     targetNode = child;
                     break;

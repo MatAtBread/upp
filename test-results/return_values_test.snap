@@ -5,7 +5,7 @@
 void main() {
     int replaced = 42;
     
-    /*@Ignore()*/
+    /* Ignore()*/
 }
 
 ==== RUN OUTPUT ===

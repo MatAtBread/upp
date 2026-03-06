@@ -117,7 +117,6 @@ The upp.json file defines where `upp` will look for your macros. By default, it 
 
 ```json
 {
-    "comments": true, // Show what was replaced in a comment in the resulting .c file
     "includePaths": ["${UPP}/std"], // Paths to search for .hup files
     "core": [] // std macros to include by default
 }

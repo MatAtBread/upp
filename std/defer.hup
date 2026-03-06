@@ -25,6 +25,7 @@
         
         const fullDeferCode = defers.map(d => d.code).join('');
         node.data._insertedDeferNodes = node.insertBefore(upp.code`${fullDeferCode}`);
+        upp.revisit(node.parent);
     };
 
     upp.withScope((scope, helpers) => {
