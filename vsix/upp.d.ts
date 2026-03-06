@@ -108,7 +108,7 @@ export class SourceTree<NodeTypes extends string = string> {
 }
 export class SourceNode<T extends string = string> {
 	tree: SourceTree<any>;
-	id: number | string;
+	_cacheKey: number | string;
 	type: T;
 	startIndex: number;
 	endIndex: number;
@@ -120,6 +120,7 @@ export class SourceNode<T extends string = string> {
 	_snapshotSearchable?: string;
 	_detachedParent?: SourceNode<any> | null;
 	_detachedIndex?: number;
+	isReadOnly: boolean;
 	/**
 	 * @param {SourceTree<any>} tree The tree this node belongs to.
 	 * @param {SyntaxNode} tsNode The Tree-sitter node to wrap.
@@ -179,6 +180,7 @@ export class SourceNode<T extends string = string> {
 	 * @param {number} delta Offset change duration.
 	 */
 	handleEdit(editStart: number, editEnd: number, delta: number): void;
+	private assertMutable;
 	/**
 	 * Removes the node from the tree and returns the removed sub-tree.
 	 * @returns {SourceTree<any>}
@@ -297,7 +299,7 @@ export class DiagnosticsManager {
 }
 export interface CacheData {
 	macros: Macro[];
-	pendingRules: PendingRule[];
+	pendingRules: Set<PendingRule>;
 	output: string;
 	shouldMaterialize: boolean;
 	isAuthoritative: boolean;
@@ -331,12 +333,16 @@ export interface Macro {
 	language: string;
 	origin: string;
 	startIndex: number;
+	fn?: Function;
 }
 export interface PendingRule<T extends string = string> {
 	id: number;
-	contextNode: SourceNode<any>;
+	description?: string;
 	matcher: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => boolean;
 	callback: (node: SourceNode<T>, helpers: UppHelpersBase<any>) => MacroResult;
+	oneShot?: boolean;
+	/** Tracks node instances that have already been produced as replacements by this rule, to prevent re-matching freshly-created identical subtrees. */
+	substituted?: WeakSet<object>;
 }
 export interface Invocation {
 	name: string;
@@ -363,14 +369,14 @@ export interface RegistryContext {
 	originPath: string;
 	invocations: Invocation[];
 	helpers: UppHelpersBase<any> | null;
-	transformed: Set<SourceNode<any>>;
-	transformStack: Set<SourceNode<any>>;
-	appliedRules: WeakMap<SourceNode<any>, Set<number>>;
-	pendingRules: PendingRule<any>[];
+	pendingRules: Set<PendingRule<any>>;
 	mutated?: boolean;
+	/** The walker's visited-node set. Used by withXxx to unmark already-visited targets. */
+	walkerDone?: WeakSet<SourceNode<any>>;
 }
 export type TreeSitterLang = Language;
 export class Registry {
+	static ruleIdCounter: number;
 	config: RegistryConfig;
 	parentRegistry: Registry | null;
 	depth: number;
@@ -386,11 +392,12 @@ export class Registry {
 	includePaths: string[];
 	loadedDependencies: Map<string, string>;
 	shouldMaterializeDependency: boolean;
-	pendingRules: PendingRule<any>[];
-	ruleIdCounter: number;
+	pendingRules: Set<PendingRule<any>>;
 	mainContext: RegistryContext | null;
 	source?: string;
-	tree?: SourceTree<any>;
+	private __tree?;
+	get tree(): SourceTree<any>;
+	set tree(tree: SourceTree<any>);
 	dependencyHelpers: UppHelpersBase<any>[];
 	activeTransformNode?: SourceNode<any> | null;
 	originPath?: string;
@@ -400,6 +407,10 @@ export class Registry {
 	 * @param {PendingRule<any>} rule - The rule to register.
 	 */
 	registerPendingRule(rule: Omit<PendingRule<any>, "id">): number;
+	/**
+ * Evaluates a macro invocation.
+ */
+	private evaluateMacro;
 	/**
 	 * Registers a new macro in the registry.
 	 * @param {string} name - Name of the macro.
@@ -442,16 +453,16 @@ export class Registry {
 	 * Phase 1 (pure): parse @define blocks, strip them from source, find macro invocations.
 	 * Phase 2 (side effects): register macros, load @include dependencies.
 	 */
-	prepareSource(source: string, originPath: string): {
+	prepareSource(source: string, originPath?: string): {
 		cleanSource: string;
 		invocations: Invocation[];
 	};
 	extractBody(source: string, startOffset: number): string;
 	findInvocations(source: string, tree?: any | null): Invocation[];
-	absorbInvocation(text: string, startIndex: number): {
-		name: string;
-		args: string[];
-	} | null;
+	/**
+ * Parses a macro invocation string.
+ */
+	private absorbInvocation;
 }
 export interface ConstraintSpec {
 	type: string;
@@ -523,8 +534,11 @@ export class PatternMatcher {
 	 */
 	private parseWildcard;
 }
+export interface MatchOptions {
+	deep?: boolean;
+}
 export class UppHelpersBase<LanguageNodeTypes extends string> {
-	root: SourceNode<LanguageNodeTypes> | null;
+	get root(): SourceNode<LanguageNodeTypes> | null;
 	registry: Registry;
 	matcher: PatternMatcher;
 	_parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
@@ -533,7 +547,7 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	lastConsumedNode: SourceNode<LanguageNodeTypes> | null;
 	isDeferred: boolean;
 	currentInvocations: Invocation[];
-	consumedIds: Set<number | string>;
+	consumedNodes: WeakSet<SourceNode<any>>;
 	context: RegistryContext | null;
 	stdPath: string | null;
 	lastConsumedIndex?: number;
@@ -547,7 +561,7 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	set parentHelpers(v: UppHelpersBase<LanguageNodeTypes> | null);
 	get isAuthoritative(): boolean;
 	set isAuthoritative(v: boolean);
-	constructor(root: SourceNode<LanguageNodeTypes> | null, registry: Registry, parentHelpers?: UppHelpersBase<LanguageNodeTypes> | null);
+	constructor(registry: Registry, parentHelpers?: UppHelpersBase<LanguageNodeTypes> | null);
 	code(strings: TemplateStringsArray, ...values: InterpolationValue[]): SourceNode<LanguageNodeTypes>;
 	/**
 	 * Determines how an array should be expanded based on its parent context.
@@ -581,10 +595,17 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 */
 	findRoot(): SourceNode<LanguageNodeTypes> | null;
 	/**
+	 * Unmarks a node (and its visited ancestors) from the walker's done set,
+	 * so the walker will re-descend and re-yield when it reaches a common ancestor.
+	 * This is used by withXxx to handle already-visited targets.
+	 */
+	revisit(node: SourceNode<any>): void;
+	/**
 	 * Attaches a marker to a node for late-bound transformation.
+	 * If the target has already been visited by the walker, unmarks it so
+	 * the walker re-visits it and the new rule fires naturally.
 	 * @param {SourceNode<LanguageNodeTypes> | null} node - The target node.
 	 * @param {function(SourceNode<LanguageNodeTypes>, UppHelpersBase<LanguageNodeTypes>): any} callback - The transformation callback.
-	 * @returns {string} Always empty string.
 	 */
 	withNode(node: SourceNode<LanguageNodeTypes> | null, callback: (target: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void;
 	/**
@@ -595,14 +616,12 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	* @param {AnySourceNode} node - Target node to match against.
 	* @param {string | string[]} src - Pattern(s) to match. Can include $wildcards.
 	* @param {function(captures: Record<string, AnySourceNode>): any} [callback] - Function called with captures if match succeeds.
-	* @param {{ deep?: boolean }} [options] - Match options (e.g., deep search).
+	* @param {MatchOptions} [options] - Match options (e.g., deep search).
 	* @returns {any} Result of callback, captures object, or null.
 	*/
-	match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options?: {
-		deep?: boolean;
-	}): any;
+	protected match(node: AnySourceNode, src: string | string[], callback?: (captures: Record<string, AnySourceNode>) => any, options?: MatchOptions): any;
 	/**
-	 * Finds all structural matches of a pattern within a scope.
+	 * Finds all structural matches of a pattern within a subtree.
 	 * Unlike find(), this matches against complex code templates rather than just node types.
 	 *
 	 * @param {AnySourceNode} node - Search scope.
@@ -610,28 +629,12 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * @param {{ deep?: boolean }} [options] - Options (deep search is often enabled by default).
 	 * @returns {{ node: SourceNode<LanguageNodeTypes>, captures: Record<string, AnySourceNode> }[]} List of matches (node + captures).
 	 */
-	matchAll(node: AnySourceNode, src: string | string[], options?: {
+	protected matchAll(node: AnySourceNode, src: string | string[], options?: {
 		deep?: boolean;
 	}): {
 		node: SourceNode<LanguageNodeTypes>;
 		captures: Record<string, AnySourceNode>;
 	}[];
-	/**
-	* Synchronously replaces all matches of a pattern within a scope.
-	* Replacements happen immediately during macro execution.
-	* Contrast with withMatch(), which defers transformations until later.
-	*
-	* @param {SourceNode<LanguageNodeTypes>} node - Search scope.
-	* @param {string} src - Pattern to match.
-	* @param {function(match: { node: SourceNode<LanguageNodeTypes>, captures: Record<string, SourceNode<LanguageNodeTypes>> }): string | null | undefined} callback - Returns replacement text or node.
-	* @param {{ deep?: boolean }} [options] - Options.
-	*/
-	matchReplace(node: SourceNode<LanguageNodeTypes>, src: string, callback: (match: {
-		node: SourceNode<LanguageNodeTypes>;
-		captures: Record<string, SourceNode<LanguageNodeTypes>>;
-	}) => string | null | undefined, options?: {
-		deep?: boolean;
-	}): void;
 	/**
 	* Registers a marker for deferred transformation of nodes matching a pattern.
 	* The callback is executed later by the registry, ensuring the node is in its
@@ -642,7 +645,7 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	* @param {string} pattern - The source fragment pattern.
 	* @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
 	*/
-	withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult): void;
+	withMatch(scope: AnySourceNode, pattern: string | string[], callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult, options?: MatchOptions): void;
 	/**
 	* Registers a marker for intelligent, pattern-based transformation of a specific node type.
 	* Unlike withMatch(), which uses source code fragments, withPattern() matches against
@@ -707,8 +710,6 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * @returns {SourceNode<LanguageNodeTypes> | null} The next node or null.
 	 */
 	findNextNodeAfter(root: SourceNode<LanguageNodeTypes> | null, index: number): SourceNode<LanguageNodeTypes> | null;
-	/** Clears language-level semantic caches. Overridden in UppHelpersC. */
-	clearSemanticCaches(): void;
 	findScope(): SourceNode<LanguageNodeTypes> | null;
 	/**
 	 * Finds the nearest enclosing node of a given type.
@@ -747,12 +748,7 @@ export type CNodeTypes = "translation_unit" | "preproc_include" | "preproc_def" 
  * @extends UppHelpersBase
  */
 export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
-	/** Semantic caches: keyed by node id, cleared on any tree mutation. */
-	definitionCache: Map<string | number, SourceNode<CNodeTypes> | null>;
-	scopeCache: Map<string | number, SourceNode<CNodeTypes>[]>;
-	enclosingScopeCache: Map<string | number, SourceNode<CNodeTypes> | null>;
-	clearSemanticCaches(): void;
-	constructor(root: SourceNode<CNodeTypes>, registry: Registry, parentHelpers?: UppHelpersBase<any> | null);
+	constructor(registry: Registry, parentHelpers?: UppHelpersBase<any> | null);
 	/**
 	 * Finds the nearest enclosing C scope (compound_statement or translation_unit).
 	 * @returns {SourceNode<CNodeTypes> | null} The scope node or null.
@@ -772,7 +768,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	 */
 	getType(node: SourceNode<CNodeTypes> | string | null, options?: {
 		resolve?: boolean;
-	}, _visited?: Set<string>): string;
+	}, _visited?: WeakSet<SourceNode<any>>): string;
 	/**
 	 * Returns the number of array dimensions wrapping an identifier.
 	 * @param {SourceNode<CNodeTypes>} defNode - The definition node.
