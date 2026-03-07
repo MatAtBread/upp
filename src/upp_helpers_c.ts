@@ -347,12 +347,11 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
    * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
    */
-  findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> | null {
-    try {
-      return this.findDefinition(target, nameOrOptions, options);
-    } catch (ex) {
-      return null;
-    }
+  findDefinition(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> {
+    const def = this.findDefinitionOrNull(target, nameOrOptions, options);
+    if (!def)
+      throw new Error(`No definition for '${target.toString()}' found`);
+    return def;
   }
 
   /**
@@ -362,7 +361,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
    * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
    */
-  findDefinition(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> {
+  findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> | null {
     let name: string | null = null;
     let startScope: SourceNode<any> | null = null;
     let finalOptions = (typeof nameOrOptions === 'object' && nameOrOptions !== null) ? { ...options, ...nameOrOptions } : options;
@@ -455,7 +454,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       current = current.parent;
     }
 
-    throw new Error(`No definition for '${name}' found`);
+    return null;
   }
 
   /**

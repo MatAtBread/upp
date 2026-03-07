@@ -28,7 +28,7 @@ _Managed_release(&s);return 0;
 }
 
 ==== examples/string/strings.c ===
-/*@implements(String)*/
+/*implements:String*/
 #include "strings.h"
 
 #include <string.h>
@@ -37,30 +37,23 @@ String String_literal(const char *src) {
     String s = _Managed_allocate(_Managed_Sizeof_String(_n + 1));
 
 
-
  // Size includes null terminator
     strcpy(s->data, src);
-    _Managed_retain(s);_Managed_retain(s);_Managed_retain(s);
-_Managed_release(&s);
-_Managed_release(&s);
+    _Managed_retain(s);/* elided retain/release s */
 _Managed_release(&s);return s;
 }
- String _String_method_copy(String s) {
-          _Managed_retain(s); 
-            
-          _Managed_retain(s);/*@defer*/_Managed_retain(s);/*@defer*/
-_Managed_release(&s);
-_Managed_release(&s);
+ String _String_method_copy(String s) { 
+        _Managed_retain(s); 
+         
+        /* elided retain/release s */
 _Managed_release(&s);return String_literal(s->data);
-          }
- int _String_method_length(String s) {
-          _Managed_retain(s); 
-            
-          _Managed_retain(s);/*@defer*/_Managed_retain(s);/*@defer*/
-_Managed_release(&s);
-_Managed_release(&s);
+        }
+ int _String_method_length(String s) { 
+        _Managed_retain(s); 
+         
+        /* elided retain/release s */
 _Managed_release(&s);return strlen(s->data);
-          }
+        }
 
 ==== examples/string/strings.h ===
 #include "managed-struct.h"
@@ -121,12 +114,11 @@ typedef struct {
 }* String;
 #define _Managed_Sizeof_String(n) (sizeof(*(String)0) + sizeof(((String)0)->data[0]) * (n))
 
-static inline  int _String_method_managed_reference_count(String p) {
-          _Managed_retain(p); 
-            
-          _Managed_retain(p);/*@defer*/_Managed_release(&p);
-_Managed_release(&p);return _Managed_ref_count((void *)p);
-          }
+static inline  int _String_method_managed_reference_count(String p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
 

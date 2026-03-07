@@ -59,7 +59,7 @@ extern void free(void *p);
     };
 
     if (node.type === 'parameter_declaration') {
-      upp.withNode(upp.findEnclosing(node,'function_definition').named.body, (body, upp) => {
+      upp.withNode(upp.findEnclosing(node,'function_definition')?.named.body, (body, upp) => {
         // Avoid the recursion caused by withReferences finding the insertion of ${nameText}
         // by checking if we have already injected a _Managed_retain
         /***/
