@@ -1,37 +1,31 @@
 @define methodTargetName(targetType, originalName) {
-    let cleanTarget = targetType.trim();
-    if (cleanTarget.startsWith('struct ')) {
-        cleanTarget = cleanTarget.slice(7).trim();
-    }
+    let cleanTarget = targetType.trim().replace(/\s+/g,'_');
     return `_${cleanTarget}_method_${originalName}`;
 }
 
-@define method(targetType) {
+@define method(...args) {
+    let targetType = args[0];
     let node = upp.nextNode(['function_definition', 'declaration']);
     if (!node) {
         node = upp.findEnclosing(upp.contextNode, ['function_definition', 'declaration']);
     }
     if (!node) return "";
 
+    const methodArgs = node.find('parameter_declaration');
+    const firstArg = methodArgs?.[0].children?.[0]?.text;
+    if (!targetType && firstArg)
+        targetType = firstArg;
+
+    if (!targetType || targetType != firstArg) {
+        debugger;
+        upp.error(`@method(${targetType}) not the same as the first argument: ${firstArg}`);
+    }
+
     const sig = upp.getFunctionSignature(node);
     if (!sig.nameNode) return node.text;
 
     const originalName = sig.name;
-    const targetMacro = upp.registry.getMacro('methodTargetName');
-    let newName;
-    if (targetMacro) {
-        const macroFn = upp.registry.createMacroFunction(targetMacro);
-        // Execute the interface macro to get the correct mangled name.
-        // Parameters: (upp, console, $, targetType, originalName)
-        newName = macroFn(upp, console, upp.code, targetType, originalName);
-    } else {
-        // Fallback just in case
-        let cleanTarget = targetType.trim();
-        if (cleanTarget.startsWith('struct ')) {
-            cleanTarget = cleanTarget.slice(7).trim();
-        }
-        newName = `_${cleanTarget}_method_${originalName}`;
-    }
+    const newName = upp.callMacro('methodTargetName', targetType, originalName);
 
     // Rename the function identifier stable-y
     sig.nameNode.text = newName;
@@ -52,10 +46,10 @@
             if (!objDef) return false;
 
             let currentType = helpers.getType(objDef);
-            let targetClean = targetType.replace(/struct /g, '').trim();
+            let targetClean = targetType.trim().replace(/\s+/g,'_');
 
             while (currentType) {
-                let clean = currentType.replace(/\*/g, '').replace(/struct /g, '').trim();
+                let clean = currentType.replace(/\*/g, '').trim().replace(/\s+/g, '_');
                 if (clean === targetClean) return true;
 
                 // Follow one level of typedef

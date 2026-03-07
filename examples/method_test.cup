@@ -23,7 +23,7 @@ typedef struct {
 }
 
 // 3. method(UniqueTypedef)
-@method(Unique) int getY(Unique *u) {
+@method int getY(Unique *u) {
     return u->y;
 }
 

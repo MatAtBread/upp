@@ -17,16 +17,16 @@ extern void *_stderr;
 #include "method.h"
 #include "defer.h"
 int some_condition = 0;
-struct String {
+struct _String {
     char * data;
 };
-typedef struct String String;
+typedef struct _String String;
  void _String_method_print(String * s) {
     printf("%s\n", s -> data);
 }
  void _String_method_Defer(String * s) {
     _String_method_print(s);
-    free(s -> data);
+    free(s->data);
 }
 int main() {
     String s1;

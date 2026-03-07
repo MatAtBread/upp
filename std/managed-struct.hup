@@ -290,9 +290,7 @@ static inline int _Managed_ref_count(void *data) {
                 targetType = clean; break;
             }
 
-            const targetMacro = upp.registry.getMacro('methodTargetName');
-            const macroFn = upp.registry.createMacroFunction(targetMacro);
-            const newName = macroFn(helpers, console, helpers.code, targetType, methodNode.text);
+            const newName = helpers.callMacro('methodTargetName', targetType, methodNode.text);
 
             const innerArgNodes = argsNode ? argsNode.children.slice(1, -1) : [];
             

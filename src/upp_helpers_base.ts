@@ -255,7 +255,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         const done = this.context?.walkerDone;
         if (!done) return;
 
-        let current  = node;
+        let current = node;
         while (current && done.has(current)) {
             done.delete(current);
             current = current.parent;
@@ -396,8 +396,8 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     * @param {string} pattern - The source fragment pattern.
     * @param {function(Record<string, AnySourceNode>, UppHelpersBase<LanguageNodeTypes>, AnySourceNode): MacroResult} callback - Deferred transformation callback.
     */
-    withMatch(scope: AnySourceNode, 
-        pattern: string | string[], 
+    withMatch(scope: AnySourceNode,
+        pattern: string | string[],
         callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult,
         options: MatchOptions = {}
     ): void {
@@ -481,6 +481,21 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      */
     loadDependency(file: string): void {
         this.registry.loadDependency(file, this.context?.originPath || 'unknown', this as any);
+    }
+
+    /**
+     * Calls another macro by name, executing it in the current context.
+     * @param {string} name - Name of the macro to call.
+     * @param {...any[]} args - Arguments to pass to the macro.
+     * @returns {any} Result of the macro execution.
+     */
+    callMacro(name: string, ...args: any[]): any {
+        const macroDef = this.registry.getMacro(name);
+        if (!macroDef) {
+            throw new Error(`upp.callMacro: Macro '@${name}' not found.`);
+        }
+        const macroFn = macroDef.fn || this.registry.createMacroFunction(macroDef);
+        return macroFn(this, console, this.code.bind(this), ...args);
     }
 
 

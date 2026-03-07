@@ -21,13 +21,13 @@ struct Point {
     int x;
     int y;
 };
- int _Point_method_getX(struct Point * self) {
+ int _struct_Point_method_getX(struct Point * self) {
     return self -> x;
 }
 
 int main() {
     struct Point p = {10, 20};
-        int val = _Point_method_getX(&p);
+        int val = _struct_Point_method_getX(&p);
     
     printf("%d\n", val);
     return 0;
