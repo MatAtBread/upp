@@ -92,9 +92,11 @@ static inline int _Managed_ref_count(void *data) {
 typedef struct Box* BoxRef;
 #define _Managed_Sizeof_BoxRef(n) (sizeof(*(BoxRef)0) * (n))
 
-static inline  int _BoxRef_method_managed_reference_count(BoxRef p) {
-    return _Managed_ref_count((void *)p);
-}
+static inline  int _BoxRef_method_managed_reference_count(BoxRef p) { 
+         
+         
+        /* elided retain/release p */return _Managed_ref_count((void *)p);
+        }
 
  
 struct Box {
@@ -106,7 +108,7 @@ BoxRef create_box(int val) {
 
 
     b->value = val;
-    _Managed_retain(b);_Managed_release(&b);return b;
+    /* elided retain/release b */return b;
 }
 
 ==== std/defer.h ===

@@ -80,27 +80,27 @@ export class Transformer {
     return registry.tree.source;
   }
 
-/**
- * A back-tracking depth-first tree walker.
- * This is aware that the tree structure may change during iteration, 
- * and attempts to walk all nodes in the tree.
- * 
- * This implementation works by finding the deepest unvisited child, yielding
- * and then repeating the same process until nothing is found. It does not
- * need to track changes to node structures (parents/siblings) as it always
- * seeks.
- * 
- * A node can be re-added to the search tree by calling revisit that removes
- * the node and all it's parents from the `done` set.
- * 
- * Question: how to ensure any new nodes added to the tree are *always* found.
- * They will be added and discoverable iff all their parents are not in `done`
- * 
- * @param node 
- */
+  /**
+   * A back-tracking depth-first tree walker.
+   * This is aware that the tree structure may change during iteration, 
+   * and attempts to walk all nodes in the tree.
+   * 
+   * This implementation works by finding the deepest unvisited child, yielding
+   * and then repeating the same process until nothing is found. It does not
+   * need to track changes to node structures (parents/siblings) as it always
+   * seeks.
+   * 
+   * A node can be re-added to the search tree by calling revisit that removes
+   * the node and all it's parents from the `done` set.
+   * 
+   * Question: how to ensure any new nodes added to the tree are *always* found.
+   * They will be added and discoverable iff all their parents are not in `done`
+   * 
+   * @param node 
+   */
   private *walk(start: SourceNode<any>, done: WeakSet<SourceNode<any>>): Generator<SourceNode<any>, SourceNode<any> | undefined, SourceNode<any> | undefined> {
     let node: SourceNode<any> = start;
-    
+
     while (true) {
       const unvisitedChildren = node.children.filter(ch => !done.has(ch));
       if (unvisitedChildren.length) {

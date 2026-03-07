@@ -678,7 +678,9 @@ export class SourceNode<T extends string = string> {
         // Update parent children
         if (parent && idx > -1) {
             attachedList.forEach(n => n.parent = parent);
-            parent.children.splice(idx, 1, ...attachedList);
+            const isDetached = !!(this as any)._detachedParent;
+            const deleteCount = isDetached ? 0 : 1;
+            parent.children.splice(idx, deleteCount, ...attachedList);
         }
 
         return attachedList.length === 1 ? attachedList[0] : (attachedList.length === 0 ? null : attachedList as any);

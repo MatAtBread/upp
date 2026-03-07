@@ -24,13 +24,17 @@ MyType
 int main() {
     /* DefRef("x")*/ /* Ref MyType */
 MyType
- x = 10;
+ /* Declare x */
+x
+ = 10;
     /* Ref x */
 x
  = 5;
     /* Ref fn */
 fn
-(x);
+(/* Ref x */
+x
+);
     return 0;
 }
 
