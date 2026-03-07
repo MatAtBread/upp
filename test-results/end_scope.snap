@@ -38,11 +38,7 @@ str1 = (free(str1),((void *)0));return 0;
 }
 
 ==== std/defer.h ===
-#ifndef __UPP_STDLIB_DEFER_H__
-#define __UPP_STDLIB_DEFER_H__
 
-
-#endif
 
 ==== RUN OUTPUT ===
 

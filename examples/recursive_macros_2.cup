@@ -53,7 +53,7 @@
                 const ids = declNode.find('identifier');
                 for (const id of ids) {
                     if (id.parent.type.includes('declarator') || id.parent === declNode) {
-                        declNode.insertAfter(upp.code`@defer ${id.text}.Defer();`);
+                        upp.insertAfter(declNode,upp.code`@defer ${id.text}.Defer();`);
                     }
                 }
             }
@@ -86,7 +86,7 @@
     // Also handle the end of scope
     const lastBrace = scope.children.find(c => c.text === '}');
     if (lastBrace) {
-        lastBrace.insertBefore(upp.code`${node.text} `);
+        upp.insertBefore(lastBrace,upp.code`${node.text} `);
     }
 }
 

@@ -1,6 +1,3 @@
-#ifndef __UPP_STDLIB_TRAP_H__
-#define __UPP_STDLIB_TRAP_H__
-
 @define trap(arg) {
     const declNode = upp.consume(['declaration', 'field_declaration'], 'expected a variable or field declaration');
 
@@ -54,8 +51,8 @@
         }, (node, helpers) => {
             const expr = node.named['right'];
             if (expr && !processed.has(expr)) {
-                expr.insertBefore(`${handlerName}(`);
-                expr.insertAfter(`)`);
+                upp.insertBefore(expr,`${handlerName}(`);
+                upp.insertAfter(expr,`)`);
                 processed.add(expr);
             }
         });
@@ -71,8 +68,8 @@
             if (parent && parent.type === 'assignment_expression' && parent.named['left'] === current) {
                 const expr = parent.named['right'];
                 if (expr && !processed.has(expr)) {
-                    expr.insertBefore(`${handlerName}(`);
-                    expr.insertAfter(`)`);
+                    upp.insertBefore(expr,`${handlerName}(`);
+                    upp.insertAfter(expr,`)`);
                     processed.add(expr);
                 }
             }
@@ -85,8 +82,8 @@
         if (initDecl && initDecl.type === 'init_declarator') {
             const val = initDecl.named['value'];
             if (val && !processed.has(val)) {
-                val.insertBefore(`${handlerName}(`);
-                val.insertAfter(`)`);
+                upp.insertBefore(val,`${handlerName}(`);
+                upp.insertAfter(val,`)`);
                 processed.add(val);
             }
         }
@@ -94,6 +91,3 @@
 
     return declNode;
 }
-
-
-#endif

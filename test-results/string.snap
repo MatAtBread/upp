@@ -126,11 +126,7 @@ extern String String_literal(const char *src);
 extern String _String_method_copy(String s);
 extern int _String_method_length(String s);
 ==== std/defer.h ===
-#ifndef __UPP_STDLIB_DEFER_H__
-#define __UPP_STDLIB_DEFER_H__
 
-
-#endif
 
 ==== std/managed-struct.h ===
 #include "defer.h"

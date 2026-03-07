@@ -1,6 +1,3 @@
-#ifndef __UPP_STDLIB_LAMBDA_H__
-#define __UPP_STDLIB_LAMBDA_H__
-
 @define lambda(...args) {
     // 1. Peek at the next node (function definition) WITHOUT consuming it yet.
     //    This preserves location data (startIndex/endIndex) for proper analysis.
@@ -187,15 +184,9 @@
             }
         }
 
-        if (targetNode) {
-            // Simply insert before the function. Node API handles indices.
-            targetNode.insertBefore("\n" + hoistCode + "\n");
-        } else {
-            // Fallback to start of file if no enclosing function found
-            root.insertBefore("\n" + hoistCode + "\n");
-        }
-
-        // 5. Replace Usage & Recursively Handle Aliases
+        // Simply insert before the function. Node API handles indices.
+        // Fallback to start of file if no enclosing function found
+        upp.insertBefore(targetNode || root,"\n" + hoistCode + "\n");
 
         // 5. Replace Usage & Recursively Handle Aliases
         const contextArg = ctxName ? `(&${ctxId})` : "";
@@ -289,4 +280,3 @@
     return initCode;
 }
 
-#endif

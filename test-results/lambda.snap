@@ -40,11 +40,8 @@ void hello_lambda(struct hello_lambda_ctx *ctx, int num) {
 }
 
 ==== std/lambda.h ===
-#ifndef __UPP_STDLIB_LAMBDA_H__
-#define __UPP_STDLIB_LAMBDA_H__
 
 
-#endif
 
 ==== RUN OUTPUT ===
 Hello Diego 1

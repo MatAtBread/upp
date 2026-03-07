@@ -112,11 +112,7 @@ BoxRef create_box(int val) {
 }
 
 ==== std/defer.h ===
-#ifndef __UPP_STDLIB_DEFER_H__
-#define __UPP_STDLIB_DEFER_H__
 
-
-#endif
 
 ==== std/managed-struct.h ===
 #include "defer.h"

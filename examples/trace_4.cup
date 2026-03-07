@@ -1,0 +1,32 @@
+#include "io-lite.h"
+
+@define trace() {
+    upp.withMatch(
+        // Read the next item in the AST
+        upp.nextNode('function_definition'),
+        // Parse it as a function
+        '$returnType $name($params__until) { $body__until }',
+    ({returnType, name, params, body})=>
+        // return it with the extra puts(...)
+        $`${returnType} ${name}(${params}) { 
+    puts("Entering ${name.text}\\n");
+    ${body}
+}`)
+}
+
+@trace int my_function(int x) {
+    int g = 1;
+    for (int i = 1; i < x; i++) {
+        g = g * i;
+    }
+    return g;
+}
+
+@trace int *fn() {
+    int q;
+}
+
+int main() {
+    printf("magic number %d\n", my_function(10));
+    return 0;
+}

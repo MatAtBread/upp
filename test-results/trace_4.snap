@@ -1,4 +1,4 @@
-==== examples/trace_1.c ===
+==== examples/trace_4.c ===
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -15,36 +15,22 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
-#include "lambda.h"
-#include "defer.h"
-
-int my_function(int x) {
-    puts("Entering: my_function\n");
-     ;
+/* trace*/ int my_function(int x) {
+    puts("Entering my_function\n");
     int g = 1;for (int i = 1; i < x; i++) {
         g = g * i;
-        if (g > 100) {
-            { puts("Exiting: my_function\n"); }return -1;
-        }
-    }{ puts("Exiting: my_function\n"); }return g;
+    }return g;
 }
-
+/* trace*/ int *fn() {
+    int q;
+}
 int main() {
     printf("magic number %d\n", my_function(10));
     return 0;
 }
 
-==== std/defer.h ===
-
-
-==== std/lambda.h ===
-
-
-
 ==== RUN OUTPUT ===
-Entering: my_function
+Entering my_function
 
-Exiting: my_function
-
-magic number -1
+magic number 362880
 

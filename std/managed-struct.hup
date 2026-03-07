@@ -43,7 +43,7 @@ extern void free(void *p);
           return undefined;
       }
       if (ref && ref.parent && ref.parent.type === 'return_statement') {
-          ref.parent.insertBefore(upp.code`_Managed_retain(${nameText});`);
+          upp.insertBefore(ref.parent,upp.code`_Managed_retain(${nameText});`);
           return undefined;
       }
       if (ref && ref.parent && ref.parent.type === 'init_declarator' && ref.parent.named.value === ref) {
@@ -51,7 +51,7 @@ extern void free(void *p);
           let stmt = ref.parent;
           while (stmt && stmt.type !== 'declaration') stmt = stmt.parent;
           if (stmt) {
-              stmt.insertBefore(upp.code`_Managed_retain(${ref.text});`);
+              upp.insertBefore(stmt,upp.code`_Managed_retain(${ref.text});`);
           }
           return undefined;
       }
@@ -89,7 +89,7 @@ extern void free(void *p);
     upp.withReferences(node, handleReference);
 
     if (node.named && node.named.declarator && node.named.declarator.type === 'init_declarator') {
-      node.insertAfter(upp.code`@defer _Managed_release(&${nameText});`);
+      upp.insertAfter(node,upp.code`@defer _Managed_release(&${nameText});`);
       return undefined;
     }
     

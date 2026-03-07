@@ -1,6 +1,3 @@
-#ifndef __UPP_STDLIB_DEFER_H__
-#define __UPP_STDLIB_DEFER_H__
-
 @define defer() {
     // Capture the exact location of the macro before consumption
     // This allows us to know if return statements appear AFTER this defer
@@ -24,8 +21,7 @@
         existingArr.forEach(n => { if (n.isValid) n.remove(); });
         
         const fullDeferCode = defers.map(d => d.code).join('');
-        node.data._insertedDeferNodes = node.insertBefore(upp.code`${fullDeferCode}`);
-        upp.revisit(node.parent);
+        node.data._insertedDeferNodes = upp.insertBefore(node,upp.code`${fullDeferCode}`);
     };
 
     upp.withScope((scope, helpers) => {
@@ -88,5 +84,3 @@
 
     return null;
 }
-
-#endif

@@ -251,15 +251,27 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      * so the walker will re-descend and re-yield when it reaches a common ancestor.
      * This is used by withXxx to handle already-visited targets.
      */
-    revisit(node: SourceNode<any>): void {
+    revisit(node: SourceNode<any> | null): void {
         const done = this.context?.walkerDone;
         if (!done) return;
 
-        let current: SourceNode<any> | null = node;
+        let current  = node;
         while (current && done.has(current)) {
             done.delete(current);
             current = current.parent;
         }
+    }
+
+    insertBefore(target: SourceNode<LanguageNodeTypes>, node: SourceNode<LanguageNodeTypes>) {
+        const result = target.insertBefore(node);
+        this.revisit(target.parent);
+        return result;
+    }
+
+    insertAfter(target: SourceNode<LanguageNodeTypes>, node: SourceNode<LanguageNodeTypes>) {
+        const result = target.insertAfter(node);
+        this.revisit(target.parent);
+        return result;
     }
 
     /**
