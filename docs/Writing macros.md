@@ -35,6 +35,60 @@ This guarantees immense safety:
 * It will **not** match `if (type == val)`. (Regex might accidentally snag this!).
 * It perfectly ignores whitespace and comments! `int    x =  5;` is structurally identical to `int x=5;`.
 
+### Constraints
+
+You can annotate capture names with constraints or restrict structural rules. Following a capture name with a double underscore (`__`) introduces a constraint. By default, the constraints are AST node types, so for example: 
+
+```c
+if ($cond) $statement__compound_statement
+```
+...will only match `if` statements that have a compound statement body. 
+
+A more complex case could be as follows. This transform only matches where variables are added or subtracted from constants, each with a different mapping.
+
+```c
+@define A() {
+    const node = upp.nextNode();
+    upp.withMatch(node, 
+        "$x + $y__number_literal", 
+        ({ x, y }) => `0 /* WAS: ${x.text} + ${y.text} */`
+    );
+    upp.withMatch(node, 
+        "$x - $y__number_literal", 
+        ({ x, y }) => `99 /* WAS: ${x.text} - ${y.text} */`
+    );
+    return null;
+}
+
+@A int main() { 
+    int foo = 100;
+    int bar = 200;
+    int z = foo + 1;
+    int w = foo + bar;
+    int x = foo - bar;
+    int y = foo - 1;
+    printf("%d %d\n", z, w);
+    return 0; 
+}
+```
+
+The output of which is:
+
+```c
+ int main() {
+    int foo = 100;
+    int bar = 200;
+    int z = 0 /* WAS: foo + 1 */;
+    int w = foo + bar;
+    int x = foo - bar;
+    int y = 99 /* WAS: foo - 1 */;
+    printf("%d %d\n", z, w);
+    return 0;
+}
+```
+
+The above example shows the general pattern of writing macros: find patterns and re-write them using UPP to modify and manipulate the AST.
+
 ### Wildcard Suffixes
 
 You can annotate wildcards to loosen or restrict structural rules:
@@ -61,7 +115,7 @@ Because of this rigid grammatical law, **UPP treats contiguous wildcards as an i
 If you want to match a variable declaration, but need to elegantly handle pointers or arrays effortlessly, you write:
 
 ```javascript
-"$type $modifiers$name;"
+"$type $modifiers$name"
 ```
 
 If the target C code is `int *fn[];`:
@@ -78,16 +132,17 @@ The `$modifiers` object is "smart".
 * If you invoke `.for(newName)` on it, it dynamically wraps your *new* identifier in the exact same pointers or arrays mathematically.
 
 ```javascript
-({type, modifiers, name}) => {
+({type, modifiers, name}) => [
     // If target was: int *x[];
     
-    $`${type} ${modifiers};` 
+    $`${type} ${modifiers};`,
     // Emits: int *x[];
     // (Notice we didn't even need to include ${name}!)
     
     $`${type} ${modifiers.for("new_" + name.text)};` 
     // Emits: int *new_x[];
-}
+]
+
 ```
 
 What happens if the target was just a simple `int x;`?

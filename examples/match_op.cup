@@ -1,0 +1,26 @@
+#include "io-lite.h"
+
+@define A() {
+    const node = upp.nextNode();
+    upp.withMatch(node, 
+        "$x + $y__number_literal", 
+        ({ x, y }) => `0 /* WAS: ${x.text} + ${y.text} */`
+    );
+    upp.withMatch(node, 
+        "$x - $y__number_literal", 
+        ({ x, y }) => `99 /* WAS: ${x.text} - ${y.text} */`
+    );
+    return null;
+}
+
+
+@A int main() { 
+    int foo = 100;
+    int bar = 200;
+    int w = foo + bar;
+    int x = foo - bar;
+    int y = foo - 1;
+    int z = foo + 1;
+    printf("%d %d %d %d\n", z, w, x, y);
+    return 0; 
+}
