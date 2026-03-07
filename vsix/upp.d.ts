@@ -599,7 +599,9 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * so the walker will re-descend and re-yield when it reaches a common ancestor.
 	 * This is used by withXxx to handle already-visited targets.
 	 */
-	revisit(node: SourceNode<any>): void;
+	revisit(node: SourceNode<any> | null): void;
+	insertBefore(target: SourceNode<LanguageNodeTypes>, node: SourceNode<LanguageNodeTypes>): SourceNode<any> | SourceNode<any>[];
+	insertAfter(target: SourceNode<LanguageNodeTypes>, node: SourceNode<LanguageNodeTypes>): SourceNode<any> | SourceNode<any>[];
 	/**
 	 * Attaches a marker to a node for late-bound transformation.
 	 * If the target has already been visited by the walker, unmarks it so
@@ -794,20 +796,6 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	 * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
 	 * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
 	 */
-	findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions?: string | {
-		variable?: boolean;
-		tag?: boolean;
-	} | null, options?: {
-		variable?: boolean;
-		tag?: boolean;
-	}): SourceNode<CNodeTypes> | null;
-	/**
-	 * Finds the definition for a node or name, throwing an error if not found.
-	 * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
-	 * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
-	 * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
-	 * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
-	 */
 	findDefinition(target: SourceNode<any> | string, nameOrOptions?: string | {
 		variable?: boolean;
 		tag?: boolean;
@@ -815,6 +803,20 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 		variable?: boolean;
 		tag?: boolean;
 	}): SourceNode<CNodeTypes>;
+	/**
+	 * Finds the definition for a node or name, throwing an error if not found.
+	 * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
+	 * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
+	 * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
+	 * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
+	 */
+	findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions?: string | {
+		variable?: boolean;
+		tag?: boolean;
+	} | null, options?: {
+		variable?: boolean;
+		tag?: boolean;
+	}): SourceNode<CNodeTypes> | null;
 	/**
 	 * Finds references to a definition.
 	 * @param {SourceNode<CNodeTypes>} node - The definition node.
