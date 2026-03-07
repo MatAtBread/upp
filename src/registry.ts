@@ -280,12 +280,13 @@ class Registry {
             description: `@${name}`,
             matcher: (n, h) => n.type === 'comment' && n.text.startsWith(`/*@${name}`) && n.text.endsWith('*/'),
             callback: (n, h) => {
+                const activeRegistry = h.registry as Registry;
                 const invocation = this.absorbInvocation(n.text.slice(2, -2));
                 // We remove the macro invocation from the tree to prevent it from being processed again.
                 // Many macros will later replace this comment with other nodes.
                 n.text = n.text.replace(`/*@`, '/* ');
                 if (!invocation) throw new Error(`Failed to parse macro invocation: ${n.text}`);
-                return this.evaluateMacro({
+                return activeRegistry.evaluateMacro({
                     ...invocation,
                     startIndex: n.startIndex,
                     endIndex: n.endIndex,
