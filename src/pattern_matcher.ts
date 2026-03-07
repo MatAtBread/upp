@@ -227,13 +227,70 @@ export class PatternMatcher {
         visited.add(target);
         // console.log(`structuralMatch target="${target.type}" pattern="${pattern.type}" pText="${pattern.text}" tText="${target.text}"`);
 
-        // 1. Wildcard check
-        const match = pattern.text.trim().match(/^UPP_WILDCARD_([a-zA-Z0-9_$]+);?$/);
-        if (match) {
-            let name = match[1];
-            if (name.startsWith('opt$')) {
-                name = name.slice(4);
+        // 0.5 Intercept wrappers if the pattern implicitly contains an __OPTCAPTURE_
+        const coreWildcard = this.getCoreWildcard(pattern);
+        if (coreWildcard && coreWildcard.optCaptureName) {
+            let actualTarget = target;
+            let capturedPrefix = "";
+            let capturedSuffix = "";
+            const wrapperTypes = ['pointer_declarator', 'array_declarator', 'parenthesized_declarator'];
+
+            // Peel wrappers until target type matches pattern type
+            while (actualTarget.type !== pattern.type && wrapperTypes.includes(actualTarget.type)) {
+                const rawTarget = actualTarget as any;
+                const firstNamed = rawTarget.namedChildCount > 0
+                    ? (typeof rawTarget.namedChild === 'function' ? rawTarget.namedChild(0) : rawTarget.namedChildren[0])
+                    : null;
+
+                for (let i = 0; i < rawTarget.childCount; i++) {
+                    const kid = rawTarget.child(i);
+                    if (!kid || kid.isNamed) continue;
+                    // Gather all punctuation wrapping the core
+                    if (firstNamed && kid.startIndex < firstNamed.startIndex) {
+                        capturedPrefix += kid.text;
+                    } else {
+                        capturedSuffix += kid.text;
+                    }
+                }
+                if (rawTarget.namedChildCount > 0) {
+                    actualTarget = (typeof rawTarget.namedChild === 'function' ? rawTarget.namedChild(0) : rawTarget.namedChildren[0]) as PatternMatchableNode;
+                } else {
+                    break;
+                }
             }
+
+            if (actualTarget !== target) {
+                // We peeled wrappers that weren't in the pattern!
+                const optName = coreWildcard.optCaptureName;
+                const bindTarget = {
+                    text: capturedPrefix + capturedSuffix,
+                    type: 'synthetic_modifiers',
+                    prefix: capturedPrefix,
+                    suffix: capturedSuffix,
+                    actualTarget: actualTarget,
+                    toString() { return this.for(); },
+                    for(name?: any) {
+                        const idStr = name === undefined ? this.actualTarget.text : (typeof name === 'string' ? name : name.text);
+                        return this.prefix + idStr + this.suffix;
+                    }
+                } as any;
+
+                if (captures[optName]) {
+                    if (captures[optName].text !== bindTarget.text) return false;
+                } else {
+                    captures[optName] = bindTarget;
+                }
+
+                // Now match the unwrapped target against the normal pattern
+                return this.structuralMatch(actualTarget, pattern, captures, constraints, visited);
+            }
+        }
+
+        // 1. Wildcard check
+        const wildcard = this.getWildcard(pattern);
+        if (wildcard) {
+            const name = wildcard.name;
+            const optCaptureName = wildcard.optCaptureName;
 
             // Check constraints
             if (constraints.has(name)) {
@@ -252,7 +309,25 @@ export class PatternMatcher {
                 }
             }
 
-            // Bind capture
+            if (optCaptureName) {
+                if (captures[optCaptureName]) {
+                    captures[optCaptureName].actualTarget = target;
+                } else {
+                    captures[optCaptureName] = {
+                        text: '',
+                        type: 'synthetic_modifiers',
+                        prefix: '',
+                        suffix: '',
+                        actualTarget: target,
+                        toString() { return this.for(); },
+                        for(name?: any) {
+                            const idStr = name === undefined ? this.actualTarget.text : (typeof name === 'string' ? name : name.text);
+                            return this.prefix + idStr + this.suffix;
+                        }
+                    } as any;
+                }
+            }
+
             if (captures[name]) {
                 return captures[name].text === target.text;
             } else {
@@ -302,7 +377,7 @@ export class PatternMatcher {
                 }
             }
             return false;
-        } else {
+        } else { // This now handles all non-list wildcards and regular nodes
             if (ti >= targetChildren.length) return false;
             const subCaptures = { ...captures };
             if (this.structuralMatch(targetChildren[ti] as any, pChild, subCaptures, constraints, visited)) {
@@ -315,7 +390,7 @@ export class PatternMatcher {
         }
     }
 
-    private getWildcard(node: SyntaxNode): { name: string; isUntil: boolean; isPlus: boolean } | null {
+    private getWildcard(node: SyntaxNode): { name: string; isUntil: boolean; isPlus: boolean; optCaptureName: string | null } | null {
         // syntax: UPP_WILDCARD_name or UPP_WILDCARD_name;
         const text = node.text.trim();
         const match = text.match(/^UPP_WILDCARD_([a-zA-Z0-9_$]+);?$/);
@@ -323,6 +398,14 @@ export class PatternMatcher {
         let name = match[1];
         let isUntil = false;
         let isPlus = false;
+        let optCaptureName = null;
+
+        const optMatch = name.match(/__OPTCAPTURE_([a-zA-Z0-9_$]+)$/);
+        if (optMatch) {
+            optCaptureName = optMatch[1];
+            name = name.slice(0, -optMatch[0].length);
+        }
+
         if (name.endsWith('__until')) {
             name = name.slice(0, -7);
             isUntil = true;
@@ -330,17 +413,14 @@ export class PatternMatcher {
             name = name.slice(0, -6);
             isPlus = true;
         }
-        if (name.startsWith('opt$')) {
-            name = name.slice(4);
-        }
-        return { name, isUntil, isPlus };
+        return { name, isUntil, isPlus, optCaptureName };
     }
 
     private getChildren<T extends PatternMatchableNode | SyntaxNode>(node: T): T[] {
         const kids: T[] = [];
         for (let i = 0; i < node.childCount; i++) {
             const child = node.child(i);
-            if (child && (child as any).type !== 'comment') {
+            if (child) {
                 const raw = child as any;
                 if (raw.isMissing === true) continue;
                 if (typeof raw.startIndex === 'number' && raw.startIndex === raw.endIndex) continue;
@@ -357,14 +437,16 @@ export class PatternMatcher {
      */
     private preprocessPattern(patternStr: string): { cleanPattern: string; constraints: ConstraintMap } {
         const constraints: ConstraintMap = new Map();
-        // Match any potential wildcard starting with $
-        const cleanPattern = patternStr.replace(/\$([a-zA-Z0-9_$]+)/g, (_match, rawId) => {
-            const { name, types } = this.parseWildcard(rawId);
-            if (types && types.length > 0) {
-                constraints.set(name, types);
-            }
-            return 'UPP_WILDCARD_' + name;
-        });
+        // Match contiguous wildcards like $modifiers$name
+        const cleanPattern = patternStr
+            .replace(/\$([a-zA-Z0-9_]+)\$([a-zA-Z0-9_]+)/g, '$$$2__OPTCAPTURE_$1')
+            .replace(/\$([a-zA-Z0-9_$]+)/g, (_match, rawId) => {
+                const { name, types } = this.parseWildcard(rawId);
+                if (types && types.length > 0) {
+                    constraints.set(name, types);
+                }
+                return 'UPP_WILDCARD_' + name;
+            });
         return { cleanPattern, constraints };
     }
 
@@ -377,18 +459,18 @@ export class PatternMatcher {
         // syntax: name__type1__type2 or opt$name__type1 or name__until
         const parts = rawId.split('__');
         let name = parts[0];
-        const rawTypes = parts.slice(1).filter(t => t !== 'until' && t !== 'plus');
+        const rawTypes = parts.slice(1).filter(t => t !== 'until' && t !== 'plus' && !t.startsWith('OPTCAPTURE_'));
 
-        if (name.startsWith('opt$')) {
-            name = name.slice(4);
-        }
-
-        // Re-append modifiers if they were present
+        // Re-append modifiers
         if (rawId.includes('__until')) {
             name += '__until';
         }
         if (rawId.includes('__plus')) {
             name += '__plus';
+        }
+        const optMatch = rawId.match(/__OPTCAPTURE_([a-zA-Z0-9_$]+)/);
+        if (optMatch) {
+            name += optMatch[0];
         }
 
         const types = rawTypes.map(t => {
@@ -399,5 +481,18 @@ export class PatternMatcher {
         });
 
         return { name, types };
+    }
+
+    private getCoreWildcard(node: SyntaxNode): { name: string; isUntil: boolean; isPlus: boolean; optCaptureName: string | null } | null {
+        if (!node) return null;
+        if (node.type === 'identifier' || node.type === 'type_identifier' || node.type === 'field_identifier') {
+            const w = this.getWildcard(node);
+            if (w && w.optCaptureName) return w;
+        }
+        for (const child of node.namedChildren) {
+            const res = this.getCoreWildcard(child);
+            if (res) return res;
+        }
+        return null;
     }
 }

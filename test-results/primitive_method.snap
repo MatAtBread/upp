@@ -1,4 +1,5 @@
-==== examples/trace_4.c ===
+==== examples/primitive_method.c ===
+#include "method.h"
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -15,40 +16,20 @@ extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
 
- /* 
-        R:int M:*x[] N:x; 
-        int *renamed_x[];
-        */
- /* 
-        R:char M:y[] N:y; 
-        char renamed_y[];
-        */
- /* 
-        R:unsigned long M:*z N:z; 
-        unsigned long *renamed_z;
-        */
- /* 
-        R:bool M:b N:b; 
-        bool renamed_b;
-        */
-
-/* trace*/ int my_function(int x) {
-    puts("Entering my_function\n");
-    int g = 1;for (int i = 1; i < x; i++) {
-        g = g * i;
-    }return g;
-}
-/* trace*/ int *fn() {
-    puts("Entering fn\n");
-    int q;
+ int _int_method_fnarr(int *n) {
+    return (*n) + 1;
 }
 int main() {
-    printf("magic number %d\n", my_function(10));
+    int n = 1;
+    int m = _int_method_fnarr(&n);
+    printf("%d %d\n", n, m);
     return 0;
 }
 
-==== RUN OUTPUT ===
-Entering my_function
+==== std/method.h ===
 
-magic number 362880
+
+
+==== RUN OUTPUT ===
+1 2
 
