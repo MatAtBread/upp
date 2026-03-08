@@ -12,6 +12,17 @@ npm install -g @matatbread/upp
 
 UPP is not a compiler. It is a pre-processor that generates C code (note: other languages are possible as the core engine is language agnostic). You can then compile the generated C code with a C compiler of your choice. 
 
+## Documentation
+
+The project includes several in-repo documents that describe architecture, macro-writing patterns and the helper API. Start here:
+
+- [docs/Writing macros.md](docs/Writing%20macros.md) — API reference for `upp` and tutorial for writing macros.
+- [docs/Macro processing.md](docs/Macro%20processing.md) — architectural overview and how the macro engine transforms trees.
+- [docs/std.md](docs/std.md) — standard macros bundle and usage notes.
+- [docs/to-do.md](docs/to-do.md) — current roadmap and outstanding items.
+
+Examples are in the `examples/` directory; the test harness uses `examples/` and `test-results/` for snapshots.
+
 ### Example: `@trace`
 
 The `@trace` macro decorates a function and automatically inserts a `puts` statement to print the function's name whenever it is entered. It uses `upp.consume()` to grab the function following the macro.
@@ -37,7 +48,7 @@ The `@trace` macro decorates a function and automatically inserts a `puts` state
 
 @trace int my_function(int x) {
     int g = 1;
-    for (int i=0; i < x; i++) {
+    for (int i = 1; i < x; i++) {
         g = g * i;
     }
     return g;
@@ -241,17 +252,17 @@ The capture names can also have "constraints" on them, separated by a double-und
             // ...
 ```
 
-### `withMatches, withScope, withRoot, withNode,...`
+### `withMatch, withScope, withRoot, withNode, ...`
 
-These functions allow you to transform nodes *other* that the one following the macro.
+These functions allow you to transform nodes *other than* the one following the macro.
 
 The general form is:
 ```c
-    upp.withMatches(node,"$code $pattern",
+    upp.withMatch(node, "$code $pattern",
         ({ code, pattern /* the names of the captures in your source text following the $ */}, upp2) => {
             // code and pattern are SourceNode objects
             // upp2 is another instance of the helpers
-            // Return a new node/source text/node array here will replace it in the original source tree.
+            // Return a new node/source text/node array that will replace it in the original source tree.
             return upp2.code`${code} /* processed */ ${pattern}`;
         });
 ```

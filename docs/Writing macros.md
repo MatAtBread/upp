@@ -148,7 +148,8 @@ The `$modifiers` object is "smart".
 What happens if the target was just a simple `int x;`?
 * UPP still satisfies the pattern!
 * `${modifiers}` simply yields `x`.
-* `${modifiers.wrap("new_x")}` yields `new_x`.
+* `${modifiers.for("new_x")}` yields `new_x`.
+* Calling `${modifiers.for()}` without arguments defaults to the original wrapped target's text.
 
 **This completely eliminates the need for you to write manual string inspection logic to handle `*` or `[]` within your macros.**
 
@@ -160,4 +161,190 @@ Always use the `$``...`` ` or `upp.code``...`` ` template tag when generating re
 
 Behind the scenes, this isn't just generating strings. It is actively reconstructing an AST. When you interpolate a captured node (like `${x}`), UPP fundamentally *moves* that object reference into the new tree structure.
 
-This ensures **referential stability**. If another macro requested to track references to `x` via `upp.withReferences(x)`, that tracker will survive the transformation. If you mistakenly used standard JS string templates (`` `...${x.text}...` ``), the tree reference is destroyed, and the tracking macro will fail to locate the new string.
+This ensures **referential stability**. If another macro requested to track references to `x` via `upp.withReferences(x)`, that tracker will survive the transformation. If you mistakenly used standard JS string templates (`` `...${x.text}...` ``), the tree reference is destroyed, and the tracking macro might fail to locate the new string.
+
+---
+
+# Reference: UPP Helpers API
+
+The `upp` object provides a rich set of utilities for inspecting and modifying source code within UPP macros and transformation rules.
+
+## 1. Source Generation & Modification
+
+### `upp.code`
+Tagged template literal for generating source fragments. Crucially, it **moves** interpolated nodes rather than converting them to strings, maintaining their referential identity for other macros.
+
+- **Signature**: `upp.code\`strings: TemplateStringsArray, ...values: InterpolationValue[]\`` -> `SourceNode`
+- **Alias**: `$` — available as a shorthand in all macro bodies (e.g., `$\`int ${x} = 0;\``)
+- **Example**:
+  ```javascript
+  const newNode = upp.code`int ${name}_v2 = ${value};`;
+  // Equivalent using the shorthand:
+  const newNode = $`int ${name}_v2 = ${value};`;
+  ```
+
+### `upp.replace`
+Replaces a node with new content. Returns an empty string, making it convenient for use inside `upp.code` templates to perform side-effect replacements without adding text. 
+**Note:** `upp.replace` is only for use on *immediate/child* nodes relative to the current context. For replacing nodes *outside* the current `contextNode` (remote modification), the preferred pattern is `upp.withNode()`. Using `upp.replace` on remote nodes is likely to the walker will not run any rules (including macros) on the replacement node.
+
+- **Signature**: `upp.replace(node: SourceNode, content: MacroResult)` -> `SourceNode | SourceNode[] | null`
+- **Example**:
+  ```javascript
+  upp.code`${upp.replace(oldNode, newNode)}`;
+  ```
+
+### `upp.insertAfter` and `upp.insertBefore`
+Inserts a node before or after an existing node. These mark the parent node for re-visiting via `upp.revisit()`. This ensures that the newly inserted nodes are visible to the walker and get subject to rule processing correctly. This makes them significantly safer than manual tree splicing, which runs the risk of bypassing rule evaluation altogether (unless specifically intended, which itself can be problematic).
+
+- **Signature**: `upp.insertAfter(node: SourceNode, content: MacroResult)` -> `void`
+- **Signature**: `upp.insertBefore(node: SourceNode, content: MacroResult)` -> `void`
+
+### `upp.consume`
+Removes the next logical node from the source tree if it matches the specified types.
+
+- **Signature**: `upp.consume(types: string | string[], [message: string])` -> `SourceNode | SourceNode[] | string | string[] | null`
+- **Example**:
+  ```javascript
+  const fn = upp.consume('function_definition');
+  ```
+
+### `upp.nextNode`
+Peeks at the next logical node without removing it from the tree.
+
+- **Signature**: `upp.nextNode(types?: string | string[])` -> `SourceNode | null`
+
+---
+
+## 2. Structural Pattern Matching
+
+Patterns use structural matching (not just regex). 
+- Use `$name` to capture a node.
+- Use `__until` (e.g., `$args__until`) to capture multiple nodes.
+- Use constraints (e.g., `$id__identifier__type_identifier`) to restrict node types.
+
+### `upp.match`
+Performs a one-off match against a specific node.
+
+- **Signature**: `upp.match(node: SourceNode, pattern: string, [callback], [options])` -> `CaptureResult | null`
+- **Options**: `{ deep?: boolean }` (default `false`). If `true`, the pattern matcher searches recursively down the node's descendants. If `false`, it only matches precisely at the given node.
+- **Example**:
+  ```javascript
+  upp.match(node, "int $name = $val;", ({ name, val }) => {
+      console.log(`Variable ${name.text} set to ${val.text}`);
+  });
+  ```
+
+### `upp.matchAll`
+Finds all structural matches of a pattern within a scope.
+
+- **Signature**: `upp.matchAll(node: SourceNode, pattern: string, options?: { deep?: boolean })` -> `Array<{ node, captures }>`
+- **Options**: `{ deep?: boolean }`. Defaults to `true` if the node is a `translation_unit` (root), otherwise `false`. Allows finding nested matches.
+
+---
+
+## 3. Deferred Transformations (The `withX` Pattern)
+
+All deferred transformation APIs register a `PendingRule` in the unified rule system. Rules are evaluated both during the depth-first walk and during the final fixed-point sweep.
+
+### `upp.withMatch`
+Registers a deferred transformation for nodes matching a structural pattern within a scope. This is the **recommended** approach for pattern-based global transforms.
+
+- **Signature**: `upp.withMatch(scope: SourceNode, pattern: string, callback, options?: { deep?: boolean })` -> `void`
+- **Options**: `{ deep?: boolean }`. Controls whether the pattern matcher recurses deeply into descendants of `scope`. Defaults to `false` unless `scope` is the root `translation_unit`.
+- **Example**:
+  ```javascript
+  // Transform all brace-less if statements:
+  upp.withMatch(upp.root, "if ($cond) $then__NOT_compound_statement;",
+      ({ cond, then }) => upp.code`if (${cond}) { ${then} }`);
+  ```
+
+### `upp.withPattern`
+Registers a transformation for a specific AST node type (e.g., `call_expression`, `return_statement`), filtered by a custom matcher function. Use when you need lower-level control than `withMatch` provides.
+
+Unlike `matchAll`, `withPattern` does not take a `deep` option because the deferred rule automatically evaluates against every node in the AST as the walker ascends.
+
+- **Signature**: `upp.withPattern(type: string, matcher, callback)` -> `void`
+- **Example**:
+  ```javascript
+  // Transform method-style calls: obj.method(args) -> _Type_method(&obj, args)
+  upp.withPattern('call_expression',
+      (node, h) => node.named['function']?.type === 'field_expression',
+      (node, h) => { /* transform logic */ });
+  ```
+
+### `upp.withNode`
+Attaches a one-off deferred transformation to a specific node.
+
+- **Signature**: `upp.withNode(node: SourceNode, callback)` -> `void`
+
+### `upp.withRoot`
+Registers a callback to be invoked on the root node during the final sweep. Useful for imperative operations like hoisting code.
+
+- **Signature**: `upp.withRoot(callback)` -> `void`
+
+### `upp.withScope`
+Registers a callback to be invoked on a specific scope node.
+
+- **Signature**: `upp.withScope(scope: SourceNode, callback)` -> `void`
+
+---
+
+## 4. Tree Queries & Navigation
+
+- **`upp.root`**: The root node of the current tree.
+- **`upp.findScope(node?)`**: Finds the nearest enclosing scope (e.g., `{}` block or function).
+- **`upp.findEnclosing(node, types)`**: Finds the nearest ancestor of the given type(s).
+- **`upp.findInvocations(macroName)`**: Finds all calls to a specific macro.
+
+---
+
+## 5. C-Specific Helpers (`UppHelpersC`)
+
+These helpers are available when the language is set to C.
+
+### `upp.getType`
+Extracts the C type string for a definition node (handles pointers, arrays, etc.).
+
+- **Signature**: `upp.getType(node: SourceNode | string)` -> `string`
+
+### `upp.getFunctionSignature`
+Extracts details from a `function_definition` node.
+
+- **Signature**: `upp.getFunctionSignature(fnNode: SourceNode)` -> `{ name, returnType, params, bodyNode, nameNode }`
+
+### `upp.getArrayDepth`
+Returns the number of array dimensions wrapping an identifier (e.g., `int x[10][20]` returns 2).
+
+- **Signature**: `upp.getArrayDepth(defNode: SourceNode)` -> `number`
+
+### `upp.findDefinition`
+Resolves an identifier or name to its declaration node.
+
+- **Signature**: `upp.findDefinition(target: SourceNode | string, [nameOrOptions], [options])` -> `SourceNode`
+
+### `upp.findReferences`
+Finds all semantic references to a declaration node.
+
+- **Signature**: `upp.findReferences(defNode: SourceNode)` -> `SourceNode[]`
+
+### `upp.withReferences`
+Intelligently transforms all references to a specific definition, accurately finding references across the AST without premature node removal (ensuring the context of the reference remains valid when the rule fires).
+
+- **Signature**: `upp.withReferences(defNode: SourceNode, callback)` -> `void`
+
+### `upp.hoist`
+Prepends code to the top of the file (typically after includes).
+
+- **Signature**: `upp.hoist(content: string)` -> `void`
+
+---
+
+## 6. Infrastructure
+
+- **`upp.createUniqueIdentifier(prefix?)`**: Generates a guaranteed-unique C identifier.
+- **`upp.loadDependency(file)`**: Loads another file to make its macros and symbols available.
+- **`upp.callMacro(name, ...args)`**: Calls another macro programmatically by name, executing it in the current context. Useful for composing macros.
+- **`upp.walk(node, callback)`**: Manually walk the AST.
+- **`upp.isDescendant(parent, node)`**: Returns true if `node` is a descendant of `parent`.
+- **`upp.invocation`**: Metadata about the current macro call (args, file, line, etc.).
+- **`upp.registry`**: Direct access to the internal macro registry.

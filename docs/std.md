@@ -53,7 +53,7 @@ Implements basic structural composition by copying fields from one struct/typede
 - **Definition**: [std/fieldsof.hup](../std/fieldsof.hup)
 
 ## `@forward`
-Automatically scans the current file and generates forward declarations (prototypes) for all non-static functions. useful for avoiding "implicit declaration" warnings without manual header maintenance.
+Automatically scans the current file and generates forward declarations (prototypes) for all non-static functions. Useful for avoiding "implicit declaration" warnings without manual header maintenance.
 
 - **Usage**: Place `@forward` at the top of your file.
 - **Definition**: [std/forward.hup](../std/forward.hup)
@@ -73,12 +73,13 @@ Provides anonymous functions and closures. It automatically captures local varia
 ## `@method`
 Enables "Object-Oriented" style syntax for C structs. It renames function definitions and transforms `object.method()` calls into standard C function calls.
 
-- **Usage**: `@method(TypeName) return_type method_name(params) { body }`
+- **Usage**: `@method([TypeName]) return_type method_name(params) { body }`
+  *(Note: `TypeName` can be omitted, in which case it is inferred from the type of the first argument of the method.)*
 - **Example**:
   ```c
   struct Point { int x, y; };
   
-  @method(struct Point) void print(struct Point *self) {
+  @method void print(struct Point *self) { // TypeName omitted, inferred as struct Point
       printf("%d, %d\n", self->x, self->y); 
   }
   
@@ -89,6 +90,8 @@ Enables "Object-Oriented" style syntax for C structs. It renames function defini
 
 ## `@package` & `@implements`
 Provides a module system for C. `@package` defines a public interface, prefixing symbols with the package name to avoid collisions. `@implements` flags a file as the authoritative implementation of a package.
+
+Crucially, it **automatically generates function prototypes in the compiled C standard header** (unlike C++). This means a package entirely describes itself to other files without needing separate manual header declarations.
 
 - **Usage**: 
   - In `pkg.hup`: `@package(pkgName)`

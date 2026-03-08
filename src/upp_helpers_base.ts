@@ -13,7 +13,9 @@ export interface MatchOptions { deep?: boolean };
  * @class
  */
 abstract class UppHelpersBase<LanguageNodeTypes extends string> {
-    public get root(): SourceNode<LanguageNodeTypes> | null { return this.registry.tree?.root };
+    public get root(): SourceNode<LanguageNodeTypes> | null {
+        return this.context?.tree?.root ?? this.registry.tree?.root ?? null;
+    }
     public registry: Registry;
     public matcher: PatternMatcher;
     public _parentHelpers: UppHelpersBase<LanguageNodeTypes> | null;
@@ -204,7 +206,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      * @returns {string} Always empty string (transformations happen via markers).
      */
     withRoot(callback: (root: SourceNode<LanguageNodeTypes>, helpers: UppHelpersBase<LanguageNodeTypes>) => any): void {
-        const root = this.findRoot();
+        const root = this.root;
         if (!root) throw new Error("upp.withRoot: No root node found.");
         this.withNode(root, callback);
     }
@@ -236,14 +238,6 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         const result = n.replaceWith(finalContent as any);
         if (this.contextNode === n) this.contextNode = result as any;
         return result as any;
-    }
-
-    /**
-     * Finds the root node of the current context or the main tree.
-     * @returns {SourceNode<LanguageNodeTypes> | null} The root node.
-     */
-    findRoot(): SourceNode<LanguageNodeTypes> | null {
-        return (this.context && this.context.tree) ? this.context.tree.root : this.root;
     }
 
     /**
@@ -504,7 +498,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
      * @private
      */
     public _getNextNode(expectedTypes: string[] | null = null): SourceNode<LanguageNodeTypes> | null {
-        const root = this.root || this.findRoot();
+        const root = this.root;
         const index = this.lastConsumedIndex || (this.invocation && this.invocation.invocationNode?.endIndex);
         if (index === undefined || index === null) return null;
         return this.findNextNodeAfter(root, index);

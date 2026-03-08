@@ -137,7 +137,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {number} [_hoistIndex=0] - The index to hoist to.
    */
   hoist(content: string, _hoistIndex: number = 0): void {
-    const root = this.findRoot();
+    const root = this.root;
     if (!root) throw new Error("helpers.hoist: Invalid root");
     if (root.children.length > 0) {
       root.children[0].insertBefore(content + "\n");
@@ -370,7 +370,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
     if (typeof target === 'string') {
       name = target;
-      startScope = this.contextNode || this.findRoot();
+      startScope = this.contextNode || this.root;
     } else if (target instanceof SourceNode) {
       if (typeof nameOrOptions === 'string') {
         name = nameOrOptions;
@@ -463,7 +463,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @returns {SourceNode<CNodeTypes>[]} The references.
    */
   findReferences(node: SourceNode<CNodeTypes>): SourceNode<CNodeTypes>[] {
-    const root = this.findRoot();
+    const root = this.root;
     if (!root) return [];
 
     const idsInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) =>
