@@ -117,7 +117,17 @@ Provides automatic memory management via reference counting for standard C struc
 - **Usage**: `@ManagedStruct(struct_type) ManagedTypeName;`
 - **Features**:
   - **Automatic Allocation**: `ManagedTypeName var;` automatically translates to allocating `_Managed_Sizeof_ManagedTypeName(1)`.
-  - **Variable-Length Arrays**: Declaring an array `ManagedTypeName arr[size];` automatically allocates space for `size` elements inside the managed memory block.
+  - **Variable-Length Arrays**: Declaring an array `ManagedTypeName arr[size];` automatically allocates space for `size` elements inside the managed memory block. Additionally, if the final element in the struct is a C VLA (an array declared without a dimension) then ManagedStruct applies the specified declaration to the VLA at run-time, for example:
+    ```c
+    @ManagedStruct(struct {
+      int len;
+      // Declaration dimension applied to the final "vla" member
+      char data[]; 
+    }) String;
+    ...
+    // Allocates a ManagedStruct with space for the len, and n+m+1 characters calculated at run-time
+    String s[n+m+1];
+    ``` 
   - **Reference Counted Parameters & Returns**: When a managed struct is passed as a function parameter, it is automatically retained on entry and released via a deferred block on exit. Returning a managed struct automatically retains it.
   - **Smart Assignments**: Intercepts assignments (`a = b`) and function call assignments (`a = create()`) to correctly inject `_Managed_set` and `_Managed_move`, ensuring the old value is released and the new value is tracked. 
   - **Deferred Release**: Standard variables are automatically released (`_Managed_release`) at the end of their scope via a `@defer` block.
