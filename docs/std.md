@@ -130,7 +130,7 @@ Provides automatic memory management via reference counting for standard C struc
     ``` 
   - **Reference Counted Parameters & Returns**: When a managed struct is passed as a function parameter, it is automatically retained on entry and released via a deferred block on exit. Returning a managed struct automatically retains it.
   - **Smart Assignments**: Intercepts assignments (`a = b`) and function call assignments (`a = create()`) to correctly inject `_Managed_set` and `_Managed_move`, ensuring the old value is released and the new value is tracked. 
-  - **Deferred Release**: Standard variables are automatically released (`_Managed_release`) at the end of their scope via a `@defer` block.
+  - **Deferred Release**: Standard variables are automatically released (`_Managed_release`) at the end of their scope via a `@defer` block, and when the release count reaches zero, it is freed.
 - **Example**:
   ```c
   struct Data { int id; };
