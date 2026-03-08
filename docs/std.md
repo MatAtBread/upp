@@ -141,8 +141,8 @@ Provides a module system for C. `@package` defines a public interface, prefixing
 Crucially, it **automatically generates function prototypes in the compiled C standard header** (unlike C++). This means a package entirely describes itself to other files without needing separate manual header declarations.
 
 - **Usage**: 
-  - In `pkg.hup`: `@package(pkgName)`
-  - In `pkg.cup`: `@implements(pkgName)`
+  - In `pkg.hup`: `@package(pkgName)`, included by all consumers of the package (or `#include "pkg.h"` for consumers written in C)
+  - In `pkg.cup`: `@implements(pkgName)`, which should also include "pkg.hup", and then generates the function prototypes automatically.
 - **Definition**: [std/package.hup](../std/package.hup)
 
 ## `@trap`
