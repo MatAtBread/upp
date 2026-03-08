@@ -26,7 +26,7 @@ To make the source valid C for Tree-sitter:
 
 ## Phase 2: The Generator-Based Evaluation Walk
 
-Once preliminary macros have executed and the tree is stable, UPP begins the main transformation process.
+Once C pre-processor macros and @include & @define have been processed and the tree is stable, UPP begins the main transformation process.
 
 UPP uses a **generator-based, depth-first back-tracking walker**. This walker avoids traditional recursion, safely operating on highly dynamic AST structures.
 

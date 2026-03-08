@@ -110,3 +110,39 @@ Intercepts assignments to a variable or struct field and routes the new value th
   x = 10; // Outputs: Setting to 10
   ```
 - **Definition**: [std/trap.hup](../std/trap.hup)
+
+## `@ManagedStruct`
+Provides automatic memory management via reference counting for standard C structs, similar to objects in higher-level languages. It wraps a struct type and generates a new managed pointer type.
+
+- **Usage**: `@ManagedStruct(struct_type) ManagedTypeName;`
+- **Features**:
+  - **Automatic Allocation**: `ManagedTypeName var;` automatically translates to allocating `_Managed_Sizeof_ManagedTypeName(1)`.
+  - **Variable-Length Arrays**: Declaring an array `ManagedTypeName arr[size];` automatically allocates space for `size` elements inside the managed memory block.
+  - **Reference Counted Parameters & Returns**: When a managed struct is passed as a function parameter, it is automatically retained on entry and released via a deferred block on exit. Returning a managed struct automatically retains it.
+  - **Smart Assignments**: Intercepts assignments (`a = b`) and function call assignments (`a = create()`) to correctly inject `_Managed_set` and `_Managed_move`, ensuring the old value is released and the new value is tracked. 
+  - **Deferred Release**: Standard variables are automatically released (`_Managed_release`) at the end of their scope via a `@defer` block.
+- **Example**:
+  ```c
+  struct Data { int id; };
+  @ManagedStruct(struct Data) ManagedData;
+  
+  ManagedData create(int id) {
+      ManagedData d; // Automatically allocates
+      d->id = id;
+      return d; // Automatically retained on return
+  }
+
+  void process(ManagedData p) {
+      // p is automatically retained on entry and released when process() exits
+      printf("ID: %d\\n", p->id);
+  }
+  
+  void example() {
+      ManagedData a = create(1); 
+      ManagedData b = a; // Assignment automatically retains 'a'
+      ManagedData arr[10]; // Allocates a managed block sized for 10 elements
+      process(a);
+      // a, b, and arr are automatically released at the end of the scope
+  }
+  ```
+- **Definition**: [std/managed-struct.hup](../std/managed-struct.hup)
