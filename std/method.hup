@@ -71,7 +71,8 @@
             const innerArgNodes = argsNode ? argsNode.children.slice(1, -1) : [];
             
             const objDef = helpers.findDefinitionOrNull(targetNode);
-            const objType = objDef ? helpers.getType(objDef, { resolve: true }) : "";
+            const objTypeRaw = objDef ? helpers.getType(objDef, { resolve: true }) : "";
+            const objType = typeof objTypeRaw === 'string' ? objTypeRaw : objTypeRaw?.text || "";
             
             // Use RegExp constructor to avoid UPP parser brace-counting bugs with /\\{[^}]*\\}/
             const bodyRegex = new RegExp('\\\\{[^}]*\\\\}', 'g');

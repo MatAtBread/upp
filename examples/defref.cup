@@ -6,14 +6,22 @@
         const kind = h.isDeclaration() ? "Declare" : "Ref";
         return upp.code`/* ${kind} ${label} */ ${ref}`;
     });
+    return null;
 }
 
 @DefRef("fn") void fn(int i){}
 @DefRef("MyType") typedef int MyType;
 
+@DefRef("S") struct S {
+    @DefRef("S.u") unsigned int u;
+};
+
 int main() {
     @DefRef("x") MyType x = 10;
     x = 5;
     fn(x);
+    @DefRef("i") struct S i;
+    @DefRef("u") i.u = 1;
+    fn;
     return 0;
 }

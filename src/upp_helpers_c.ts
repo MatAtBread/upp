@@ -152,13 +152,53 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {{ resolve?: boolean }} [options] - Options for type resolution.
    * @returns {string} The C type string (e.g. "char *").
    */
-  getType(node: SourceNode<CNodeTypes> | string | null, options: { resolve?: boolean } = {}, _visited: WeakSet<SourceNode<any>> = new WeakSet()): string {
-    if (!node) return "";
-    const target = typeof node === 'string' ? this.findDefinition(node) : node;
-    if (!target) return "";
+  getType(node: SourceNode<CNodeTypes> | string | null | undefined, options: { resolve?: boolean } = {}, _visited: WeakSet<SourceNode<any>> = new WeakSet()): string | SourceNode<CNodeTypes> | null {
+    if (!node) return null;
+    let target = typeof node === 'string' ? this.findDefinitionOrNull(node) : node;
+    if (!target) return null;
+
+    if (target.type === 'expression_statement') target = target.child(0) as SourceNode<CNodeTypes>;
+
+    // Handle expressions directly
+    if (target.type === 'cast_expression') {
+      const typeNode = target.named.type;
+      return typeNode ? typeNode.text : "void *";
+    }
+    if (target.type === 'string_literal') return "char *";
+    if (target.type === 'char_literal') return "char";
+    if (target.type === 'number_literal') {
+      const text = target.text;
+      if (text.includes('.')) return "double";
+      const lower = text.toLowerCase();
+      if (lower.endsWith('ull')) return "unsigned long long";
+      if (lower.endsWith('ll')) return "long long";
+      if (lower.endsWith('ul')) return "unsigned long";
+      if (lower.endsWith('l')) return "long";
+      if (lower.endsWith('u')) return "unsigned int";
+      return "int";
+    }
+
+    if (target.type === 'identifier' || target.type === 'field_identifier') {
+      const def = this.findDefinitionOrNull(target);
+      if (def && def !== target && !_visited.has(def)) {
+        _visited.add(target);
+        return this.getType(def, options, _visited);
+      }
+    }
+
+    if (target.type === 'field_expression') {
+      const field = target.named.field;
+      if (field) {
+        const def = this.findDefinitionOrNull(field);
+        if (def && def !== target && !_visited.has(def)) {
+          _visited.add(target);
+          return this.getType(def, options, _visited);
+        }
+      }
+    }
 
     let declNode: SourceNode<CNodeTypes> | undefined = target;
-    let idNode: SourceNode<CNodeTypes> | undefined = (target.type === 'identifier' || target.type === 'type_identifier') ? target : undefined;
+    let idNode: SourceNode<CNodeTypes> | undefined = (target.type === 'identifier' || target.type === 'type_identifier' || target.type === 'field_identifier') ? target : undefined;
 
     if (!idNode) {
       if ((target.type as string).endsWith('declarator') || target.type === 'init_declarator' || target.type === 'parameter_declaration') {
@@ -191,7 +231,16 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       }
     }
 
-    if (!declNode) return "";
+    if (!declNode) {
+      if (target.type === 'type_identifier' && options.resolve) {
+        let def = this.findDefinitionOrNull(target.text, { variable: true, tag: true });
+        if (def && !_visited.has(def)) {
+          _visited.add(target);
+          return this.getType(def, options, _visited);
+        }
+      }
+      return null;
+    }
 
     let prefix = "";
     let suffix = "";
@@ -233,7 +282,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         // Ensure we don't resolve to the same node or a node we already visited
         if (def !== target && !_visited.has(def)) {
           _visited.add(target);
-          const underlyingType = this.getType(def, options, _visited);
+          let underlyingType = this.getType(def, options, _visited);
+          if (underlyingType === null) return null;
+          if (typeof underlyingType !== 'string') {
+            if (prefix || suffix) {
+              return `${underlyingType.text} ${prefix}`.trim() + suffix;
+            }
+            return underlyingType;
+          }
+
           // Strip structural bodies before collecting stars
           const cleanUnderlying = underlyingType.replace(/\{[^}]*\}/g, '');
           const uStars = cleanUnderlying.match(/\*/g)?.join('') || "";
@@ -243,6 +300,12 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
           const result = `${uBase}${allStars ? ' ' + allStars : ''}`.trim() + suffix;
           return result.replace(/\s+/g, ' ');
         }
+      }
+    }
+
+    if (options.resolve && typeNode && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(typeNode.type as string)) {
+      if (!prefix && !suffix) {
+        return typeNode as SourceNode<CNodeTypes>;
       }
     }
 
@@ -267,6 +330,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    */
   getArrayDepth(defNode: SourceNode<CNodeTypes>): number {
     const type = this.getType(defNode);
+    if (typeof type !== 'string') return 0;
     const matches = type.match(/\[\]/g);
     return matches ? matches.length : 0;
   }
@@ -328,7 +392,8 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     const nameNode = funcDeclarator.named.declarator;
     const name = nameNode ? nameNode.text : "";
     const params = funcDeclarator.named.parameters ? funcDeclarator.named.parameters.text : "()";
-    const returnType = this.getType(fnNode);
+    const returnTypeRaw = this.getType(fnNode);
+    const returnType = typeof returnTypeRaw === 'string' ? returnTypeRaw : returnTypeRaw ? returnTypeRaw.text : "void";
 
     return new FunctionSignature(
       returnType,
@@ -367,6 +432,8 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     let finalOptions = (typeof nameOrOptions === 'object' && nameOrOptions !== null) ? { ...options, ...nameOrOptions } : options;
 
     let cacheKey: string | number | null = null;
+    let targetIsField = false;
+    let structScopeForField: SourceNode<CNodeTypes> | null = null;
 
     if (typeof target === 'string') {
       name = target;
@@ -376,24 +443,45 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         name = nameOrOptions;
         startScope = target;
       } else {
-        let idNode = (target.type === 'identifier' || target.type === 'type_identifier') ? target : null;
+        let idNode = (target.type === 'identifier' || target.type === 'type_identifier' || target.type === 'field_identifier') ? target : null;
         if (!idNode) {
-          const ids = target.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier');
+          const ids = target.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier' || n.type === 'statement_identifier');
           if (ids.length === 1) idNode = ids[0];
+          else if (ids.length > 1) {
+            throw new Error("helpers.findDefinition: target contains multiple identifiers. You must supply a more specific node.");
+          }
         }
 
-        if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found");
+        if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found target");
         name = (idNode as any).searchableText as string;
         startScope = idNode.parent;
         cacheKey = idNode.startIndex; // Position-based caching
+
+        if (idNode.type === 'field_identifier' && idNode.parent?.type === 'field_expression' && idNode.parent.named.field === idNode) {
+          const argType = this.getType(idNode.parent.named.argument, { resolve: true });
+          if (argType instanceof SourceNode && ['struct_specifier', 'union_specifier'].includes(argType.type as string)) {
+            structScopeForField = argType as SourceNode<CNodeTypes>;
+            startScope = structScopeForField;
+            targetIsField = true;
+          }
+        }
       }
     }
 
     if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
 
-    const findInScope = (scope: SourceNode<CNodeTypes>) => {
-      const allIds = scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier');
+    const findInScope = (scope: SourceNode<CNodeTypes>, isStructScope = false) => {
+      const allIds = scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier');
       const filtered = allIds.filter((idNode: SourceNode<CNodeTypes>) => {
+        if (isStructScope) {
+          let p = idNode.parent;
+          while (p && p !== scope) {
+            if (p.type === 'struct_specifier' || p.type === 'union_specifier') return false;
+            if (p.type === 'field_declaration' && idNode.type === 'field_identifier') return true;
+            p = p.parent;
+          }
+          return false;
+        }
         return this.getEnclosingScope(idNode) === scope;
       });
       return filtered;
@@ -406,7 +494,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       if (loopCounter > 1000) {
         throw new Error(`Infinite loop detected in findDefinition up-tree traversal for '${name}'! current.type=${current.type}`);
       }
-      const identifiers = findInScope(current);
+      const identifiers = findInScope(current, targetIsField && current === structScopeForField);
 
       for (const idNode of identifiers) {
         if ((idNode as any).searchableText === name) {
@@ -439,7 +527,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             }
             if (p.type === 'parameter_declaration' || p.type === 'declaration' || p.type === 'type_definition' || p.type === 'field_declaration' || p.type === 'function_definition') {
               if (isDeclarator || (idNode.parent === p && idNode.fieldName !== 'type')) {
-                if (finalOptions.variable) {
+                if (finalOptions.variable || (p.type === 'field_declaration')) {
                   return p as SourceNode<CNodeTypes>;
                 }
               }
@@ -450,6 +538,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         }
       }
 
+      if (targetIsField && current === structScopeForField) break;
       if (current.type === 'translation_unit') break;
       current = current.parent;
     }
@@ -466,22 +555,32 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     const root = this.root;
     if (!root) return [];
 
-    const idsInDef = node.find<CNodeTypes>((n: SourceNode<CNodeTypes>) =>
-      n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier'
-    );
+    let targetDef: SourceNode<CNodeTypes> | null = null;
+    try {
+      targetDef = this.findDefinition(node);
+    } catch {
+      return [];
+    }
 
-    let idInDef = idsInDef.find(n => {
-      let p = n.parent;
-      while (p && p !== node) {
-        if (p.type.endsWith('declarator') || p.type === 'init_declarator' || p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') return true;
-        p = p.parent;
-      }
-      return false;
-    });
+    let idInDef = targetDef.type === 'identifier' || targetDef.type === 'field_identifier' || targetDef.type === 'type_identifier' ? targetDef : null;
+    if (!idInDef) {
+      const idsInDef = targetDef.find<CNodeTypes>((n: SourceNode<CNodeTypes>) =>
+        n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier'
+      );
+      idInDef = idsInDef.find(n => {
+        let p = n.parent;
+        while (p && p !== targetDef) {
+          if (p.type.endsWith('declarator') || p.type === 'init_declarator' || p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') return true;
+          p = p.parent;
+        }
+        return false;
+      }) as SourceNode<CNodeTypes> | null;
+      // fallback if no declarator matching
+      if (!idInDef && idsInDef.length > 0) idInDef = idsInDef[0];
+    }
 
-    const name = idInDef ? idInDef.text : node.text;
+    const name = idInDef ? idInDef.text : targetDef.text;
     if (!name || (idInDef && idInDef.type !== 'identifier' && idInDef.type !== 'field_identifier' && idInDef.type !== 'type_identifier')) {
-      // If we can't find a valid name (e.g. complex declarator without identifier), it shouldn't have references.
       return [];
     }
 
@@ -493,14 +592,12 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     for (const idNode of ids) {
       if (idNode.text === name) {
         const def = this.findDefinitionOrNull(idNode);
-        if (def && def === node) {
+        if (def && def === targetDef) {
           refs.push(idNode);
-        } else if (!node.parent && (node as any)._detachedParent) {
+        } else if (!targetDef.parent && (targetDef as any)._detachedParent) {
           // Fallback for detached nodes: check name and scope equality
-          // If we can't find a direct identity match because 'node' is a detached fragment,
-          // we check if the reference resolves to something with the same name in the same scope.
           const refScope = this.getEnclosingScope(idNode);
-          const defScope = this.getEnclosingScope(node);
+          const defScope = this.getEnclosingScope(targetDef);
           if (refScope && defScope && refScope === defScope) {
             refs.push(idNode);
           }
@@ -535,7 +632,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         let p = n.parent;
         while (p && p !== definitionNode) {
           const t = p.type;
-          if (t.endsWith('declarator') || t === 'init_declarator' || t === 'struct_specifier' || t === 'union_specifier' || t === 'enum_specifier') return true;
+          if (t.endsWith('declarator') || t === 'init_declarator') return true;
+          p = p.parent;
+        }
+        return false;
+      }) || ids.find(n => {
+        let p = n.parent;
+        while (p && p !== definitionNode) {
+          const t = p.type;
+          if (t === 'struct_specifier' || t === 'union_specifier' || t === 'enum_specifier') return true;
           p = p.parent;
         }
         return false;

@@ -16,14 +16,48 @@ extern void *stderr;
 extern void *_stderr;
 
 #include "strings.h"
+ String _int_method_String(int n) {
+    String s = _Managed_allocate(_Managed_Sizeof_String(16));
+
+
+    snprintf(s->data, 16, "%d", n);
+    /* elided retain/release s */return s;
+}
+ String _float_method_String(float n) {
+    String s = _Managed_allocate(_Managed_Sizeof_String(16));
+
+
+    snprintf(s->data, 16, "%f", n);
+    /* elided retain/release s */return s;
+}
 int main() {
     String s = String_literal("abcd");
 
     String t = _String_method_copy(s);
 
-    printf("s: %s\n", s->data);
-    printf("t: %s\n", t->data);
-    _Managed_release(&t);
+    _Managed_retain(t);String u = t;
+
+    printf("s: %s [%d]\n", s->data, _String_method_managed_reference_count(s));
+    printf("t: %s [%d]\n", t->data, _String_method_managed_reference_count(t));
+    printf("u: %s [%d]\n", u->data, _String_method_managed_reference_count(u));
+    int i = 123;
+    String n = _int_method_String(i);
+
+    printf("n: %s [%d]\n", n->data, _String_method_managed_reference_count(n));
+    float f = 4.56;
+    String m = _float_method_String(f);
+
+    printf("m: %s [%d]\n", m->data, _String_method_managed_reference_count(m));
+    
+
+
+
+
+
+_Managed_release(&m);
+_Managed_release(&n);
+_Managed_release(&u);
+_Managed_release(&t);
 _Managed_release(&s);return 0;
 }
 
@@ -147,6 +181,9 @@ extern void free(void *p);
 
 
 ==== RUN OUTPUT ===
-s: abcd
-t: abcd
+s: abcd [1]
+t: abcd [2]
+u: abcd [2]
+n: 123 [1]
+m: 4.560000 [1]
 

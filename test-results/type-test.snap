@@ -1,0 +1,99 @@
+==== examples/type-test.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+
+struct MyStruct {
+    int a;
+    char *b;
+    float c[10];
+};
+typedef struct MyStruct MyStructTypedef;
+typedef int MyInt;
+enum MyEnum { A, B, C };
+union MyUnion { int x; double y; };
+void my_function(int param1, double *param2) {
+    printf("param1: %s\n", "int");
+    printf("param2: %s\n", "double *");
+}
+int main() {
+    int idx = 0;
+    char ch = 'A';
+    double d = 1.0;
+    long l = 1L;
+    unsigned int ui = 1U;
+    unsigned long long ull = 1ULL;
+    char *str = "hello";
+    struct MyStruct s;
+    s.a = 1;
+    MyStructTypedef st;
+    MyInt mi = 5;
+    enum MyEnum e = A;
+    union MyUnion u;
+    int ***ppp = 0;
+    int arr[5][10];
+    printf("idx: %s\n", "int");
+    printf("ch: %s\n", "char");
+    printf("d: %s\n", "double");
+    printf("l: %s\n", "long");
+    printf("ui: %s\n", "unsigned int");
+    printf("ull: %s\n", "unsigned long long");
+    printf("str: %s\n", "char *");
+    printf("s: %s\n", "struct MyStruct");
+    printf("st: %s\n", "MyStructTypedef");
+    printf("mi: %s\n", "MyInt");
+    printf("e: %s\n", "enum MyEnum");
+    printf("u: %s\n", "union MyUnion");
+    printf("ppp: %s\n", "int ***");
+    printf("arr: %s\n", "int[][]");
+    printf("expr cast: %s\n", "(float)idx : ""float" );
+    printf("expr str: %s\n", "\"testing\" : ""char *" );
+    printf("expr char: %s\n", "'x' : ""char" );
+    printf("expr int: %s\n", "42 : ""int" );
+    printf("expr double: %s\n", "3.14 : ""double" );
+    printf("expr ul: %s\n", "100UL : ""unsigned long" );
+    printf("expr struct field: %s\n", "s.b : """ );
+    printf("expr index: %s\n", "arr[0][1] : """ );
+    my_function(1, 0);
+    return 0;
+}
+
+==== RUN OUTPUT ===
+idx: int
+ch: char
+d: double
+l: long
+ui: unsigned int
+ull: unsigned long long
+str: char *
+s: struct MyStruct
+st: MyStructTypedef
+mi: MyInt
+e: enum MyEnum
+u: union MyUnion
+ppp: int ***
+arr: int[][]
+expr cast: (float)idx : float
+expr str: "testing" : char *
+expr char: 'x' : char
+expr int: 42 : int
+expr double: 3.14 : double
+expr ul: 100UL : unsigned long
+expr struct field: s.b : 
+expr index: arr[0][1] : 
+param1: int
+param2: double *
+
