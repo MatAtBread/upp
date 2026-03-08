@@ -70,47 +70,6 @@ Provides anonymous functions and closures. It automatically captures local varia
   ```
 - **Definition**: [std/lambda.hup](../std/lambda.hup)
 
-## `@method`
-Enables "Object-Oriented" style syntax for C structs. It renames function definitions and transforms `object.method()` calls into standard C function calls.
-
-- **Usage**: `@method([TypeName]) return_type method_name(params) { body }`
-  *(Note: `TypeName` can be omitted, in which case it is inferred from the type of the first argument of the method.)*
-- **Example**:
-  ```c
-  struct Point { int x, y; };
-  
-  @method void print(struct Point *self) { // TypeName omitted, inferred as struct Point
-      printf("%d, %d\n", self->x, self->y); 
-  }
-  
-  struct Point p = {1, 2};
-  p.print(); // Transpiles to _Point_method_print(&p)
-  ```
-- **Definition**: [std/method.hup](../std/method.hup)
-
-## `@package` & `@implements`
-Provides a module system for C. `@package` defines a public interface, prefixing symbols with the package name to avoid collisions. `@implements` flags a file as the authoritative implementation of a package.
-
-Crucially, it **automatically generates function prototypes in the compiled C standard header** (unlike C++). This means a package entirely describes itself to other files without needing separate manual header declarations.
-
-- **Usage**: 
-  - In `pkg.hup`: `@package(pkgName)`
-  - In `pkg.cup`: `@implements(pkgName)`
-- **Definition**: [std/package.hup](../std/package.hup)
-
-## `@trap`
-Intercepts assignments to a variable or struct field and routes the new value through a handler function.
-
-- **Usage**: `@trap(handler_name) type variable_name;`
-- **Example**:
-  ```c
-  int log_val(int v) { printf("Setting to %d\n", v); return v; }
-  
-  @trap(log_val) int x = 0;
-  x = 10; // Outputs: Setting to 10
-  ```
-- **Definition**: [std/trap.hup](../std/trap.hup)
-
 ## `@ManagedStruct`
 Provides automatic memory management via reference counting for standard C structs, similar to objects in higher-level languages. It wraps a struct type and generates a new managed pointer type.
 
@@ -155,4 +114,45 @@ Provides automatic memory management via reference counting for standard C struc
       // a, b, and arr are automatically released at the end of the scope
   }
   ```
-- **Definition**: [std/managed-struct.hup](../std/managed-struct.hup)
+- **Definition**: [std/managed-struct.hup](../std/managed-struct.hup)## `@method`
+Enables "Object-Oriented" style syntax for C structs. It renames function definitions and transforms `object.method()` calls into standard C function calls.
+
+- **Usage**: `@method([TypeName]) return_type method_name(params) { body }`
+  *(Note: `TypeName` can be omitted, in which case it is inferred from the type of the first argument of the method.)*
+- **Example**:
+  ```c
+  struct Point { int x, y; };
+  
+  @method void print(struct Point *self) { // TypeName omitted, inferred as struct Point
+      printf("%d, %d\n", self->x, self->y); 
+  }
+  
+  struct Point p = {1, 2};
+  p.print(); // Transpiles to _Point_method_print(&p)
+  ```
+- **Definition**: [std/method.hup](../std/method.hup)
+
+## `@package` & `@implements`
+Provides a module system for C. `@package` defines a public interface, prefixing symbols with the package name to avoid collisions. `@implements` flags a file as the authoritative implementation of a package.
+
+Crucially, it **automatically generates function prototypes in the compiled C standard header** (unlike C++). This means a package entirely describes itself to other files without needing separate manual header declarations.
+
+- **Usage**: 
+  - In `pkg.hup`: `@package(pkgName)`
+  - In `pkg.cup`: `@implements(pkgName)`
+- **Definition**: [std/package.hup](../std/package.hup)
+
+## `@trap`
+Intercepts assignments to a variable or struct field and routes the new value through a handler function.
+
+- **Usage**: `@trap(handler_name) type variable_name;`
+- **Example**:
+  ```c
+  int log_val(int v) { printf("Setting to %d\n", v); return v; }
+  
+  @trap(log_val) int x = 0;
+  x = 10; // Outputs: Setting to 10
+  ```
+- **Definition**: [std/trap.hup](../std/trap.hup)
+
+
