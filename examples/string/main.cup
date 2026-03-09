@@ -2,10 +2,32 @@
 
 @include(strings.hup)
 
+@method String String(int n) {
+    String s[16];
+    snprintf(s->data, 16, "%d", n);
+    return s;
+}
+
+@method String String(float n) {
+    String s[16];
+    snprintf(s->data, 16, "%f", n);
+    return s;
+}
+
 int main() {
     String s = String_literal("abcd");
     String t = s->copy();
-    printf("s: %s\n", s->data);
-    printf("t: %s\n", t->data);
+    String u = t;
+    printf("s: %s [%d]\n", s->data, s->managed_reference_count());
+    printf("t: %s [%d]\n", t->data, t->managed_reference_count());
+    printf("u: %s [%d]\n", u->data, u->managed_reference_count());
+
+    int i = 123;
+    String n = i.String();
+    printf("n: %s [%d]\n", n->data, n->managed_reference_count());
+
+    float f = 4.56;
+    String m = f.String();
+    printf("m: %s [%d]\n", m->data, m->managed_reference_count());
     return 0;
 }

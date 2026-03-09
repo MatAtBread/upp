@@ -4,11 +4,11 @@
 @forward
 
 int main() {
-    foo();
+    foo(0);
     return 0;
 }
 
-void foo() {
+void foo(int a) {
     printf("Foo calls bar\n");
     bar();
 }

@@ -274,7 +274,8 @@ static inline int _Managed_ref_count(void *data) {
             const argsNode = callNode.named['arguments'];
 
             const objDef = helpers.findDefinitionOrNull(targetNode);
-            let currentType = helpers.getType(objDef, { resolve: true });
+            const currentTypeRaw = helpers.getType(objDef, { resolve: true });
+            const currentType = typeof currentTypeRaw === 'string' ? currentTypeRaw : currentTypeRaw?.text || "";
             
             const bodyRegex = new RegExp('\\{[^}]*\\}', 'g');
             const cleanType = currentType.replace(bodyRegex, '');

@@ -53,7 +53,7 @@ Implements basic structural composition by copying fields from one struct/typede
 - **Definition**: [std/fieldsof.hup](../std/fieldsof.hup)
 
 ## `@forward`
-Automatically scans the current file and generates forward declarations (prototypes) for all non-static functions. useful for avoiding "implicit declaration" warnings without manual header maintenance.
+Automatically scans the current file and generates forward declarations (prototypes) for all non-static functions. Useful for avoiding "implicit declaration" warnings without manual header maintenance.
 
 - **Usage**: Place `@forward` at the top of your file.
 - **Definition**: [std/forward.hup](../std/forward.hup)
@@ -70,15 +70,63 @@ Provides anonymous functions and closures. It automatically captures local varia
   ```
 - **Definition**: [std/lambda.hup](../std/lambda.hup)
 
+## `@ManagedStruct`
+Provides automatic memory management via reference counting for standard C structs, similar to objects in higher-level languages. It wraps a struct type and generates a new managed pointer type.
+
+- **Usage**: `@ManagedStruct(struct_type) ManagedTypeName;`
+- **Features**:
+  - **Automatic Allocation**: `ManagedTypeName var;` automatically translates to allocating `_Managed_Sizeof_ManagedTypeName(1)`.
+  - **Variable-Length Arrays**: Declaring an array `ManagedTypeName arr[size];` automatically allocates space for `size` elements inside the managed memory block. Additionally, if the final element in the struct is a C VLA (an array declared without a dimension) then ManagedStruct applies the specified declaration to the VLA at run-time, for example:
+    ```c
+    @ManagedStruct(struct {
+      int len;
+      // Declaration dimension applied to the final "vla" member
+      char data[]; 
+    }) String;
+    ...
+    // Allocates a ManagedStruct with space for the len, and n+m+1 characters calculated at run-time
+    String s[n+m+1];
+    ``` 
+  - **Reference Counted Parameters & Returns**: When a managed struct is passed as a function parameter, it is automatically retained on entry and released via a deferred block on exit. Returning a managed struct automatically retains it.
+  - **Smart Assignments**: Intercepts assignments (`a = b`) and function call assignments (`a = create()`) to correctly inject `_Managed_set` and `_Managed_move`, ensuring the old value is released and the new value is tracked. 
+  - **Deferred Release**: Standard variables are automatically released (`_Managed_release`) at the end of their scope via a `@defer` block, and when the release count reaches zero, it is freed.
+  - ManagedStructs can be used with @method, below
+- **Example**:
+  ```c
+  struct Data { int id; };
+  @ManagedStruct(struct Data) ManagedData;
+  
+  ManagedData create(int id) {
+      ManagedData d; // Automatically allocates
+      d->id = id;
+      return d; // Automatically retained on return
+  }
+
+  void process(ManagedData p) {
+      // p is automatically retained on entry and released when process() exits
+      printf("ID: %d\\n", p->id);
+  }
+  
+  void example() {
+      ManagedData a = create(1); 
+      ManagedData b = a; // Assignment automatically retains 'a'
+      ManagedData arr[10]; // Allocates a managed block sized for 10 elements
+      process(a);
+      // a, b, and arr are automatically released at the end of the scope
+  }
+  ```
+- **Definition**: [std/managed-struct.hup](../std/managed-struct.hup)
+
 ## `@method`
 Enables "Object-Oriented" style syntax for C structs. It renames function definitions and transforms `object.method()` calls into standard C function calls.
 
-- **Usage**: `@method(TypeName) return_type method_name(params) { body }`
+- **Usage**: `@method([TypeName]) return_type method_name(params) { body }`
+  *(Note: `TypeName` can be omitted, in which case it is inferred from the type of the first argument of the method.)*
 - **Example**:
   ```c
   struct Point { int x, y; };
   
-  @method(struct Point) void print(struct Point *self) {
+  @method void print(struct Point *self) { // TypeName omitted, inferred as struct Point
       printf("%d, %d\n", self->x, self->y); 
   }
   
@@ -90,9 +138,11 @@ Enables "Object-Oriented" style syntax for C structs. It renames function defini
 ## `@package` & `@implements`
 Provides a module system for C. `@package` defines a public interface, prefixing symbols with the package name to avoid collisions. `@implements` flags a file as the authoritative implementation of a package.
 
+Crucially, it **automatically generates function prototypes in the compiled C standard header** (unlike C++). This means a package entirely describes itself to other files without needing separate manual header declarations.
+
 - **Usage**: 
-  - In `pkg.hup`: `@package(pkgName)`
-  - In `pkg.cup`: `@implements(pkgName)`
+  - In `pkg.hup`: `@package(pkgName)`, included by all consumers of the package (or `#include "pkg.h"` for consumers written in C)
+  - In `pkg.cup`: `@implements(pkgName)`, which should also include "pkg.hup", and then generates the function prototypes automatically.
 - **Definition**: [std/package.hup](../std/package.hup)
 
 ## `@trap`
@@ -107,3 +157,5 @@ Intercepts assignments to a variable or struct field and routes the new value th
   x = 10; // Outputs: Setting to 10
   ```
 - **Definition**: [std/trap.hup](../std/trap.hup)
+
+

@@ -1,0 +1,23 @@
+@define expressionType() {
+    const next = upp.nextNode();
+    try {
+        const typeResult = upp.getType(next, { resolve: true });
+        if (typeof typeResult === 'string') {
+            return `"${typeResult}"`;
+        } else if (typeResult) {
+            // It's a SourceNode (like a struct_specifier)
+            // It might be an anonymous struct or named.
+            // Returning the full text of a struct definition might be too long, but if that's what's needed:
+            // Let's return only the struct tag name if available, otherwise "struct".
+            if (['struct_specifier', 'union_specifier', 'enum_specifier'].includes(typeResult.type)) {
+                const tag = typeResult.child(1);
+                const kind = typeResult.type.split('_')[0];
+                return tag ? `"${kind} ${tag.text}"` : `"${kind}"`;
+            }
+            return `"${typeResult.text}"`;
+        }
+    } catch (e) {
+        // Fallback for unresolved
+    }
+    return `"unknown"`;
+}

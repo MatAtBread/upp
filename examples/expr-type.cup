@@ -1,0 +1,45 @@
+#include "io-lite.h"
+
+struct MyStruct {
+    int val;
+};
+
+struct MyStruct get_s() {
+    struct MyStruct s;
+    s.val = 0;
+    return s;
+}
+
+@define CaptureInts() {
+    const scope = upp.nextNode();
+    upp.withExpressionType(scope, "int", (n) => {
+        console.log(`[CaptureInts] Matched: ${n.text}`);
+        return n;
+    });
+}
+
+@define CaptureStructs(targetDef) {
+    const scope = upp.nextNode();
+    upp.withExpressionType(scope, targetDef, (n) => {
+        console.log(`[CaptureStructs] Matched: ${n.text}`);
+    });
+}
+
+int main() {
+    struct MyStruct s;
+    int a = 1;
+    float f = 3.0f;
+
+    @CaptureInts() {
+        a = a + 5;
+        f = f + 2.0f; // Note: '2.0f' is float, 'f' is float, this whole expr is float.
+    }
+
+    @CaptureStructs(s) {
+        s = get_s();
+        a = s.val + 2; // 's' is struct, 's.val' is int, '2' is int.
+        int v = get_s().val;
+    }
+
+    return 0;
+}

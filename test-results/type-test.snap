@@ -1,0 +1,138 @@
+==== examples/type-test.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+
+struct MyStruct {
+    int a;
+    char *b;
+    float c[10];
+};
+typedef struct MyStruct MyStructTypedef;
+typedef int MyInt;
+enum MyEnum { A, B, C };
+union MyUnion { int x; double y; };
+float my_function(int param1, double *param2) {
+    printf("param1: %s\n", "param1 : ""int");
+    printf("param2: %s\n", "param2 : ""double *");
+    return 0.0f;
+}
+int main() {
+    int idx = 0;
+    char ch = 'A';
+    double d = 1.0;
+    long l = 1L;
+    unsigned int ui = 1U;
+    unsigned long long ull = 1ULL;
+    char *str = "hello";
+    struct MyStruct s;
+    s.a = 1;
+    MyStructTypedef st;
+    MyInt mi = 5;
+    enum MyEnum e = A;
+    union MyUnion u;
+    int ***ppp = 0;
+    int arr[5][10];
+    printf("idx: %s\n", "idx : ""int");
+    printf("ch: %s\n", "ch : ""char");
+    printf("d: %s\n", "d : ""double");
+    printf("l: %s\n", "l : ""long");
+    printf("ui: %s\n", "ui : ""unsigned int");
+    printf("ull: %s\n", "ull : ""unsigned long long");
+    printf("str: %s\n", "str : ""char *");
+    printf("s: %s\n", "s : ""struct MyStruct");
+    printf("st: %s\n", "st : ""MyStructTypedef");
+    printf("mi: %s\n", "mi : ""MyInt");
+    printf("e: %s\n", "e : ""enum MyEnum");
+    printf("u: %s\n", "u : ""union MyUnion");
+    printf("ppp: %s\n", "ppp : ""int ***");
+    printf("arr: %s\n", "arr : ""int[][]");
+    printf("my_function: %s\n", "my_function : ""float (*)()");
+    printf("expr cast: %s\n", "(float)idx : ""float" );
+    printf("expr str: %s\n", "\"testing\" : ""char *" );
+    printf("expr char: %s\n", "'x' : ""char" );
+    printf("expr int: %s\n", "42 : ""int" );
+    printf("expr double: %s\n", "3.14 : ""double" );
+    printf("expr ul: %s\n", "100UL : ""unsigned long" );
+    printf("expr struct field: %s\n", "s.b : ""char *" );
+    printf("expr index: %s\n", "arr[0][1] : ""int" );
+    printf("expr bin add int+double: %s\n", "idx + d : ""double" );
+    printf("expr bin add int+float: %s\n", "idx + 2.0f : ""double" );
+    printf("expr bin add char+short: %s\n", "ch + (short)1 : ""int" );
+    printf("expr bin ptr add: %s\n", "str + 5 : ""char *" );
+    printf("expr bin ptr sub: %s\n", "str - str : ""long" );
+    printf("expr logical: %s\n", "idx && d : ""int" );
+    printf("expr relational: %s\n", "idx < d : ""int" );
+    printf("expr bitwise: %s\n", "idx | 1 : ""int" );
+    printf("expr unary deref: %s\n", "*str : ""char" );
+    printf("expr unary addr: %s\n", "&idx : ""int *" );
+    printf("expr unary not: %s\n", "!idx : ""int" );
+    printf("expr unary neg: %s\n", "-d : ""double" );
+    printf("expr unary bitnot: %s\n", "~idx : ""int" );
+    printf("expr sizeof: %s\n", "sizeof(s) : ""unsigned long" );
+    printf("expr update: %s\n", "idx++ : ""int" );
+    printf("expr function call: %s\n", "my_function(1, 0) : ""float" );
+    printf("expr function: %s\n", "my_function : ""float (*)()" );
+    printf("expr function ptr: %s\n", "&my_function : ""float (*)() *" );
+    my_function(1, 0);
+    return 0;
+}
+
+==== RUN OUTPUT ===
+idx: idx : int
+ch: ch : char
+d: d : double
+l: l : long
+ui: ui : unsigned int
+ull: ull : unsigned long long
+str: str : char *
+s: s : struct MyStruct
+st: st : MyStructTypedef
+mi: mi : MyInt
+e: e : enum MyEnum
+u: u : union MyUnion
+ppp: ppp : int ***
+arr: arr : int[][]
+my_function: my_function : float (*)()
+expr cast: (float)idx : float
+expr str: "testing" : char *
+expr char: 'x' : char
+expr int: 42 : int
+expr double: 3.14 : double
+expr ul: 100UL : unsigned long
+expr struct field: s.b : char *
+expr index: arr[0][1] : int
+expr bin add int+double: idx + d : double
+expr bin add int+float: idx + 2.0f : double
+expr bin add char+short: ch + (short)1 : int
+expr bin ptr add: str + 5 : char *
+expr bin ptr sub: str - str : long
+expr logical: idx && d : int
+expr relational: idx < d : int
+expr bitwise: idx | 1 : int
+expr unary deref: *str : char
+expr unary addr: &idx : int *
+expr unary not: !idx : int
+expr unary neg: -d : double
+expr unary bitnot: ~idx : int
+expr sizeof: sizeof(s) : unsigned long
+expr update: idx++ : int
+expr function call: my_function(1, 0) : float
+expr function: my_function : float (*)()
+expr function ptr: &my_function : float (*)() *
+param1: param1 : int
+param2: param2 : double *
+

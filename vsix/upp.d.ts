@@ -533,6 +533,7 @@ export class PatternMatcher {
 	 * @returns {{name: string; types: ConstraintSpec[]}}
 	 */
 	private parseWildcard;
+	private getCoreWildcard;
 }
 export interface MatchOptions {
 	deep?: boolean;
@@ -589,11 +590,6 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * @returns {SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null} The new node(s) or null.
 	 */
 	replace(n: SourceNode<LanguageNodeTypes>, newContent: string | SourceNode<any> | SourceNode<any>[] | SourceTree<any> | null): SourceNode<LanguageNodeTypes> | SourceNode<LanguageNodeTypes>[] | null;
-	/**
-	 * Finds the root node of the current context or the main tree.
-	 * @returns {SourceNode<LanguageNodeTypes> | null} The root node.
-	 */
-	findRoot(): SourceNode<LanguageNodeTypes> | null;
 	/**
 	 * Unmarks a node (and its visited ancestors) from the walker's done set,
 	 * so the walker will re-descend and re-yield when it reaches a common ancestor.
@@ -670,6 +666,13 @@ export class UppHelpersBase<LanguageNodeTypes extends string> {
 	 * @param {string} file - The file path to load.
 	 */
 	loadDependency(file: string): void;
+	/**
+	 * Calls another macro by name, executing it in the current context.
+	 * @param {string} name - Name of the macro to call.
+	 * @param {...any[]} args - Arguments to pass to the macro.
+	 * @returns {any} Result of the macro execution.
+	 */
+	callMacro(name: string, ...args: any[]): any;
 	/**
 	 * Finds the next logical node after the macro invocation.
 	 * @private
@@ -765,12 +768,13 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	/**
 	 * extracts the C type string from a definition node.
 	 * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
-	 * @param {{ resolve?: boolean }} [options] - Options for type resolution.
-	 * @returns {string} The C type string (e.g. "char *").
+	 * @param {{ resolve?: boolean, isCall?: boolean }} [options] - Options for type resolution.
+	 * @returns {string | SourceNode<CNodeTypes> | null} The C type string (e.g. "char *") or resolved node.
 	 */
-	getType(node: SourceNode<CNodeTypes> | string | null, options?: {
+	getType(node: SourceNode<CNodeTypes> | string | null | undefined, options?: {
 		resolve?: boolean;
-	}, _visited?: WeakSet<SourceNode<any>>): string;
+		isCall?: boolean;
+	}, _visited?: WeakSet<SourceNode<any>>): string | SourceNode<CNodeTypes> | null;
 	/**
 	 * Returns the number of array dimensions wrapping an identifier.
 	 * @param {SourceNode<CNodeTypes>} defNode - The definition node.
@@ -794,7 +798,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	 * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
 	 * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
 	 * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
-	 * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
+	 * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
 	 */
 	findDefinition(target: SourceNode<any> | string, nameOrOptions?: string | {
 		variable?: boolean;
@@ -808,7 +812,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	 * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
 	 * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
 	 * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
-	 * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
+	 * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
 	 */
 	findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions?: string | {
 		variable?: boolean;
@@ -836,6 +840,13 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 	 * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
 	 */
 	withReferences(definitionNode: SourceNode<CNodeTypes>, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void;
+	/**
+	 * Registers a rule to transform any expression within a scope that resolves to a specific target type.
+	 * @param {SourceNode<any>} scope - The scope within which to search for expressions.
+	 * @param {SourceNode<CNodeTypes> | string} target - The node or primitive string defining the type to match against.
+	 * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
+	 */
+	withExpressionType(scope: SourceNode<any>, target: SourceNode<CNodeTypes> | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void;
 	/**
 	 * Replaces placeholders in an array of nodes/strings.
 	 * @param {InterpolationValue[]} values The values to expand.

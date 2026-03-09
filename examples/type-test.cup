@@ -1,0 +1,105 @@
+#include "io-lite.h"
+
+@define typeOf(id) {
+    try {
+        const node = upp.findDefinition(id);
+        const type = upp.getType(node);
+        return [`"${id} : "`,`${JSON.stringify(type)}`];
+    } catch (e) {
+        console.error("typeOf error for " + id.text + ": " + e.message);
+        return [`"error"`];
+    }
+}
+
+@define exprTypeOf() {
+    const node = upp.consume();
+    const type = upp.getType(node);
+    return [`"${node.text.replace(/"/g,'\\"')} : "`,`${JSON.stringify(type)}`];
+}
+
+struct MyStruct {
+    int   a;
+    char *b;
+    float c[10];
+};
+
+typedef struct MyStruct MyStructTypedef;
+typedef int MyInt;
+
+enum MyEnum { A, B, C };
+union MyUnion { int x; double y; };
+
+float my_function(int param1, double *param2) {
+    printf("param1: %s\n", @typeOf(param1));
+    printf("param2: %s\n", @typeOf(param2));
+    return 0.0f;
+}
+
+int main() {
+    int idx = 0;
+    char ch = 'A';
+    double d = 1.0;
+    long l = 1L;
+    unsigned int ui = 1U;
+    unsigned long long ull = 1ULL;
+    char *str = "hello";
+    
+    struct MyStruct s;
+    s.a = 1;
+    
+    MyStructTypedef st;
+    MyInt mi = 5;
+    enum MyEnum e = A;
+    union MyUnion u;
+    
+    int ***ppp = 0;
+    int arr[5][10];
+    
+    printf("idx: %s\n", @typeOf(idx));
+    printf("ch: %s\n", @typeOf(ch));
+    printf("d: %s\n", @typeOf(d));
+    printf("l: %s\n", @typeOf(l));
+    printf("ui: %s\n", @typeOf(ui));
+    printf("ull: %s\n", @typeOf(ull));
+    printf("str: %s\n", @typeOf(str));
+    printf("s: %s\n", @typeOf(s));
+    printf("st: %s\n", @typeOf(st));
+    printf("mi: %s\n", @typeOf(mi));
+    printf("e: %s\n", @typeOf(e));
+    printf("u: %s\n", @typeOf(u));
+    printf("ppp: %s\n", @typeOf(ppp));
+    printf("arr: %s\n", @typeOf(arr));
+    printf("my_function: %s\n", @typeOf(my_function));
+    
+    printf("expr cast: %s\n", @exprTypeOf() (float)idx);
+    printf("expr str: %s\n", @exprTypeOf "testing");
+    printf("expr char: %s\n", @exprTypeOf 'x');
+    printf("expr int: %s\n", @exprTypeOf 42);
+    printf("expr double: %s\n", @exprTypeOf 3.14);
+    printf("expr ul: %s\n", @exprTypeOf 100UL);
+    printf("expr struct field: %s\n", @exprTypeOf s.b);
+    printf("expr index: %s\n", @exprTypeOf arr[0][1]);
+    
+    printf("expr bin add int+double: %s\n", @exprTypeOf() idx + d);
+    printf("expr bin add int+float: %s\n", @exprTypeOf() idx + 2.0f);
+    printf("expr bin add char+short: %s\n", @exprTypeOf() ch + (short)1);
+    printf("expr bin ptr add: %s\n", @exprTypeOf() str + 5);
+    printf("expr bin ptr sub: %s\n", @exprTypeOf() str - str);
+    printf("expr logical: %s\n", @exprTypeOf() idx && d);
+    printf("expr relational: %s\n", @exprTypeOf() idx < d);
+    printf("expr bitwise: %s\n", @exprTypeOf() idx | 1);
+    printf("expr unary deref: %s\n", @exprTypeOf() *str);
+    printf("expr unary addr: %s\n", @exprTypeOf() &idx);
+    printf("expr unary not: %s\n", @exprTypeOf() !idx);
+    printf("expr unary neg: %s\n", @exprTypeOf() -d);
+    printf("expr unary bitnot: %s\n", @exprTypeOf() ~idx);
+    printf("expr sizeof: %s\n", @exprTypeOf() sizeof(s));
+    printf("expr update: %s\n", @exprTypeOf() idx++);
+    
+    printf("expr function call: %s\n", @exprTypeOf() my_function(1, 0));
+    printf("expr function: %s\n", @exprTypeOf() my_function);
+    printf("expr function ptr: %s\n", @exprTypeOf() &my_function);
+    my_function(1, 0);
+
+    return 0;
+}

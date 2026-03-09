@@ -1,4 +1,5 @@
-==== examples/recursive_macros.c ===
+==== examples/primitive_method.c ===
+#include "method.h"
 /* A minimal C stdio/stdlib/string for upp to make it easy to
    see the output of the examples but permit compilation
 */
@@ -14,42 +15,21 @@ extern int snprintf(char *str, unsigned long size, const char *format, ...);
 extern unsigned long strlen(const char *s);
 extern void *stderr;
 extern void *_stderr;
-#include "method.h"
-#include "defer.h"
-int some_condition = 0;
-struct _CharData {
-    char * data;
-};
-typedef struct _CharData CharData;
-typedef struct _CharData* CharDataPtr;
- void _CharData_method_print(CharData * s) {
-    printf("%s\n", s -> data);
-}
- void _CharData_method_Defer(CharData * s) {
-    _CharData_method_print(s);
-    free(s->data);
+
+ int _int_method_fnarr(int *n) {
+    return (*n) + 1;
 }
 int main() {
-    CharData s1;
-    s1.data = malloc(100);
-    strcpy(s1.data, "Hello");
-    _CharData_method_print(&s1);
-    CharDataPtr s2 = &s1;
-    _CharData_method_print(s2);
-    if (some_condition) {
-        return 1;
-    }
+    int n = 1;
+    int m = _int_method_fnarr(&n);
+    printf("%d %d\n", n, m);
     return 0;
 }
-
-==== std/defer.h ===
-
 
 ==== std/method.h ===
 
 
 
 ==== RUN OUTPUT ===
-Hello
-Hello
+1 2
 

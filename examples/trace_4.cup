@@ -1,14 +1,34 @@
 #include "io-lite.h"
 
+@define var() {
+    upp.withMatch(
+        // Read the next item in the AST
+        upp.nextNode(),
+        // Parse it as a function
+        '$returnType $modifiers$name;',
+    ({returnType, modifiers, name})=>
+        // return it with the extra puts(...)
+        $`/* 
+        R:${returnType.text} M:${modifiers} N:${name.text}; 
+        ${returnType.text} ${modifiers.for("renamed_" + name.text)};
+        */`)
+    return null;
+}
+
+@var int *x[];
+@var char y[];
+@var unsigned long *z;
+@var bool b;
+
 @define trace() {
     upp.withMatch(
         // Read the next item in the AST
         upp.nextNode('function_definition'),
         // Parse it as a function
-        '$returnType $name($params__until) { $body__until }',
-    ({returnType, name, params, body})=>
+        '$returnType $modifiers$name($params__until) { $body__until }',
+    ({returnType, modifiers, name, params, body})=>
         // return it with the extra puts(...)
-        $`${returnType} ${name}(${params}) { 
+        $`${returnType} ${modifiers}(${params}) { 
     puts("Entering ${name.text}\\n");
     ${body}
 }`)
