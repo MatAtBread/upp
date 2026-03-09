@@ -17,22 +17,22 @@ extern void *_stderr;
 #include "method.h"
 #include "defer.h"
 int some_condition = 0;
-struct _String {
+struct _CharData {
     char * data;
 };
-typedef struct _String String;
- void _String_method_print(String * s) {
+typedef struct _CharData CharData;
+ void _CharData_method_print(CharData * s) {
     printf("%s\n", s -> data);
 }
- void _String_method_Defer(String * s) {
-    _String_method_print(s);
+ void _CharData_method_Defer(CharData * s) {
+    _CharData_method_print(s);
     free(s->data);
 }
 int main() {
-    String s1;
+    CharData s1;
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
-    _String_method_print(&s1);
+    _CharData_method_print(&s1);
     if (some_condition) {
         return 1;
     }

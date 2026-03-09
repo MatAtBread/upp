@@ -4,22 +4,22 @@
 
 int some_condition = 0;
 
-struct _String {
+struct _CharData {
     char * data;
 };
-typedef struct _String String;
+typedef struct _CharData CharData;
 
-@method void print(String * s) {
+@method void print(CharData * s) {
     printf("%s\n", s -> data);
 }
 
-@method(String) void Defer(String * s) {
+@method(CharData) void Defer(CharData * s) {
     s->print();
     free(s->data);
 }
 
 int main() {
-    String s1;
+    CharData s1;
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
     s1.print();

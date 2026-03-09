@@ -1,0 +1,55 @@
+[CaptureInts] Matched: a
+[CaptureInts] Matched: a
+[CaptureInts] Matched: 5
+[CaptureInts] Matched: a + 5
+[CaptureInts] Matched: a = a + 5
+[CaptureStructs] Matched: s
+[CaptureStructs] Matched: get_s()
+[CaptureStructs] Matched: s = get_s()
+[CaptureStructs] Matched: s
+[CaptureStructs] Matched: get_s()
+==== examples/expr-type.c ===
+/* A minimal C stdio/stdlib/string for upp to make it easy to
+   see the output of the examples but permit compilation
+*/
+extern int puts(const char *s);
+extern int printf(const char *format, ...);
+extern int fputs(const char *s, void *stream);
+extern void *malloc(unsigned long n);
+extern void free(void *p);
+extern char *strcpy(char *dest, const char *src);
+extern char *strncat(char *dest, const char *src, unsigned long n);
+extern int strcmp(const char *s1, const char *s2);
+extern int snprintf(char *str, unsigned long size, const char *format, ...);
+extern unsigned long strlen(const char *s);
+extern void *stderr;
+extern void *_stderr;
+
+struct MyStruct {
+    int val;
+};
+struct MyStruct get_s() {
+    struct MyStruct s;
+    s.val = 0;
+    return s;
+}
+
+
+int main() {
+    struct MyStruct s;
+    int a = 1;
+    float f = 3.0f;
+    /* CaptureInts()*/ {
+        a = a + 5;
+        f = f + 2.0f; // Note: '2.0f' is float, 'f' is float, this whole expr is float.
+    }
+    /* CaptureStructs(s)*/ {
+        s = get_s();
+        a = s.val + 2; // 's' is struct, 's.val' is int, '2' is int.
+        int v = get_s().val;
+    }
+    return 0;
+}
+
+==== RUN OUTPUT ===
+

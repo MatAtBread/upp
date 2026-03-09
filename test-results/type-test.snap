@@ -60,14 +60,14 @@ int main() {
     printf("u: %s\n", "u : ""union MyUnion");
     printf("ppp: %s\n", "ppp : ""int ***");
     printf("arr: %s\n", "arr : ""int[][]");
-    printf("my_function: %s\n", "my_function : ""float");
+    printf("my_function: %s\n", "my_function : ""float (*)()");
     printf("expr cast: %s\n", "(float)idx : ""float" );
     printf("expr str: %s\n", "\"testing\" : ""char *" );
     printf("expr char: %s\n", "'x' : ""char" );
     printf("expr int: %s\n", "42 : ""int" );
     printf("expr double: %s\n", "3.14 : ""double" );
     printf("expr ul: %s\n", "100UL : ""unsigned long" );
-    printf("expr struct field: %s\n", "s.b : ""int" );
+    printf("expr struct field: %s\n", "s.b : ""char *" );
     printf("expr index: %s\n", "arr[0][1] : ""int" );
     printf("expr bin add int+double: %s\n", "idx + d : ""double" );
     printf("expr bin add int+float: %s\n", "idx + 2.0f : ""double" );
@@ -84,8 +84,9 @@ int main() {
     printf("expr unary bitnot: %s\n", "~idx : ""int" );
     printf("expr sizeof: %s\n", "sizeof(s) : ""unsigned long" );
     printf("expr update: %s\n", "idx++ : ""int" );
-    printf("expr function: %s\n", "my_function : ""float" );
-    printf("expr function ptr: %s\n", "&my_function : ""float *" );
+    printf("expr function call: %s\n", "my_function(1, 0) : ""float" );
+    printf("expr function: %s\n", "my_function : ""float (*)()" );
+    printf("expr function ptr: %s\n", "&my_function : ""float (*)() *" );
     my_function(1, 0);
     return 0;
 }
@@ -105,14 +106,14 @@ e: e : enum MyEnum
 u: u : union MyUnion
 ppp: ppp : int ***
 arr: arr : int[][]
-my_function: my_function : float
+my_function: my_function : float (*)()
 expr cast: (float)idx : float
 expr str: "testing" : char *
 expr char: 'x' : char
 expr int: 42 : int
 expr double: 3.14 : double
 expr ul: 100UL : unsigned long
-expr struct field: s.b : int
+expr struct field: s.b : char *
 expr index: arr[0][1] : int
 expr bin add int+double: idx + d : double
 expr bin add int+float: idx + 2.0f : double
@@ -129,8 +130,9 @@ expr unary neg: -d : double
 expr unary bitnot: ~idx : int
 expr sizeof: sizeof(s) : unsigned long
 expr update: idx++ : int
-expr function: my_function : float
-expr function ptr: &my_function : float *
+expr function call: my_function(1, 0) : float
+expr function: my_function : float (*)()
+expr function ptr: &my_function : float (*)() *
 param1: param1 : int
 param2: param2 : double *
 

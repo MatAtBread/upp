@@ -1,5 +1,5 @@
 ==== examples/forward.c ===
-void foo();
+void foo(int a);
 void bar();
 
 #include "forward.h"
@@ -21,10 +21,10 @@ extern void *_stderr;
 
 
 int main() {
-    foo();
+    foo(0);
     return 0;
 }
-void foo() {
+void foo(int a) {
     printf("Foo calls bar\n");
     bar();
 }

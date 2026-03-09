@@ -96,6 +96,7 @@ int main() {
     printf("expr sizeof: %s\n", @exprTypeOf() sizeof(s));
     printf("expr update: %s\n", @exprTypeOf() idx++);
     
+    printf("expr function call: %s\n", @exprTypeOf() my_function(1, 0));
     printf("expr function: %s\n", @exprTypeOf() my_function);
     printf("expr function ptr: %s\n", @exprTypeOf() &my_function);
     my_function(1, 0);

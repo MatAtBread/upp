@@ -70,14 +70,12 @@
             // Transform f.print() into _Foo_method_print(&f)
             const innerArgNodes = argsNode ? argsNode.children.slice(1, -1) : [];
             
-            const objDef = helpers.findDefinitionOrNull(targetNode);
-            const objTypeRaw = objDef ? helpers.getType(objDef, { resolve: true }) : "";
+            // We don't want `{ resolve: true }` because we want the local variable's type string, 
+            // e.g., "String" or "String *" to see if it's already a pointer.
+            const objTypeRaw = helpers.getType(targetNode);
             const objType = typeof objTypeRaw === 'string' ? objTypeRaw : objTypeRaw?.text || "";
             
-            // Use RegExp constructor to avoid UPP parser brace-counting bugs with /\\{[^}]*\\}/
-            const bodyRegex = new RegExp('\\\\{[^}]*\\\\}', 'g');
-            const cleanType = objType.replace(bodyRegex, '');
-            const isPointer = cleanType.includes('*');
+            const isPointer = objType.includes('*');
             const prefix = isPointer ? "" : "&";
 
             const hasArgs = innerArgNodes.length > 0;

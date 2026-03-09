@@ -149,10 +149,10 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
   /**
    * extracts the C type string from a definition node.
    * @param {SourceNode<CNodeTypes> | string | null} node - The identifier node or name.
-   * @param {{ resolve?: boolean }} [options] - Options for type resolution.
-   * @returns {string} The C type string (e.g. "char *").
+   * @param {{ resolve?: boolean, isCall?: boolean }} [options] - Options for type resolution.
+   * @returns {string | SourceNode<CNodeTypes> | null} The C type string (e.g. "char *") or resolved node.
    */
-  getType(node: SourceNode<CNodeTypes> | string | null | undefined, options: { resolve?: boolean } = {}, _visited: WeakSet<SourceNode<any>> = new WeakSet()): string | SourceNode<CNodeTypes> | null {
+  getType(node: SourceNode<CNodeTypes> | string | null | undefined, options: { resolve?: boolean, isCall?: boolean } = {}, _visited: WeakSet<SourceNode<any>> = new WeakSet()): string | SourceNode<CNodeTypes> | null {
     if (!node) return null;
     let target = typeof node === 'string' ? this.findDefinitionOrNull(node) : node;
     if (!target) return null;
@@ -176,6 +176,11 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       if (lower.endsWith('l')) return "long";
       if (lower.endsWith('u')) return "unsigned int";
       return "int";
+    }
+
+    if (target.type === 'assignment_expression') {
+      const left = target.named.left || target.child(0);
+      if (left) return this.getType(left, options, _visited);
     }
 
     if (target.type === 'identifier' || target.type === 'field_identifier') {
@@ -213,6 +218,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     if (target.type === 'parenthesized_expression') {
       const inner = target.child(1);
       if (inner) return this.getType(inner, options, _visited);
+    }
+
+    if (target.type === 'call_expression') {
+      const func = target.named.function || target.child(0);
+      if (func) {
+        // Evaluate the type of the function being called.
+        // Evaluate the return type of the function being called.
+        return this.getType(func, { ...options, isCall: true }, _visited);
+      }
     }
 
     if (target.type === 'update_expression') {
@@ -372,13 +386,31 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
     if (idNode) {
       let p: SourceNode<CNodeTypes> | null = idNode;
+      let isFunction = false;
+
       while (p && p !== declNode) {
-        if (p.type === 'pointer_declarator') {
+        if (p.type === 'function_declarator') {
+          isFunction = true;
+        } else if (p.type === 'pointer_declarator') {
           prefix += "*";
         } else if (p.type === 'array_declarator') {
           suffix += "[]";
         }
         p = p.parent || (p as any)._detachedParent;
+      }
+
+      if (declNode.type === 'function_definition') {
+        isFunction = true;
+      }
+
+      if (isFunction && !options.isCall) {
+        if (options.resolve) {
+          return declNode;
+        }
+        // Yield function signature type fallback string
+        let retType = this.getType(declNode, { ...options, isCall: true }, _visited);
+        let retTypeStr = typeof retType === 'string' ? retType : (retType ? retType.text : 'void');
+        return `${retTypeStr} (*)()`;
       }
     }
 
@@ -434,8 +466,14 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
           const tag = typeNode.child(1);
           if (tag) {
             let def = this.findDefinitionOrNull(tag.text, { tag: true });
-            if (def && def.parent && def.parent.type === typeNode.type) {
-              return def.parent as SourceNode<CNodeTypes>;
+
+            if (def) {
+              if (def.type === typeNode.type) {
+                return def as SourceNode<CNodeTypes>;
+              }
+              if (def.parent && def.parent.type === typeNode.type) {
+                return def.parent as SourceNode<CNodeTypes>;
+              }
             }
           }
         }
@@ -526,7 +564,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     const nameNode = funcDeclarator.named.declarator;
     const name = nameNode ? nameNode.text : "";
     const params = funcDeclarator.named.parameters ? funcDeclarator.named.parameters.text : "()";
-    const returnTypeRaw = this.getType(fnNode);
+    const returnTypeRaw = this.getType(fnNode, { isCall: true });
     const returnType = typeof returnTypeRaw === 'string' ? returnTypeRaw : returnTypeRaw ? returnTypeRaw.text : "void";
 
     return new FunctionSignature(
@@ -544,7 +582,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
    * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
    * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
-   * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
+   * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
    */
   findDefinition(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> {
     const def = this.findDefinitionOrNull(target, nameOrOptions, options);
@@ -558,7 +596,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
    * @param {SourceNode<any>|string} target - The identifier node, a container node, or a scoping node (if name is provided).
    * @param {string | { variable?: boolean, tag?: boolean } | null} [nameOrOptions] - The name to find or options object.
    * @param {{ variable?: boolean, tag?: boolean }} [options] - Resolution options.
-   * @returns {SourceNode<CNodeTypes>} The declaration/definition node.
+   * @returns {SourceNode<CNodeTypes>|null} The declaration/definition node or null.
    */
   findDefinitionOrNull(target: SourceNode<any> | string, nameOrOptions: string | { variable?: boolean, tag?: boolean } | null = null, options: { variable?: boolean, tag?: boolean } = { variable: true, tag: true }): SourceNode<CNodeTypes> | null {
     let name: string | null = null;
@@ -656,11 +694,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
             if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
               // For structs/unions/enums, the tag is the second child of the specifier
               if (finalOptions.tag && p.child(1) === idNode) {
-                if (p.named.body) { // Full definition
-                  return p as SourceNode<CNodeTypes>;
-                }
-                // Forward declaration: parent is 'declaration' but no declarator
-                if (p.parent?.type === 'declaration' && !p.parent.named.declarator) {
+                const hasBody = !!p.named.body;
+                const parentNode = p.parent || (p as any)._detachedParent;
+                const hasDeclarator = parentNode && (
+                  parentNode.named.declarator ||
+                  parentNode.children.some((c: any) => c.type.includes('declarator'))
+                );
+
+                // A tag is a valid definition if it has a body OR it lacks a declarator (forward declaration)
+                if (hasBody || !hasDeclarator) {
                   return p as SourceNode<CNodeTypes>;
                 }
                 // Otherwise, it's just a reference (like `struct S s;`), skip it
@@ -836,6 +878,56 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         const shadowHelpers = Object.create(helpers);
         shadowHelpers.isDeclaration = () => node === declarationIdNode;
         return callback(node as SourceNode<CNodeTypes>, shadowHelpers as UppHelpersC);
+      }
+    });
+  }
+
+  /**
+   * Registers a rule to transform any expression within a scope that resolves to a specific target type.
+   * @param {SourceNode<any>} scope - The scope within which to search for expressions.
+   * @param {SourceNode<CNodeTypes> | string} target - The node or primitive string defining the type to match against.
+   * @param {function(SourceNode<CNodeTypes>, UppHelpersC): string|null|undefined} callback - Transformation callback.
+   */
+  withExpressionType(scope: SourceNode<any>, target: SourceNode<CNodeTypes> | string, callback: (n: SourceNode<CNodeTypes>, helpers: UppHelpersC) => string | null | undefined): void {
+    // Resolve the target type signature precisely once when registering.
+    let targetType: string | SourceNode<CNodeTypes> | null = this.getType(target, { resolve: true });
+
+    // If it did not resolve to a declaration, and the input was a string, assume it's a primitive type literal (e.g. "int")
+    if (!targetType) {
+      if (typeof target === 'string') targetType = target;
+      else throw new Error(`helpers.withExpressionType: could not resolve target type for '${target.text}'`);
+    }
+
+    this.registry.registerPendingRule({
+      matcher: (node, helpers) => {
+        // Only evaluate expressions and literals
+        const t = node.type;
+        if (!t.endsWith('expression') && !t.endsWith('identifier') && !t.endsWith('literal')) return false;
+
+        // Ensure the node is a descendant of the registration scope
+        let isDescendant = false;
+        let walkp: SourceNode<any> | null = node;
+        while (walkp) {
+          if (walkp === scope) {
+            isDescendant = true;
+            break;
+          }
+          walkp = walkp.parent || (walkp as any)._detachedParent;
+        }
+        if (!isDescendant) return false;
+
+        // Compare types
+        const exprType = (helpers as UppHelpersC).getType(node as SourceNode<CNodeTypes>, { resolve: true });
+        if (!exprType) return false;
+
+        const isMatch = (typeof targetType === 'string')
+          ? (typeof exprType === 'string' && exprType === targetType)
+          : (exprType === targetType);
+
+        return isMatch;
+      },
+      callback: (node, helpers) => {
+        return callback(node as SourceNode<CNodeTypes>, helpers as UppHelpersC);
       }
     });
   }
