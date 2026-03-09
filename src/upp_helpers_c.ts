@@ -187,12 +187,137 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     }
 
     if (target.type === 'field_expression') {
-      const field = target.named.field;
+      const field = target.named.field || target.child(2);
       if (field) {
         const def = this.findDefinitionOrNull(field);
         if (def && def !== target && !_visited.has(def)) {
           _visited.add(target);
           return this.getType(def, options, _visited);
+        }
+      }
+    }
+
+    if (target.type === 'subscript_expression') {
+      const arg = target.named.argument || target.child(0);
+      if (arg) {
+        const arrayType = this.getType(arg, options, _visited);
+        if (typeof arrayType === 'string') {
+          if (arrayType.endsWith('[]')) return arrayType.slice(0, -2).trim();
+          if (arrayType.includes('*')) return arrayType.replace(/\*\s*$/, '').trim();
+          return arrayType;
+        }
+        return arrayType;
+      }
+    }
+
+    if (target.type === 'parenthesized_expression') {
+      const inner = target.child(1);
+      if (inner) return this.getType(inner, options, _visited);
+    }
+
+    if (target.type === 'update_expression') {
+      const inner = target.named.argument || target.child(0);
+      if (inner) return this.getType(inner, options, _visited);
+    }
+
+    if (target.type === 'sizeof_expression') {
+      return "unsigned long";
+    }
+
+    if (target.type === 'unary_expression' || target.type === 'pointer_expression') {
+      const operator = target.named.operator?.text || target.child(0)?.text;
+      const arg = target.named.argument || target.child(1);
+      if (arg) {
+        if (operator === '&') {
+          const argType = this.getType(arg, options, _visited);
+          if (typeof argType === 'string') {
+            return `${argType} *`;
+          }
+          return argType; // if SourceNode, caller has to handle wrapping if resolving address-of struct
+        }
+        if (operator === '*') {
+          const argType = this.getType(arg, options, _visited);
+          if (typeof argType === 'string') {
+            if (argType.endsWith('*')) return argType.replace(/\*\s*$/, '').trim();
+            if (argType.endsWith('[]')) return argType.slice(0, -2).trim();
+            throw new Error(`helpers.getType: cannot dereference non-pointer type '${argType}' in expression '${target.text}'`);
+          }
+          return argType;
+        }
+        if (operator === '!') {
+          return "int";
+        }
+        if (operator === '~' || operator === '+' || operator === '-') {
+          const argType = this.getType(arg, options, _visited);
+          if (typeof argType === 'string') {
+            if (argType.includes('*') || argType.endsWith('[]')) throw new Error(`helpers.getType: invalid operand to unary '${operator}' in expression '${target.text}'`);
+            // Integer promotion
+            if (['char', 'short', 'bool', '_Bool'].includes(argType)) return 'int';
+            return argType;
+          }
+          return argType;
+        }
+      }
+    }
+
+    if (target.type === 'binary_expression') {
+      const left = target.named.left || target.child(0);
+      const right = target.named.right || target.child(2);
+      const operator = target.named.operator?.text || target.child(1)?.text;
+
+      if (left && right && operator) {
+        const lType = this.getType(left, options, _visited) as string;
+        const rType = this.getType(right, options, _visited) as string;
+
+        if (typeof lType === 'string' && typeof rType === 'string') {
+          // Relational/Logical operators always return int in C
+          if (['==', '!=', '<', '>', '<=', '>=', '&&', '||'].includes(operator)) {
+            return "int";
+          }
+
+          const lIsPtr = lType.includes('*') || lType.endsWith('[]');
+          const rIsPtr = rType.includes('*') || rType.endsWith('[]');
+          const lIsFloat = lType === 'float' || lType === 'double';
+          const rIsFloat = rType === 'float' || rType === 'double';
+
+          // Bitwise & Modulo restrictions
+          if (['%', '|', '&', '^', '<<', '>>'].includes(operator)) {
+            if (lIsFloat || rIsFloat) throw new Error(`helpers.getType: invalid operands to binary '${operator}' (have '${lType}' and '${rType}') in expression '${target.text}'`);
+            if (lIsPtr || rIsPtr) throw new Error(`helpers.getType: invalid pointer operands to binary '${operator}' in expression '${target.text}'`);
+          }
+
+          if (lIsPtr || rIsPtr) {
+            if (operator === '+') {
+              if (lIsPtr && rIsPtr) throw new Error(`helpers.getType: cannot add two pointers in expression '${target.text}'`);
+              return lIsPtr ? lType : rType;
+            }
+            if (operator === '-') {
+              if (lIsPtr && rIsPtr) {
+                // Technically ptrdiff_t, but long is conventionally used if ptrdiff_t is not strictly modeled
+                return "long";
+              }
+              if (rIsPtr && !lIsPtr) throw new Error(`helpers.getType: invalid operands to binary '-' (have '${lType}' and '${rType}') in expression '${target.text}'`);
+              return lType;
+            }
+            throw new Error(`helpers.getType: invalid operands to binary '${operator}' (have '${lType}' and '${rType}') in expression '${target.text}'`);
+          }
+
+          // Scalar promotion hierarchy
+          const ranks = ['int', 'unsigned int', 'long', 'unsigned long', 'long long', 'unsigned long long', 'float', 'double'];
+          let lNorm = lType;
+          let rNorm = rType;
+          if (['char', 'short', 'bool', '_Bool'].includes(lNorm)) lNorm = 'int';
+          if (['char', 'short', 'bool', '_Bool'].includes(rNorm)) rNorm = 'int';
+
+          const lRank = ranks.indexOf(lNorm);
+          const rRank = ranks.indexOf(rNorm);
+
+          if (lRank !== -1 && rRank !== -1) {
+            return ranks[Math.max(lRank, rRank)];
+          }
+
+          // If structs or something else is somehow involved in arithmetic without overloading (C doesn't have it, but just in case), return the first one
+          return lType;
         }
       }
     }
@@ -207,9 +332,9 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       }
       while (declNode &&
         !['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
-        declNode = declNode.parent || undefined;
+        declNode = declNode.parent || (declNode as any)._detachedParent || undefined;
       }
-      if (!declNode) return "";
+      if (!declNode) return null;
 
       if (['struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
         idNode = declNode.child(1) || undefined; // The tag
@@ -227,7 +352,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     } else {
       while (declNode &&
         !['declaration', 'parameter_declaration', 'field_declaration', 'type_definition', 'function_definition', 'struct_specifier', 'union_specifier', 'enum_specifier'].includes(declNode.type)) {
-        declNode = declNode.parent || undefined;
+        declNode = declNode.parent || (declNode as any)._detachedParent || undefined;
       }
     }
 
@@ -253,7 +378,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         } else if (p.type === 'array_declarator') {
           suffix += "[]";
         }
-        p = p.parent as SourceNode<CNodeTypes> | null;
+        p = p.parent || (p as any)._detachedParent;
       }
     }
 
@@ -305,6 +430,15 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
 
     if (options.resolve && typeNode && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(typeNode.type as string)) {
       if (!prefix && !suffix) {
+        if (!typeNode.named.body) {
+          const tag = typeNode.child(1);
+          if (tag) {
+            let def = this.findDefinitionOrNull(tag.text, { tag: true });
+            if (def && def.parent && def.parent.type === typeNode.type) {
+              return def.parent as SourceNode<CNodeTypes>;
+            }
+          }
+        }
         return typeNode as SourceNode<CNodeTypes>;
       }
     }
@@ -447,18 +581,16 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         if (!idNode) {
           const ids = target.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier' || n.type === 'statement_identifier');
           if (ids.length === 1) idNode = ids[0];
-          else if (ids.length > 1) {
-            throw new Error("helpers.findDefinition: target contains multiple identifiers. You must supply a more specific node.");
-          }
         }
 
-        if (!idNode) throw new Error("helpers.findDefinition: no valid identifier found target");
-        name = (idNode as any).searchableText as string;
-        startScope = idNode.parent;
+        if (!idNode) return null;
+        name = ((idNode as any).searchableText as string) || idNode.text;
+        startScope = idNode.parent || (idNode as any)._detachedParent || this.contextNode || this.root;
         cacheKey = idNode.startIndex; // Position-based caching
 
-        if (idNode.type === 'field_identifier' && idNode.parent?.type === 'field_expression' && idNode.parent.named.field === idNode) {
-          const argType = this.getType(idNode.parent.named.argument, { resolve: true });
+        let p = idNode.parent || (idNode as any)._detachedParent;
+        if (idNode.type === 'field_identifier' && p?.type === 'field_expression' && p.named.field === idNode) {
+          const argType = this.getType(p.named.argument, { resolve: true });
           if (argType instanceof SourceNode && ['struct_specifier', 'union_specifier'].includes(argType.type as string)) {
             structScopeForField = argType as SourceNode<CNodeTypes>;
             startScope = structScopeForField;
@@ -468,17 +600,19 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
       }
     }
 
-    if (!name || !startScope) throw new Error("helpers.findDefinition: no valid identifier or scope found");
+    if (!name || !startScope) {
+      return null;
+    }
 
     const findInScope = (scope: SourceNode<CNodeTypes>, isStructScope = false) => {
       const allIds = scope.find<CNodeTypes>((n: SourceNode<CNodeTypes>) => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier');
       const filtered = allIds.filter((idNode: SourceNode<CNodeTypes>) => {
         if (isStructScope) {
-          let p = idNode.parent;
+          let p = idNode.parent || (idNode as any)._detachedParent;
           while (p && p !== scope) {
             if (p.type === 'struct_specifier' || p.type === 'union_specifier') return false;
             if (p.type === 'field_declaration' && idNode.type === 'field_identifier') return true;
-            p = p.parent;
+            p = p.parent || (p as any)._detachedParent;
           }
           return false;
         }
@@ -511,7 +645,7 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
                     isInsideValue = true;
                     break;
                   }
-                  walk = walk.parent;
+                  walk = walk.parent || (walk as any)._detachedParent;
                 }
                 if (isInsideValue) break;
                 isDeclarator = true;
@@ -520,10 +654,19 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
               }
             }
             if (p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') {
-              if (finalOptions.tag && p.child(1) && p.child(1) === idNode) {
-                return p as SourceNode<CNodeTypes>;
+              // For structs/unions/enums, the tag is the second child of the specifier
+              if (finalOptions.tag && p.child(1) === idNode) {
+                if (p.named.body) { // Full definition
+                  return p as SourceNode<CNodeTypes>;
+                }
+                // Forward declaration: parent is 'declaration' but no declarator
+                if (p.parent?.type === 'declaration' && !p.parent.named.declarator) {
+                  return p as SourceNode<CNodeTypes>;
+                }
+                // Otherwise, it's just a reference (like `struct S s;`), skip it
+                break; // Break out of the while(p) loop, continue to next idNode
               }
-              break;
+              break; // Break out of the while(p) loop, continue to next idNode
             }
             if (p.type === 'parameter_declaration' || p.type === 'declaration' || p.type === 'type_definition' || p.type === 'field_declaration' || p.type === 'function_definition') {
               if (isDeclarator || (idNode.parent === p && idNode.fieldName !== 'type')) {
@@ -533,14 +676,14 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
               }
               break;
             }
-            p = p.parent;
+            p = p.parent || (p as any)._detachedParent;
           }
         }
       }
 
       if (targetIsField && current === structScopeForField) break;
       if (current.type === 'translation_unit') break;
-      current = current.parent;
+      current = current.parent || (current as any)._detachedParent;
     }
 
     return null;
@@ -568,10 +711,10 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
         n.type === 'identifier' || n.type === 'field_identifier' || n.type === 'type_identifier'
       );
       idInDef = idsInDef.find(n => {
-        let p = n.parent;
+        let p = n.parent || (n as any)._detachedParent;
         while (p && p !== targetDef) {
           if (p.type.endsWith('declarator') || p.type === 'init_declarator' || p.type === 'struct_specifier' || p.type === 'union_specifier' || p.type === 'enum_specifier') return true;
-          p = p.parent;
+          p = p.parent || (p as any)._detachedParent;
         }
         return false;
       }) as SourceNode<CNodeTypes> | null;
@@ -628,23 +771,25 @@ export class UppHelpersC extends UppHelpersBase<CNodeTypes> {
     if (!idNode) {
       const ids = definitionNode.find<CNodeTypes>(n => n.type === 'identifier' || n.type === 'type_identifier' || n.type === 'field_identifier');
       // We want the node that is acting as the "declarator"
-      idNode = ids.find(n => {
-        let p = n.parent;
-        while (p && p !== definitionNode) {
-          const t = p.type;
-          if (t.endsWith('declarator') || t === 'init_declarator') return true;
-          p = p.parent;
-        }
-        return false;
-      }) || ids.find(n => {
-        let p = n.parent;
-        while (p && p !== definitionNode) {
-          const t = p.type;
-          if (t === 'struct_specifier' || t === 'union_specifier' || t === 'enum_specifier') return true;
-          p = p.parent;
-        }
-        return false;
-      }) || ids.find(n => n.fieldName === 'declarator' || n.parent?.fieldName === 'declarator') || ids[ids.length - 1] || null;
+      // Prioritize the identifier that findDefinition resolves back to this definitionNode.
+      idNode = ids.find(id => this.findDefinitionOrNull(id) === definitionNode) ||
+        ids.find(n => {
+          let p = n.parent;
+          while (p && p !== definitionNode) {
+            const t = p.type;
+            if (t.endsWith('declarator') || t === 'init_declarator') return true;
+            p = p.parent;
+          }
+          return false;
+        }) || ids.find(n => n.fieldName === 'declarator' || n.parent?.fieldName === 'declarator') || ids.find(n => {
+          let p = n.parent;
+          while (p && p !== definitionNode) {
+            const t = p.type;
+            if (t === 'struct_specifier' || t === 'union_specifier' || t === 'enum_specifier') return true;
+            p = p.parent;
+          }
+          return false;
+        }) || ids[ids.length - 1] || null;
     }
 
     if (!idNode) return;

@@ -20,8 +20,12 @@ int main() {
     @DefRef("x") MyType x = 10;
     x = 5;
     fn(x);
-    @DefRef("i") struct S i;
-    @DefRef("u") i.u = 1;
+    struct @DefRef("01")S i;
+    struct S @DefRef("02") j;
+    @DefRef("03") struct S k;
+    @DefRef("u1") i.u = 1;
+    @DefRef("u2") j.u = 2;
+    @DefRef("u3") k.u = 3;
     fn;
     return 0;
 }
