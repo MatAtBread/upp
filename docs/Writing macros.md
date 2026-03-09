@@ -303,9 +303,26 @@ Registers a callback to be invoked on a specific scope node.
 These helpers are available when the language is set to C.
 
 ### `upp.getType`
-Extracts the C type string for a definition node (handles pointers, arrays, etc.).
+Extracts the C type specification for a node or expression. It performs comprehensive type resolution, handling declarations, pointers, arrays, function calls, arithmetic operations, and literals.
 
-- **Signature**: `upp.getType(node: SourceNode | string)` -> `string`
+- **Signature**: `upp.getType(node: SourceNode | string, options?: { resolve?: boolean }) -> string | SourceNode | null`
+- **Resolution Mechanism**: 
+  - **Input Parsing**: If a `string` is passed, UPP interprets it as an identifier and looks up its definition first (`upp.findDefinitionOrNull`). If a `SourceNode` is passed, it is evaluated directly.
+  - **Expression Evaluation**: Recursively evaluates the type of complex expressions (e.g., `a + b`, `*ptr`, `arr[0]`, `func()`) by analyzing their operators and operand types.
+  - **`{ resolve: true }`**: When enabled, if the type resolves to a struct, union, or enum, `getType` attempts to return the actual `SourceNode` defining the type (the `struct_specifier` block) rather than just its string representation. This allows macros to inspect the fields of the resolved type natively.
+
+### `upp.withExpressionType`
+Registers a deferred rule to transform any expression within a scope that mathematically evaluates to a specific C type.
+
+- **Signature**: `upp.withExpressionType(scope: SourceNode, target: SourceNode | string, callback: (node, helpers) => string | null)` -> `void`
+- **Mechanism**: The `target` type is dynamically evaluated once upon registration (using `getType({resolve: true})`). The internal walker then matches any expression descendant of `scope` whose evaluated type precisely equals the target type—whether it's a primitive type like `"int"`, or a complex struct node reference.
+- **Example**:
+  ```javascript
+  // Replace any expression evaluating to 'double' with a macro call
+  upp.withExpressionType(upp.root, "double", (node) => {
+      return \`DOUBLE_VAL(\${node.text})\`;
+  });
+  ```
 
 ### `upp.getFunctionSignature`
 Extracts details from a `function_definition` node.
