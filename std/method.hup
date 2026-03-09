@@ -45,22 +45,41 @@
             const objDef = helpers.findDefinitionOrNull(objectNode);
             if (!objDef) return false;
 
-            let currentType = helpers.getType(objDef);
-            let targetClean = targetType.trim().replace(/\s+/g,'_');
-
-            while (currentType) {
-                let clean = currentType.replace(/\*/g, '').trim().replace(/\s+/g, '_');
-                if (clean === targetClean) return true;
-
-                // Follow one level of typedef
-                const def = helpers.findDefinitionOrNull(clean, { variable: true, tag: true });
-                if (def && def.type === 'type_definition') {
-                    currentType = helpers.getType(def);
-                    continue;
+            const getBaseStructName = (typeName) => {
+                let current = typeName;
+                const visited = new Set();
+                while (current && !visited.has(current)) {
+                    visited.add(current);
+                    let clean = current.split('*').join('').split('[]').join('').trim();
+                    
+                    if (clean.includes(' ')) {
+                        return clean.replace(/\\s+/g, '_');
+                    }
+                    
+                    const def = helpers.findDefinitionOrNull(clean, { variable: true, tag: true });
+                    if (def && def.type === 'type_definition') {
+                        const nextRaw = helpers.getType(def);
+                        current = typeof nextRaw === 'string' ? nextRaw : nextRaw?.text || "";
+                        continue;
+                    }
+                    if (def && ['struct_specifier', 'union_specifier', 'enum_specifier'].includes(def.type)) {
+                        const tag = def.child(1);
+                        if (tag && (tag.type === 'type_identifier' || tag.type === 'identifier')) {
+                            return def.child(0).text + " " + tag.text;
+                        }
+                    }
+                    return clean.replace(/\\s+/g, '_');
                 }
-                break;
-            }
-            return false;
+                return current ? current.split('*').join('').split('[]').join('').trim().replace(/\\s+/g, '_') : "";
+            };
+
+            let currentTypeRaw = helpers.getType(objDef);
+            let currentType = typeof currentTypeRaw === 'string' ? currentTypeRaw : currentTypeRaw?.text || "";
+
+            const objBase = getBaseStructName(currentType);
+            const targetBase = getBaseStructName(targetType);
+
+            return objBase === targetBase;
         },
         (callNode, helpers) => {
             const funcNode = callNode.named['function'];
@@ -73,9 +92,31 @@
             // We don't want `{ resolve: true }` because we want the local variable's type string, 
             // e.g., "String" or "String *" to see if it's already a pointer.
             const objTypeRaw = helpers.getType(targetNode);
-            const objType = typeof objTypeRaw === 'string' ? objTypeRaw : objTypeRaw?.text || "";
+            let currentType = typeof objTypeRaw === 'string' ? objTypeRaw : objTypeRaw?.text || "";
+            let isPointer = false;
             
-            const isPointer = objType.includes('*');
+            while (currentType) {
+                if (currentType.includes('*')) {
+                    isPointer = true;
+                    break;
+                }
+                
+                // If it's a simple identifier, check if it's a typedef alias we can unwrap
+                const cleanName = currentType.trim();
+                if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(cleanName)) {
+                    const def = helpers.findDefinitionOrNull(cleanName, { variable: true, tag: true });
+                    if (def && def.type === 'type_definition') {
+                        const nextRaw = helpers.getType(def);
+                        const nextType = typeof nextRaw === 'string' ? nextRaw : nextRaw?.text || "";
+                        if (nextType && nextType !== currentType) {
+                            currentType = nextType;
+                            continue;
+                        }
+                    }
+                }
+                break;
+            }
+
             const prefix = isPointer ? "" : "&";
 
             const hasArgs = innerArgNodes.length > 0;

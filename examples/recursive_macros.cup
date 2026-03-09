@@ -8,6 +8,7 @@ struct _CharData {
     char * data;
 };
 typedef struct _CharData CharData;
+typedef struct _CharData* CharDataPtr;
 
 @method void print(CharData * s) {
     printf("%s\n", s -> data);
@@ -23,6 +24,9 @@ int main() {
     s1.data = malloc(100);
     strcpy(s1.data, "Hello");
     s1.print();
+    
+    CharDataPtr s2 = &s1;
+    s2->print();
 
     if (some_condition) {
         return 1;
