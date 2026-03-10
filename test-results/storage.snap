@@ -1,0 +1,17 @@
+==== examples/storage.c ===
+
+/*  */ int x; /* declaration */
+/* extern */ extern int y; /* declaration */
+/* static */ static int z; /* declaration */
+int main() {
+    /*  */ int x1; /* declaration */
+    /* extern */ extern int y1; /* declaration */
+    /* static */ static int z1; /* declaration */
+    return 0;
+}
+/* check('extern')*/
+/* check('static')*/
+/* check('')*/
+
+==== RUN OUTPUT ===
+

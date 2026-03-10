@@ -309,7 +309,7 @@ static inline int _Managed_ref_count(void *data) {
             stmt.remove();
             return `/* elided retain/release ${a.text} */`;
         }
-    }, { deep: true });
+    });
 
     return $`
 ${boilerplate}

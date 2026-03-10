@@ -148,6 +148,8 @@ export class Transformer {
               if (rule.oneShot) {
                 context.pendingRules.delete(rule);
               }
+              // if (!rule.substituted) rule.substituted = new WeakSet<object>();
+              // rule.substituted.add(node);
               continue; // No substitution — try remaining rules
             }
 

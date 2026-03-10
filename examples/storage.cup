@@ -1,0 +1,24 @@
+@define check(storage) {
+    storage = eval(storage);
+    upp.withMatch(upp.root,`${storage} $type $name;`, (n) => [
+        `/* ${storage} */ `,
+        n.node,
+        ` /* ${n.node.type} */`
+    ]);
+}
+
+int x;
+extern int y;
+static int z;
+
+int main() {
+    int x1;
+    extern int y1;
+    static int z1;
+    return 0;
+}
+
+@check('extern')
+@check('static')
+@check('')
+

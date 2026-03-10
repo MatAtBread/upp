@@ -392,8 +392,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
     */
     withMatch(scope: AnySourceNode,
         pattern: string | string[],
-        callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult,
-        options: MatchOptions = {}
+        callback: (captures: Record<string, AnySourceNode>, helpers: UppHelpersBase<LanguageNodeTypes>, node: AnySourceNode) => MacroResult
     ): void {
         const patterns = Array.isArray(pattern) ? pattern : [pattern];
 
@@ -404,12 +403,15 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
                 const isRootScope = (scope as SourceNode<any>).type === 'translation_unit';
                 if (!isRootScope && !h.isDescendant(scope as SourceNode<any>, n)) return false;
                 // Live structural match - check any of the patterns
-                return patterns.some(p => !!h.match(n, p, undefined, options));
+                // We force { deep: false } because withMatch relies on the tree walker 
+                // implicitly performing the deep search. Allowing deep search in the matcher 
+                // would cause ancestors to mistakenly match and replace themselves.
+                return patterns.some(p => !!h.match(n, p, undefined, { deep: false }));
             },
             callback: (n, h) => {
                 // Find which pattern matched
                 for (const p of patterns) {
-                    const m = h.match(n, p, undefined, options);
+                    const m = h.match(n, p, undefined, { deep: false });
                     if (m) return callback(m, h as UppHelpersBase<LanguageNodeTypes>, n);
                 }
                 return undefined;
@@ -421,7 +423,7 @@ abstract class UppHelpersBase<LanguageNodeTypes extends string> {
         const done = this.context?.walkerDone;
         if (done) {
             this.walk(scope as SourceNode<any>, (n) => {
-                if (done.has(n) && patterns.some(p => !!this.match(n, p, undefined, options))) {
+                if (done.has(n) && patterns.some(p => !!this.match(n, p, undefined, { deep: false }))) {
                     this.revisit(n);
                 }
             });
