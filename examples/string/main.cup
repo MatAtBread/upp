@@ -1,6 +1,7 @@
 #include "../io-lite.h"
 
 @include(strings.hup)
+@include(overload.hup)
 
 @method String String(int n) {
     String s[16];
@@ -14,7 +15,16 @@
     return s;
 }
 
+@method String String(char *s) {
+    return String_literal(s);
+}
+
+@overload String toString(char *s) { return String_literal(s); }
+@overload String toString(int n) { return n.String(); }
+
 int main() {
+    String a = toString(789);
+    String b = toString("from char *");
     String s = String_literal("abcd");
     String t = s->copy();
     String u = t;
@@ -29,5 +39,11 @@ int main() {
     float f = 4.56;
     String m = f.String();
     printf("m: %s [%d]\n", m->data, m->managed_reference_count());
+
+    char *psz = "text";
+    printf("%s\n",psz.String()->data);
+    printf("%s\n",String_literal("literal")->data);
+    printf("%s\n",a->data);
+    printf("%s\n",b->data);
     return 0;
 }

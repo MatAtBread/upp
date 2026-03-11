@@ -1,0 +1,21 @@
+@define overload() {
+  const fn = upp.nextNode('function_definition');
+  const m = upp.match(fn, "$type $decl$name($args__until) { $body }");
+
+  function mangle(t) {
+    return Object.values(t.named)
+      .map(u => upp.getType(u).toString().replace(/\*/g,'ptr').replace(/\s+/g,'_'))
+      .join('_');
+  }
+
+  upp.withReferences(fn,
+    (n,upp) => {
+        const fnName = n?.find('identifier')[0];
+        if (n.parent.type == 'function_declarator') {
+          fnName.text = `${fnName.text}_${mangle(n.parent.named.parameters)}`;
+        } else {
+          fnName.text = `${fnName.text}_${mangle(n.parent.named.arguments)}`;
+        }
+    }
+  );
+}
