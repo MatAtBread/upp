@@ -16,6 +16,7 @@ extern void *stderr;
 extern void *_stderr;
 
 #include "strings.h"
+#include "overload.h"
  String _int_method_String(int n) {
     String s = _Managed_allocate(_Managed_Sizeof_String(16));
 
@@ -30,7 +31,16 @@ extern void *_stderr;
     snprintf(s->data, 16, "%f", n);
     /* elided retain/release s */return s;
 }
+ String _char_method_String(char *s) {
+    return String_literal(s);
+}
+/* overload*/ String toString_char_ptr(char *s) { return String_literal(s); }
+/* overload*/ String toString_int(int n) { return _int_method_String(n); }
 int main() {
+    String a = toString_int(789);
+
+    String b = toString_char_ptr("from char *");
+
     String s = String_literal("abcd");
 
     String t = _String_method_copy(s);
@@ -48,7 +58,21 @@ int main() {
     String m = _float_method_String(f);
 
     printf("m: %s [%d]\n", m->data, _String_method_managed_reference_count(m));
+    char *psz = "text";
+    printf("%s\n",_char_method_String(psz)->data);
+    printf("%s\n",String_literal("literal")->data);
+    printf("%s\n",a->data);
+    printf("%s\n",b->data);
     
+
+
+
+
+
+
+
+
+
 
 
 
@@ -58,7 +82,9 @@ _Managed_release(&m);
 _Managed_release(&n);
 _Managed_release(&u);
 _Managed_release(&t);
-_Managed_release(&s);return 0;
+_Managed_release(&s);
+_Managed_release(&b);
+_Managed_release(&a);return 0;
 }
 
 ==== examples/string/strings.c ===
@@ -176,6 +202,8 @@ extern void free(void *p);
 
 
 
+==== std/overload.h ===
+
 ==== std/package.h ===
 
 
@@ -186,4 +214,8 @@ t: abcd [2]
 u: abcd [2]
 n: 123 [1]
 m: 4.560000 [1]
+text
+literal
+789
+from char *
 
